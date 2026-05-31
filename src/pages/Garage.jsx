@@ -1,14 +1,76 @@
-import { useState } from 'react'
-import { Plus, Car, Palette } from 'lucide-react'
+import { useState, useRef } from 'react'
+import { Plus, Car, Palette, Download, Upload, AlertTriangle } from 'lucide-react'
 import useGarageStore from '../store/useGarageStore'
 import CarCard from '../components/CarCard'
 import AddCarModal from '../components/AddCarModal'
 import ThemePanel from '../components/ThemePanel'
 
+function useBackup() {
+  const state      = useGarageStore
+  const importFile = useRef()
+  const [importError, setImportError] = useState('')
+  const [showConfirm, setShowConfirm] = useState(false)
+  const [pending, setPending] = useState(null)
+
+  const exportData = () => {
+    const { cars, themeId, customAccent } = state.getState()
+    const backup = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      cars,
+      themeId,
+      customAccent,
+    }
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href     = url
+    a.download = `my-garage-backup-${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const readFile = (file) => {
+    setImportError('')
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const data = JSON.parse(e.target.result)
+        if (!data.cars || !Array.isArray(data.cars)) throw new Error('Invalid format')
+        setPending(data)
+        setShowConfirm(true)
+      } catch {
+        setImportError('Invalid backup file. Please select a valid My Garage export.')
+      }
+    }
+    reader.readAsText(file)
+  }
+
+  const confirmImport = () => {
+    if (!pending) return
+    state.setState({
+      cars:         pending.cars         ?? [],
+      themeId:      pending.themeId      ?? 'garage',
+      customAccent: pending.customAccent ?? null,
+    })
+    setPending(null)
+    setShowConfirm(false)
+  }
+
+  const cancelImport = () => { setPending(null); setShowConfirm(false) }
+
+  return { exportData, readFile, importFile, importError, showConfirm, confirmImport, cancelImport, pending }
+}
+
 export default function Garage() {
-  const cars = useGarageStore((s) => s.cars)
-  const [showAdd, setShowAdd] = useState(false)
+  const cars     = useGarageStore((s) => s.cars)
+  const [showAdd,   setShowAdd]   = useState(false)
   const [showTheme, setShowTheme] = useState(false)
+
+  const {
+    exportData, readFile, importFile, importError,
+    showConfirm, confirmImport, cancelImport, pending,
+  } = useBackup()
 
   return (
     <div className="min-h-screen bg-dark">
@@ -20,6 +82,19 @@ export default function Garage() {
             <span className="font-bold text-white text-lg">My Garage</span>
           </div>
           <div className="flex gap-2">
+            <button onClick={exportData} className="btn-outline" title="Download backup">
+              <Download size={16} />
+            </button>
+            <button onClick={() => importFile.current.click()} className="btn-outline" title="Restore backup">
+              <Upload size={16} />
+            </button>
+            <input
+              ref={importFile}
+              type="file"
+              accept=".json,application/json"
+              className="hidden"
+              onChange={(e) => { if (e.target.files[0]) { readFile(e.target.files[0]); e.target.value = '' } }}
+            />
             <button onClick={() => setShowTheme(true)} className="btn-outline" title="Change theme">
               <Palette size={16} />
             </button>
@@ -29,6 +104,16 @@ export default function Garage() {
           </div>
         </div>
       </header>
+
+      {/* Import error toast */}
+      {importError && (
+        <div className="max-w-7xl mx-auto px-6 pt-4">
+          <div className="flex items-center gap-2 bg-red-900/40 border border-red-700/50 text-red-300 text-sm rounded-lg px-4 py-2.5">
+            <AlertTriangle size={15} className="shrink-0" />
+            {importError}
+          </div>
+        </div>
+      )}
 
       <main className="max-w-7xl mx-auto px-6 py-10">
         {cars.length === 0 ? (
@@ -56,8 +141,38 @@ export default function Garage() {
         )}
       </main>
 
-      {showAdd  && <AddCarModal   onClose={() => setShowAdd(false)} />}
-      {showTheme && <ThemePanel   onClose={() => setShowTheme(false)} />}
+      {/* Import confirmation modal */}
+      {showConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="bg-surface border border-border rounded-2xl w-full max-w-sm shadow-2xl p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle size={20} className="text-yellow-400 mt-0.5 shrink-0" />
+              <div>
+                <h3 className="font-semibold text-white">Restore backup?</h3>
+                <p className="text-sm text-gray-400 mt-1">
+                  This will replace all current data with the backup from{' '}
+                  <span className="text-white font-mono text-xs">
+                    {pending?.exportedAt ? new Date(pending.exportedAt).toLocaleString() : 'unknown date'}
+                  </span>
+                  . This cannot be undone.
+                </p>
+                {pending?.cars && (
+                  <p className="text-xs text-gray-500 mt-2">
+                    Backup contains {pending.cars.length} car{pending.cars.length !== 1 ? 's' : ''}.
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={cancelImport} className="btn-outline flex-1 justify-center">Cancel</button>
+              <button onClick={confirmImport} className="btn-primary flex-1 justify-center">Restore</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAdd   && <AddCarModal onClose={() => setShowAdd(false)} />}
+      {showTheme && <ThemePanel  onClose={() => setShowTheme(false)} />}
     </div>
   )
 }
