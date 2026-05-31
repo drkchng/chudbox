@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { Upload, Star, Trash2, X } from 'lucide-react'
 import useGarageStore from '../../store/useGarageStore'
+import ConfirmModal from '../ConfirmModal'
 
 export default function PhotosTab({ car }) {
   const addPhoto = useGarageStore((s) => s.addPhoto)
@@ -10,6 +11,7 @@ export default function PhotosTab({ car }) {
   const [caption, setCaption] = useState('')
   const [preview, setPreview] = useState(null)
   const [lightbox, setLightbox] = useState(null)
+  const [confirmPhoto, setConfirmPhoto] = useState(null)
 
   const handleFile = (e) => {
     const file = e.target.files[0]
@@ -76,7 +78,7 @@ export default function PhotosTab({ car }) {
                   className="p-1.5 rounded-full bg-white/10 hover:bg-accent text-white transition-colors" title="Set as cover">
                   <Star size={14} />
                 </button>
-                <button onClick={(e) => { e.stopPropagation(); deletePhoto(car.id, photo.id) }}
+                <button onClick={(e) => { e.stopPropagation(); setConfirmPhoto(photo) }}
                   className="p-1.5 rounded-full bg-white/10 hover:bg-red-600 text-white transition-colors" title="Delete">
                   <Trash2 size={14} />
                 </button>
@@ -89,6 +91,15 @@ export default function PhotosTab({ car }) {
             </div>
           ))}
         </div>
+      )}
+
+      {confirmPhoto && (
+        <ConfirmModal
+          title="Delete photo?"
+          message={confirmPhoto.caption ? `"${confirmPhoto.caption}" will be permanently deleted.` : 'This photo will be permanently deleted.'}
+          onConfirm={() => deletePhoto(car.id, confirmPhoto.id)}
+          onClose={() => setConfirmPhoto(null)}
+        />
       )}
 
       {/* Lightbox */}

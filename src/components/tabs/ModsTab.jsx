@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Plus, Trash2, Wrench, Pencil, Check, X, ExternalLink, ClipboardList } from 'lucide-react'
 import useGarageStore from '../../store/useGarageStore'
 import DateInput from '../DateInput'
+import ConfirmModal from '../ConfirmModal'
 
 const CATEGORIES = ['Engine', 'Exhaust', 'Intake', 'Suspension', 'Brakes', 'Wheels / Tires', 'Exterior', 'Interior', 'Audio', 'Lighting', 'Tuning', 'Other']
 
@@ -105,6 +106,7 @@ export default function ModsTab({ car }) {
   const [editId, setEditId]       = useState(null)
   const [editForm, setEditForm]   = useState({})
   const [logMod, setLogMod]       = useState(null)
+  const [confirmMod, setConfirmMod] = useState(null)
 
   const set     = (k) => (eOrVal) => setForm((f)     => ({ ...f, [k]: typeof eOrVal === 'string' ? eOrVal : eOrVal.target.value }))
   const setEdit = (k) => (eOrVal) => setEditForm((f) => ({ ...f, [k]: typeof eOrVal === 'string' ? eOrVal : eOrVal.target.value }))
@@ -258,7 +260,7 @@ export default function ModsTab({ car }) {
                     </div>
                     <div className="flex gap-1 shrink-0">
                       <button onClick={() => startEdit(mod)} className="btn-ghost"><Pencil size={14} /></button>
-                      <button onClick={() => deleteMod(car.id, mod.id)} className="btn-ghost text-red-500 hover:text-red-400"><Trash2 size={14} /></button>
+                      <button onClick={() => setConfirmMod(mod)} className="btn-ghost text-red-500 hover:text-red-400"><Trash2 size={14} /></button>
                     </div>
                   </div>
                 ))}
@@ -266,6 +268,15 @@ export default function ModsTab({ car }) {
             </div>
           ))}
         </div>
+      )}
+
+      {confirmMod && (
+        <ConfirmModal
+          title="Delete mod?"
+          message={`"${confirmMod.name}" will be permanently deleted from your mods list.`}
+          onConfirm={() => deleteMod(car.id, confirmMod.id)}
+          onClose={() => setConfirmMod(null)}
+        />
       )}
 
       {logMod && (

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Plus, Trash2, ClipboardList, Pencil, Check, X, Calendar } from 'lucide-react'
 import useGarageStore from '../../store/useGarageStore'
 import DateInput from '../DateInput'
+import ConfirmModal from '../ConfirmModal'
 
 const SERVICES = ['Oil Change', 'Tire Rotation', 'Brake Pads', 'Brake Fluid', 'Coolant Flush', 'Transmission Fluid', 'Spark Plugs', 'Air Filter', 'Cabin Filter', 'Belt / Chain', 'Battery', 'Alignment', 'Tires', 'Inspection', 'Other']
 
@@ -43,10 +44,11 @@ export default function MaintenanceTab({ car }) {
   const addMaintenance    = useGarageStore((s) => s.addMaintenance)
   const updateMaintenance = useGarageStore((s) => s.updateMaintenance)
   const deleteMaintenance = useGarageStore((s) => s.deleteMaintenance)
-  const [showForm, setShowForm] = useState(false)
-  const [form, setForm]         = useState(emptyForm)
-  const [editId, setEditId]     = useState(null)
-  const [editForm, setEditForm] = useState({})
+  const [showForm, setShowForm]   = useState(false)
+  const [form, setForm]           = useState(emptyForm)
+  const [editId, setEditId]       = useState(null)
+  const [editForm, setEditForm]   = useState({})
+  const [confirmRec, setConfirmRec] = useState(null)
 
   // Accepts either a plain string (from DateInput) or a change event (from regular inputs)
   const set     = (k) => (eOrVal) => setForm((f)     => ({ ...f, [k]: typeof eOrVal === 'string' ? eOrVal : eOrVal.target.value }))
@@ -133,11 +135,19 @@ export default function MaintenanceTab({ car }) {
               </div>
               <div className="flex gap-1 shrink-0">
                 <button onClick={() => startEdit(rec)} className="btn-ghost"><Pencil size={14} /></button>
-                <button onClick={() => deleteMaintenance(car.id, rec.id)} className="btn-ghost text-red-500 hover:text-red-400"><Trash2 size={14} /></button>
+                <button onClick={() => setConfirmRec(rec)} className="btn-ghost text-red-500 hover:text-red-400"><Trash2 size={14} /></button>
               </div>
             </div>
           ))}
         </div>
+      )}
+      {confirmRec && (
+        <ConfirmModal
+          title="Delete record?"
+          message={`"${confirmRec.service}" will be permanently deleted from your maintenance log.`}
+          onConfirm={() => deleteMaintenance(car.id, confirmRec.id)}
+          onClose={() => setConfirmRec(null)}
+        />
       )}
     </div>
   )

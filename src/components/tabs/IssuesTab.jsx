@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Plus, Trash2, AlertTriangle, CheckCircle2, Clock, Pencil, Check, X } from 'lucide-react'
 import useGarageStore from '../../store/useGarageStore'
+import ConfirmModal from '../ConfirmModal'
 
 const SEVERITY = {
   minor:    { label: 'Minor',    class: 'bg-gray-800 text-gray-300 border-gray-700' },
@@ -24,7 +25,8 @@ export default function IssuesTab({ car }) {
   const [form, setForm] = useState(emptyForm)
   const [editId, setEditId] = useState(null)
   const [editForm, setEditForm] = useState({})
-  const [filter, setFilter] = useState('open')
+  const [filter, setFilter]         = useState('open')
+  const [confirmIssue, setConfirmIssue] = useState(null)
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
   const setEdit = (k) => (e) => setEditForm((f) => ({ ...f, [k]: e.target.value }))
@@ -141,12 +143,21 @@ export default function IssuesTab({ car }) {
                 </div>
                 <div className="flex gap-1 shrink-0">
                   <button onClick={() => startEdit(issue)} className="btn-ghost"><Pencil size={14} /></button>
-                  <button onClick={() => deleteIssue(car.id, issue.id)} className="btn-ghost text-red-500 hover:text-red-400"><Trash2 size={14} /></button>
+                  <button onClick={() => setConfirmIssue(issue)} className="btn-ghost text-red-500 hover:text-red-400"><Trash2 size={14} /></button>
                 </div>
               </div>
             )
           })}
         </div>
+      )}
+
+      {confirmIssue && (
+        <ConfirmModal
+          title="Delete issue?"
+          message={`"${confirmIssue.title}" will be permanently deleted.`}
+          onConfirm={() => deleteIssue(car.id, confirmIssue.id)}
+          onClose={() => setConfirmIssue(null)}
+        />
       )}
     </div>
   )

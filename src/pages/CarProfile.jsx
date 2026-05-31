@@ -11,6 +11,7 @@ import TodoTab from '../components/tabs/TodoTab'
 import IssuesTab from '../components/tabs/IssuesTab'
 import EditCarModal from '../components/EditCarModal'
 import ThemePanel from '../components/ThemePanel'
+import ConfirmModal from '../components/ConfirmModal'
 
 const TABS = [
   { id: 'photos',      label: 'Photos',       icon: Camera },
@@ -27,8 +28,9 @@ export default function CarProfile() {
   const car = useGarageStore((s) => s.cars.find((c) => c.id === id))
   const deleteCar = useGarageStore((s) => s.deleteCar)
   const [tab, setTab] = useState('photos')
-  const [editing, setEditing] = useState(false)
-  const [showTheme, setShowTheme] = useState(false)
+  const [editing, setEditing]       = useState(false)
+  const [showTheme, setShowTheme]   = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   if (!car) {
     return (
@@ -48,10 +50,8 @@ export default function CarProfile() {
   const statusCfg   = STATUS_CONFIG[status]
 
   const handleDelete = () => {
-    if (confirm(`Delete ${car.year} ${car.make} ${car.model}? This cannot be undone.`)) {
-      deleteCar(id)
-      navigate('/')
-    }
+    deleteCar(id)
+    navigate('/')
   }
 
   return (
@@ -83,7 +83,7 @@ export default function CarProfile() {
           <button onClick={() => setEditing(true)} className="btn-outline bg-dark/60 backdrop-blur-sm border-white/10 text-white hover:text-accent">
             <Pencil size={14} /> Edit
           </button>
-          <button onClick={handleDelete} className="btn-outline bg-dark/60 backdrop-blur-sm border-red-900/40 text-red-400 hover:text-red-300 hover:border-red-500/50">
+          <button onClick={() => setConfirmDelete(true)} className="btn-outline bg-dark/60 backdrop-blur-sm border-red-900/40 text-red-400 hover:text-red-300 hover:border-red-500/50">
             <Trash2 size={14} />
           </button>
         </div>
@@ -177,6 +177,14 @@ export default function CarProfile() {
 
       {editing    && <EditCarModal car={car} onClose={() => setEditing(false)} />}
       {showTheme  && <ThemePanel onClose={() => setShowTheme(false)} />}
+      {confirmDelete && (
+        <ConfirmModal
+          title={`Delete ${car.year} ${car.make} ${car.model}?`}
+          message="All photos, mods, maintenance records, todos, and issues will be permanently deleted."
+          onConfirm={handleDelete}
+          onClose={() => setConfirmDelete(false)}
+        />
+      )}
     </div>
   )
 }

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Plus, ExternalLink, Trash2, DollarSign, ShoppingCart, CheckCircle2, Package, Wrench, X } from 'lucide-react'
 import useGarageStore from '../../store/useGarageStore'
 import DateInput from '../DateInput'
+import ConfirmModal from '../ConfirmModal'
 
 const STATUS_STYLES = {
   wanted:    { label: 'Wanted',    class: 'bg-blue-900/50 text-blue-300 border-blue-700/40' },
@@ -111,9 +112,10 @@ export default function WishlistTab({ car }) {
   const addWishlistItem    = useGarageStore((s) => s.addWishlistItem)
   const updateWishlistItem = useGarageStore((s) => s.updateWishlistItem)
   const deleteWishlistItem = useGarageStore((s) => s.deleteWishlistItem)
-  const [showForm, setShowForm] = useState(false)
-  const [form, setForm]         = useState(emptyForm)
-  const [movingItem, setMovingItem] = useState(null)
+  const [showForm, setShowForm]       = useState(false)
+  const [form, setForm]               = useState(emptyForm)
+  const [movingItem, setMovingItem]   = useState(null)
+  const [confirmItem, setConfirmItem] = useState(null)
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
 
@@ -243,13 +245,22 @@ export default function WishlistTab({ car }) {
                     <CheckCircle2 size={15} />
                   </button>
                 )}
-                <button onClick={() => deleteWishlistItem(car.id, item.id)} className="btn-ghost text-red-500 hover:text-red-400">
+                <button onClick={() => setConfirmItem(item)} className="btn-ghost text-red-500 hover:text-red-400">
                   <Trash2 size={15} />
                 </button>
               </div>
             </div>
           ))}
         </div>
+      )}
+
+      {confirmItem && (
+        <ConfirmModal
+          title="Delete part?"
+          message={`"${confirmItem.name}" will be permanently deleted from your wishlist.`}
+          onConfirm={() => deleteWishlistItem(car.id, confirmItem.id)}
+          onClose={() => setConfirmItem(null)}
+        />
       )}
 
       {movingItem && (

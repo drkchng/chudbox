@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Plus, Trash2, CheckSquare } from 'lucide-react'
 import useGarageStore from '../../store/useGarageStore'
+import ConfirmModal from '../ConfirmModal'
 
 const PRIORITY = {
   low:    { label: 'Low',    class: 'bg-gray-800 text-gray-400 border-gray-700' },
@@ -12,8 +13,9 @@ export default function TodoTab({ car }) {
   const addTodo    = useGarageStore((s) => s.addTodo)
   const toggleTodo = useGarageStore((s) => s.toggleTodo)
   const deleteTodo = useGarageStore((s) => s.deleteTodo)
-  const [text, setText] = useState('')
-  const [priority, setPriority] = useState('medium')
+  const [text, setText]           = useState('')
+  const [priority, setPriority]   = useState('medium')
+  const [confirmTodo, setConfirmTodo] = useState(null)
 
   const handleAdd = (e) => {
     e.preventDefault()
@@ -22,7 +24,7 @@ export default function TodoTab({ car }) {
     setText('')
   }
 
-  const pending  = car.todos.filter((t) => !t.done).sort((a, b) => {
+  const pending = car.todos.filter((t) => !t.done).sort((a, b) => {
     const order = { high: 0, medium: 1, low: 2 }
     return order[a.priority] - order[b.priority]
   })
@@ -35,7 +37,6 @@ export default function TodoTab({ car }) {
         <span className="text-xs text-gray-500">{pending.length} pending · {done.length} done</span>
       </div>
 
-      {/* Add form */}
       <form onSubmit={handleAdd} className="card mb-6 flex gap-3 items-end">
         <div className="flex-1">
           <label className="label">New Task</label>
@@ -59,7 +60,6 @@ export default function TodoTab({ car }) {
         </div>
       ) : (
         <div className="space-y-5">
-          {/* Pending */}
           {pending.length > 0 && (
             <div className="space-y-2">
               {pending.map((todo) => (
@@ -68,13 +68,12 @@ export default function TodoTab({ car }) {
                     className="w-4 h-4 rounded border-border accent-accent cursor-pointer shrink-0" />
                   <span className="flex-1 text-sm text-gray-200">{todo.text}</span>
                   <span className={`badge border text-xs ${PRIORITY[todo.priority].class}`}>{PRIORITY[todo.priority].label}</span>
-                  <button onClick={() => deleteTodo(car.id, todo.id)} className="btn-ghost text-red-500 hover:text-red-400"><Trash2 size={14} /></button>
+                  <button onClick={() => setConfirmTodo(todo)} className="btn-ghost text-red-500 hover:text-red-400"><Trash2 size={14} /></button>
                 </div>
               ))}
             </div>
           )}
 
-          {/* Done */}
           {done.length > 0 && (
             <div>
               <p className="text-xs text-gray-600 uppercase tracking-wide mb-2">Completed</p>
@@ -84,13 +83,22 @@ export default function TodoTab({ car }) {
                     <input type="checkbox" checked onChange={() => toggleTodo(car.id, todo.id)}
                       className="w-4 h-4 accent-accent cursor-pointer shrink-0" />
                     <span className="flex-1 text-sm text-gray-400 line-through">{todo.text}</span>
-                    <button onClick={() => deleteTodo(car.id, todo.id)} className="btn-ghost text-red-500 hover:text-red-400"><Trash2 size={14} /></button>
+                    <button onClick={() => setConfirmTodo(todo)} className="btn-ghost text-red-500 hover:text-red-400"><Trash2 size={14} /></button>
                   </div>
                 ))}
               </div>
             </div>
           )}
         </div>
+      )}
+
+      {confirmTodo && (
+        <ConfirmModal
+          title="Delete task?"
+          message={`"${confirmTodo.text}" will be permanently deleted.`}
+          onConfirm={() => deleteTodo(car.id, confirmTodo.id)}
+          onClose={() => setConfirmTodo(null)}
+        />
       )}
     </div>
   )
