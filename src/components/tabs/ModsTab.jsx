@@ -3,8 +3,7 @@ import { Plus, Trash2, Wrench, Pencil, Check, X, ExternalLink, ClipboardList } f
 import useGarageStore from '../../store/useGarageStore'
 import DateInput from '../DateInput'
 import ConfirmModal from '../ConfirmModal'
-
-const CATEGORIES = ['Engine', 'Exhaust', 'Intake', 'Suspension', 'Brakes', 'Wheels / Tires', 'Exterior', 'Interior', 'Audio', 'Lighting', 'Tuning', 'Other']
+import { CATEGORIES } from '../../utils/categories'
 
 const emptyForm = { name: '', category: '', description: '', cost: '', installedDate: '', shop: '', link: '' }
 

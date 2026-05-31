@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Car, Pencil, Trash2, Camera, ShoppingCart, Wrench, ClipboardList, CheckSquare, AlertTriangle, Palette, DollarSign, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Car, Pencil, Trash2, Camera, ShoppingCart, Wrench, ClipboardList, CheckSquare, AlertTriangle, Palette } from 'lucide-react'
 import useGarageStore from '../store/useGarageStore'
 import { getCarStatus, STATUS_CONFIG } from '../utils/carStatus'
 import PhotosTab from '../components/tabs/PhotosTab'

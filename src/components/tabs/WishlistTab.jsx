@@ -3,6 +3,7 @@ import { Plus, ExternalLink, Trash2, DollarSign, ShoppingCart, CheckCircle2, Pac
 import useGarageStore from '../../store/useGarageStore'
 import DateInput from '../DateInput'
 import ConfirmModal from '../ConfirmModal'
+import { CATEGORIES } from '../../utils/categories'
 
 const STATUS_STYLES = {
   wanted:    { label: 'Wanted',    class: 'bg-blue-900/50 text-blue-300 border-blue-700/40' },
@@ -10,7 +11,6 @@ const STATUS_STYLES = {
   installed: { label: 'Installed', class: 'bg-green-900/50 text-green-300 border-green-700/40' },
 }
 
-const CATEGORIES = ['Engine', 'Exhaust', 'Suspension', 'Brakes', 'Wheels / Tires', 'Exterior', 'Interior', 'Audio', 'Lighting', 'Other']
 
 const emptyForm = { name: '', link: '', price: '', category: '', notes: '' }
 
