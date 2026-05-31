@@ -40,7 +40,7 @@ function useBackup() {
         setPending(data)
         setShowConfirm(true)
       } catch {
-        setImportError('Invalid backup file. Please select a valid My Garage export.')
+        setImportError('Invalid backup file. Please select a valid VroomShop export.')
       }
     }
     reader.readAsText(file)
@@ -79,7 +79,7 @@ export default function Garage() {
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Car size={22} className="text-accent" />
-            <span className="font-bold text-white text-lg">My Garage</span>
+            <span className="font-bold text-white text-lg">VroomShop</span>
           </div>
           <div className="flex gap-2">
             <button onClick={exportData} className="btn-outline" title="Download backup">

@@ -1,4 +1,4 @@
-# My Garage 🚗
+# VroomShop 🚗
 
 A personal car management app for enthusiasts. Track your builds, mods, maintenance, parts wishlist, todos, and issues — all stored locally in your browser.
 
@@ -8,19 +8,21 @@ A personal car management app for enthusiasts. Track your builds, mods, maintena
 
 - **Multiple cars** — add as many builds as you want
 - **Photo gallery** — upload images, set a cover photo
-- **Parts wishlist** — track parts with links and prices, mark as Wanted → Ordered → Installed
-- **Mods log** — record modifications grouped by category with cost tracking
+- **Parts wishlist** — track parts with links and prices, mark as Wanted → Ordered → Installed → Mods
+- **Mods log** — record modifications grouped by category with cost and link tracking
 - **Maintenance log** — service history with next-due date and mileage reminders
 - **To-Do list** — prioritized task list per car
 - **Issues tracker** — log problems by severity, track resolution
+- **Car status** — Current, For Sale, For Trade, or Sold (auto-detected from sale date)
 - **Customizable themes** — 6 presets + custom accent color picker
+- **Backup & restore** — export/import all data as a JSON file
 - **100% local** — all data is stored in your browser (IndexedDB). Nothing is sent to a server.
 
 ## Using the Live App
 
 Just visit **https://drkchng.github.io/car-garage/** — no account or install needed. Your data stays in your browser.
 
-> **Note:** Data is stored locally in the browser you use. Clearing browser data will erase it. To move data between devices, use the Export/Import feature (coming soon).
+> **Note:** Data is stored locally in the browser you use. Clearing browser data will erase it. Use the Download Backup button to save your data regularly.
 
 ## Running Locally
 
