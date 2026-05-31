@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Car, Pencil, Trash2, Camera, ShoppingCart, Wrench, ClipboardList, CheckSquare, AlertTriangle, Palette } from 'lucide-react'
+import { ArrowLeft, Car, Pencil, Trash2, Camera, ShoppingCart, Wrench, ClipboardList, CheckSquare, AlertTriangle, Palette, DollarSign, RefreshCw } from 'lucide-react'
 import useGarageStore from '../store/useGarageStore'
+import { getCarStatus, STATUS_CONFIG } from '../utils/carStatus'
 import PhotosTab from '../components/tabs/PhotosTab'
 import WishlistTab from '../components/tabs/WishlistTab'
 import ModsTab from '../components/tabs/ModsTab'
@@ -40,9 +41,11 @@ export default function CarProfile() {
     )
   }
 
-  const coverPhoto = car.photos.find((p) => p.id === car.coverPhoto) || car.photos[0]
-  const openIssues = car.issues.filter((i) => i.status !== 'resolved').length
+  const coverPhoto  = car.photos.find((p) => p.id === car.coverPhoto) || car.photos[0]
+  const openIssues  = car.issues.filter((i) => i.status !== 'resolved').length
   const pendingTodos = car.todos.filter((t) => !t.done).length
+  const status      = getCarStatus(car)
+  const statusCfg   = STATUS_CONFIG[status]
 
   const handleDelete = () => {
     if (confirm(`Delete ${car.year} ${car.make} ${car.model}? This cannot be undone.`)) {
@@ -87,6 +90,22 @@ export default function CarProfile() {
 
         {/* Car info */}
         <div className="absolute bottom-5 left-6">
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className={`badge border text-xs ${statusCfg.class}`}>
+              {statusCfg.label}
+              {status === 'for-sale' && car.salePrice ? ` · $${Number(car.salePrice).toLocaleString()}` : ''}
+            </span>
+            {car.purchaseDate && (
+              <span className="text-xs text-gray-500">
+                Owned since {new Date(car.purchaseDate + 'T12:00:00').toLocaleDateString()}
+              </span>
+            )}
+            {status === 'sold' && car.saleDate && (
+              <span className="text-xs text-gray-500">
+                Sold {new Date(car.saleDate + 'T12:00:00').toLocaleDateString()}
+              </span>
+            )}
+          </div>
           <h1 className="text-3xl font-bold text-white leading-tight">
             {car.year} {car.make} {car.model}
           </h1>
@@ -96,10 +115,15 @@ export default function CarProfile() {
             {car.mileage && <span className="text-sm text-gray-400">· {Number(car.mileage).toLocaleString()} mi</span>}
             {car.nickname && <span className="text-sm text-accent font-medium">· "{car.nickname}"</span>}
           </div>
+          {status === 'for-trade' && car.tradeFor && (
+            <p className="text-xs text-blue-400 mt-1.5 max-w-xs">
+              Trade for: {car.tradeFor.split('\n').filter(Boolean).join(', ')}
+            </p>
+          )}
         </div>
 
         {/* Quick stats badges */}
-        <div className="absolute bottom-5 right-6 flex gap-2">
+        <div className="absolute bottom-5 right-6 flex gap-2 flex-wrap justify-end">
           {openIssues > 0 && (
             <span className="badge bg-red-900/60 text-red-300 border border-red-700/40">
               {openIssues} issue{openIssues > 1 ? 's' : ''}

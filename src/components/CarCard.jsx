@@ -1,11 +1,14 @@
 import { useNavigate } from 'react-router-dom'
 import { Car, AlertTriangle, CheckSquare, Wrench } from 'lucide-react'
+import { getCarStatus, STATUS_CONFIG } from '../utils/carStatus'
 
 export default function CarCard({ car }) {
-  const navigate = useNavigate()
-  const coverPhoto = car.photos.find((p) => p.id === car.coverPhoto) || car.photos[0]
-  const openIssues = car.issues.filter((i) => i.status !== 'resolved').length
+  const navigate    = useNavigate()
+  const coverPhoto  = car.photos.find((p) => p.id === car.coverPhoto) || car.photos[0]
+  const openIssues  = car.issues.filter((i) => i.status !== 'resolved').length
   const pendingTodos = car.todos.filter((t) => !t.done).length
+  const status      = getCarStatus(car)
+  const statusCfg   = STATUS_CONFIG[status]
 
   return (
     <div
@@ -21,11 +24,17 @@ export default function CarCard({ car }) {
             <Car size={40} className="text-gray-700" />
           </div>
         )}
-        {openIssues > 0 && (
-          <span className="absolute top-2 right-2 badge bg-red-900/80 text-red-300 border border-red-700/40 backdrop-blur-sm">
-            <AlertTriangle size={10} className="mr-1" /> {openIssues}
+        <div className="absolute top-2 left-2 right-2 flex items-center justify-between">
+          <span className={`badge border text-xs ${statusCfg.class}`}>
+            {statusCfg.label}
+            {status === 'for-sale' && car.salePrice ? ` · $${Number(car.salePrice).toLocaleString()}` : ''}
           </span>
-        )}
+          {openIssues > 0 && (
+            <span className="badge bg-red-900/80 text-red-300 border border-red-700/40 backdrop-blur-sm">
+              <AlertTriangle size={10} className="mr-1" /> {openIssues}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Info */}
@@ -43,17 +52,18 @@ export default function CarCard({ car }) {
           )}
         </div>
 
+        {/* For Trade list preview */}
+        {status === 'for-trade' && car.tradeFor && (
+          <p className="text-xs text-blue-400 mt-2 leading-relaxed line-clamp-2">
+            Trade for: {car.tradeFor.split('\n').filter(Boolean).join(', ')}
+          </p>
+        )}
+
         {/* Quick stats */}
         <div className="flex items-center gap-3 mt-3 pt-3 border-t border-border text-xs text-gray-500">
-          <span className="flex items-center gap-1">
-            <Wrench size={11} /> {car.mods.length} mods
-          </span>
-          <span className="flex items-center gap-1">
-            <CheckSquare size={11} /> {pendingTodos} todos
-          </span>
-          {car.mileage && (
-            <span className="ml-auto">{Number(car.mileage).toLocaleString()} mi</span>
-          )}
+          <span className="flex items-center gap-1"><Wrench size={11} /> {car.mods.length} mods</span>
+          <span className="flex items-center gap-1"><CheckSquare size={11} /> {pendingTodos} todos</span>
+          {car.mileage && <span className="ml-auto">{Number(car.mileage).toLocaleString()} mi</span>}
         </div>
       </div>
     </div>
