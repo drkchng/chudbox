@@ -5,28 +5,44 @@ export default function DateInput({ value = '', onChange, className = '' }) {
   const monthRef = useRef()
   const yearRef  = useRef()
 
-  // Keep local state for each segment so partial typing works
-  const [d, setD] = useState('')
-  const [m, setM] = useState('')
-  const [y, setY] = useState('')
+  // Track the last value we emitted so the useEffect doesn't reset
+  // local state while the user is mid-edit (e.g. clearing a field).
+  const lastEmitted = useRef(value)
 
-  // Sync from parent value (YYYY-MM-DD)
+  const [d, setD] = useState(() => value?.slice(8, 10) ?? '')
+  const [m, setM] = useState(() => value?.slice(5, 7)  ?? '')
+  const [y, setY] = useState(() => value?.slice(0, 4)  ?? '')
+
+  // Only sync from the parent when the parent *externally* changed the value
+  // (not when we ourselves emitted it).
   useEffect(() => {
+    if (value === lastEmitted.current) return
+    lastEmitted.current = value
     if (value && value.length === 10) {
       setY(value.slice(0, 4))
       setM(value.slice(5, 7))
       setD(value.slice(8, 10))
-    } else if (!value) {
+    } else {
       setD(''); setM(''); setY('')
     }
   }, [value])
 
   const emit = (newD, newM, newY) => {
     if (newD && newM && newY && newY.length === 4) {
-      onChange(`${newY}-${newM.padStart(2, '0')}-${newD.padStart(2, '0')}`)
+      const result = `${newY}-${newM.padStart(2, '0')}-${newD.padStart(2, '0')}`
+      lastEmitted.current = result
+      onChange(result)
     } else if (!newD && !newM && !newY) {
+      lastEmitted.current = ''
       onChange('')
     }
+    // If partially filled, don't call onChange — and don't let the
+    // useEffect reset us since lastEmitted hasn't changed.
+  }
+
+  const focusAndSelect = (ref) => {
+    ref.current?.focus()
+    ref.current?.select()
   }
 
   const handleDay = (e) => {
@@ -34,7 +50,10 @@ export default function DateInput({ value = '', onChange, className = '' }) {
     if (raw !== '' && Number(raw) > 31) return
     setD(raw)
     emit(raw, m, y)
-    if (raw.length === 2) monthRef.current?.focus()
+    // Smart advance: if the digit can't be a valid tens digit, move on immediately
+    if (raw.length === 2 || (raw.length === 1 && Number(raw) > 3)) {
+      focusAndSelect(monthRef)
+    }
   }
 
   const handleMonth = (e) => {
@@ -42,7 +61,9 @@ export default function DateInput({ value = '', onChange, className = '' }) {
     if (raw !== '' && Number(raw) > 12) return
     setM(raw)
     emit(d, raw, y)
-    if (raw.length === 2) yearRef.current?.focus()
+    if (raw.length === 2 || (raw.length === 1 && Number(raw) > 1)) {
+      focusAndSelect(yearRef)
+    }
   }
 
   const handleYear = (e) => {
@@ -53,8 +74,8 @@ export default function DateInput({ value = '', onChange, className = '' }) {
 
   const handleKeyDown = (field, e) => {
     if (e.key === 'Backspace') {
-      if (field === 'month' && m === '') { e.preventDefault(); dayRef.current?.focus() }
-      if (field === 'year'  && y === '') { e.preventDefault(); monthRef.current?.focus() }
+      if (field === 'month' && m === '') { e.preventDefault(); focusAndSelect(dayRef) }
+      if (field === 'year'  && y === '') { e.preventDefault(); focusAndSelect(monthRef) }
     }
   }
 
@@ -69,6 +90,7 @@ export default function DateInput({ value = '', onChange, className = '' }) {
         placeholder="DD"
         value={d}
         onChange={handleDay}
+        onFocus={(e) => e.target.select()}
         className={`${seg} w-7`}
         maxLength={2}
       />
@@ -81,6 +103,7 @@ export default function DateInput({ value = '', onChange, className = '' }) {
         value={m}
         onChange={handleMonth}
         onKeyDown={(e) => handleKeyDown('month', e)}
+        onFocus={(e) => e.target.select()}
         className={`${seg} w-7`}
         maxLength={2}
       />
@@ -93,6 +116,7 @@ export default function DateInput({ value = '', onChange, className = '' }) {
         value={y}
         onChange={handleYear}
         onKeyDown={(e) => handleKeyDown('year', e)}
+        onFocus={(e) => e.target.select()}
         className={`${seg} w-12`}
         maxLength={4}
       />
