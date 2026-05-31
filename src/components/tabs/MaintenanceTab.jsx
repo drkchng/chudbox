@@ -7,38 +7,9 @@ const SERVICES = ['Oil Change', 'Tire Rotation', 'Brake Pads', 'Brake Fluid', 'C
 
 const emptyForm = { service: '', date: '', mileage: '', cost: '', shop: '', notes: '', nextDueDate: '', nextDueMileage: '' }
 
-export default function MaintenanceTab({ car }) {
-  const addMaintenance    = useGarageStore((s) => s.addMaintenance)
-  const updateMaintenance = useGarageStore((s) => s.updateMaintenance)
-  const deleteMaintenance = useGarageStore((s) => s.deleteMaintenance)
-  const [showForm, setShowForm] = useState(false)
-  const [form, setForm]         = useState(emptyForm)
-  const [editId, setEditId]     = useState(null)
-  const [editForm, setEditForm] = useState({})
-
-  // Accepts either a plain value (from DateInput) or a change event (from regular inputs)
-  const set     = (k) => (eOrVal) => setForm((f)     => ({ ...f, [k]: typeof eOrVal === 'string' ? eOrVal : eOrVal.target.value }))
-  const setEdit = (k) => (eOrVal) => setEditForm((f) => ({ ...f, [k]: typeof eOrVal === 'string' ? eOrVal : eOrVal.target.value }))
-
-  const handleAdd = (e) => {
-    e.preventDefault()
-    if (!form.service) return
-    addMaintenance(car.id, { ...form, cost: form.cost ? parseFloat(form.cost) : null, mileage: form.mileage || null })
-    setForm(emptyForm)
-    setShowForm(false)
-  }
-
-  const startEdit = (rec) => { setEditId(rec.id); setEditForm({ ...rec }) }
-  const saveEdit  = () => {
-    updateMaintenance(car.id, editId, { ...editForm, cost: editForm.cost ? parseFloat(editForm.cost) : null })
-    setEditId(null)
-  }
-
-  const sorted    = [...car.maintenance].sort((a, b) => new Date(b.date) - new Date(a.date))
-  const totalCost = car.maintenance.reduce((s, r) => s + (r.cost || 0), 0)
-  const isOverdue = (rec) => rec.nextDueDate && new Date(rec.nextDueDate) < new Date()
-
-  const FormFields = ({ vals, onChange }) => (
+// Defined outside MaintenanceTab so React never unmounts/remounts it on re-render
+function FormFields({ vals, onChange }) {
+  return (
     <>
       <div className="grid sm:grid-cols-2 gap-3">
         <div>
@@ -66,6 +37,38 @@ export default function MaintenanceTab({ car }) {
       </div>
     </>
   )
+}
+
+export default function MaintenanceTab({ car }) {
+  const addMaintenance    = useGarageStore((s) => s.addMaintenance)
+  const updateMaintenance = useGarageStore((s) => s.updateMaintenance)
+  const deleteMaintenance = useGarageStore((s) => s.deleteMaintenance)
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm]         = useState(emptyForm)
+  const [editId, setEditId]     = useState(null)
+  const [editForm, setEditForm] = useState({})
+
+  // Accepts either a plain string (from DateInput) or a change event (from regular inputs)
+  const set     = (k) => (eOrVal) => setForm((f)     => ({ ...f, [k]: typeof eOrVal === 'string' ? eOrVal : eOrVal.target.value }))
+  const setEdit = (k) => (eOrVal) => setEditForm((f) => ({ ...f, [k]: typeof eOrVal === 'string' ? eOrVal : eOrVal.target.value }))
+
+  const handleAdd = (e) => {
+    e.preventDefault()
+    if (!form.service) return
+    addMaintenance(car.id, { ...form, cost: form.cost ? parseFloat(form.cost) : null, mileage: form.mileage || null })
+    setForm(emptyForm)
+    setShowForm(false)
+  }
+
+  const startEdit = (rec) => { setEditId(rec.id); setEditForm({ ...rec }) }
+  const saveEdit  = () => {
+    updateMaintenance(car.id, editId, { ...editForm, cost: editForm.cost ? parseFloat(editForm.cost) : null })
+    setEditId(null)
+  }
+
+  const sorted    = [...car.maintenance].sort((a, b) => new Date(b.date) - new Date(a.date))
+  const totalCost = car.maintenance.reduce((s, r) => s + (r.cost || 0), 0)
+  const isOverdue = (rec) => rec.nextDueDate && new Date(rec.nextDueDate) < new Date()
 
   return (
     <div>
