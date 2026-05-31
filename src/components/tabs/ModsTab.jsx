@@ -1,22 +1,111 @@
 import { useState } from 'react'
-import { Plus, Trash2, Wrench, Pencil, Check, X } from 'lucide-react'
+import { Plus, Trash2, Wrench, Pencil, Check, X, ExternalLink, ClipboardList } from 'lucide-react'
 import useGarageStore from '../../store/useGarageStore'
 import DateInput from '../DateInput'
 
 const CATEGORIES = ['Engine', 'Exhaust', 'Intake', 'Suspension', 'Brakes', 'Wheels / Tires', 'Exterior', 'Interior', 'Audio', 'Lighting', 'Tuning', 'Other']
 
-const emptyForm = { name: '', category: '', description: '', cost: '', installedDate: '', shop: '' }
+const emptyForm = { name: '', category: '', description: '', cost: '', installedDate: '', shop: '', link: '' }
+
+const today = () => new Date().toISOString().slice(0, 10)
+
+// Defined outside ModsTab so React never unmounts it on re-render
+function LogToMaintenanceModal({ mod, carId, onClose }) {
+  const addMaintenance = useGarageStore((s) => s.addMaintenance)
+  const [form, setForm] = useState({
+    service:        mod.name        || '',
+    date:           today(),
+    mileage:        '',
+    cost:           mod.cost != null ? String(mod.cost) : '',
+    shop:           mod.shop        || '',
+    notes:          mod.description || '',
+    nextDueDate:    '',
+    nextDueMileage: '',
+  })
+
+  const set = (k) => (eOrVal) => setForm((f) => ({ ...f, [k]: typeof eOrVal === 'string' ? eOrVal : eOrVal.target.value }))
+
+  const handleConfirm = () => {
+    addMaintenance(carId, { ...form, cost: form.cost ? parseFloat(form.cost) : null, mileage: form.mileage || null })
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+      <div className="bg-surface border border-border rounded-2xl w-full max-w-md shadow-2xl flex flex-col max-h-[90vh]">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
+          <div>
+            <h2 className="text-base font-semibold text-white">Log to Maintenance</h2>
+            <p className="text-xs text-gray-500 mt-0.5">Creates a maintenance record for this mod</p>
+          </div>
+          <button onClick={onClose} className="btn-ghost"><X size={18} /></button>
+        </div>
+
+        <div className="overflow-y-auto px-5 py-4 space-y-3">
+          <div>
+            <label className="label">Service</label>
+            <input className="input" value={form.service} onChange={set('service')} placeholder="e.g. Oil Filter Replacement" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Date</label>
+              <DateInput value={form.date} onChange={set('date')} />
+            </div>
+            <div>
+              <label className="label">Mileage</label>
+              <input className="input" type="number" placeholder="45000" value={form.mileage} onChange={set('mileage')} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Cost ($)</label>
+              <input className="input" type="number" step="0.01" value={form.cost} onChange={set('cost')} />
+            </div>
+            <div>
+              <label className="label">Shop / Installer</label>
+              <input className="input" value={form.shop} onChange={set('shop')} placeholder="Self / Shop name" />
+            </div>
+          </div>
+          <div>
+            <label className="label">Notes</label>
+            <textarea className="input resize-none" rows={2} value={form.notes} onChange={set('notes')} />
+          </div>
+          <div className="border-t border-border pt-3">
+            <p className="text-xs text-gray-500 mb-2">Next service due (optional)</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">Next Due Date</label>
+                <DateInput value={form.nextDueDate} onChange={set('nextDueDate')} />
+              </div>
+              <div>
+                <label className="label">Next Due Mileage</label>
+                <input className="input" type="number" placeholder="50000" value={form.nextDueMileage} onChange={set('nextDueMileage')} />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-3 px-5 py-4 border-t border-border shrink-0">
+          <button onClick={onClose} className="btn-outline flex-1 justify-center">Cancel</button>
+          <button onClick={handleConfirm} className="btn-primary flex-1 justify-center">
+            <ClipboardList size={14} /> Add to Maintenance
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export default function ModsTab({ car }) {
   const addMod    = useGarageStore((s) => s.addMod)
   const updateMod = useGarageStore((s) => s.updateMod)
   const deleteMod = useGarageStore((s) => s.deleteMod)
-  const [showForm, setShowForm] = useState(false)
-  const [form, setForm]         = useState(emptyForm)
-  const [editId, setEditId]     = useState(null)
-  const [editForm, setEditForm] = useState({})
+  const [showForm, setShowForm]   = useState(false)
+  const [form, setForm]           = useState(emptyForm)
+  const [editId, setEditId]       = useState(null)
+  const [editForm, setEditForm]   = useState({})
+  const [logMod, setLogMod]       = useState(null)
 
-  // Accepts either a plain value (from DateInput) or a change event (from regular inputs)
   const set     = (k) => (eOrVal) => setForm((f)     => ({ ...f, [k]: typeof eOrVal === 'string' ? eOrVal : eOrVal.target.value }))
   const setEdit = (k) => (eOrVal) => setEditForm((f) => ({ ...f, [k]: typeof eOrVal === 'string' ? eOrVal : eOrVal.target.value }))
 
@@ -35,13 +124,19 @@ export default function ModsTab({ car }) {
   }
 
   const totalCost = car.mods.reduce((s, m) => s + (m.cost || 0), 0)
-
-  const grouped = car.mods.reduce((acc, mod) => {
+  const grouped   = car.mods.reduce((acc, mod) => {
     const key = mod.category || 'Other'
     if (!acc[key]) acc[key] = []
     acc[key].push(mod)
     return acc
   }, {})
+
+  const LinkField = ({ value, onChange }) => (
+    <div>
+      <label className="label">Link (optional)</label>
+      <input className="input" type="url" placeholder="https://…" value={value} onChange={onChange} />
+    </div>
+  )
 
   return (
     <div>
@@ -75,6 +170,7 @@ export default function ModsTab({ car }) {
             <label className="label">Description</label>
             <textarea className="input resize-none" rows={2} value={form.description} onChange={set('description')} placeholder="Details about the mod…" />
           </div>
+          <LinkField value={form.link} onChange={set('link')} />
           <div className="grid sm:grid-cols-3 gap-3">
             <div>
               <label className="label">Cost ($)</label>
@@ -119,14 +215,15 @@ export default function ModsTab({ car }) {
                         </select>
                       </div>
                     </div>
-                    <div><label className="label">Description</label><textarea className="input resize-none" rows={2} value={editForm.description} onChange={setEdit('description')} /></div>
+                    <div><label className="label">Description</label><textarea className="input resize-none" rows={2} value={editForm.description || ''} onChange={setEdit('description')} /></div>
+                    <LinkField value={editForm.link || ''} onChange={setEdit('link')} />
                     <div className="grid sm:grid-cols-3 gap-3">
-                      <div><label className="label">Cost ($)</label><input className="input" type="number" step="0.01" value={editForm.cost} onChange={setEdit('cost')} /></div>
+                      <div><label className="label">Cost ($)</label><input className="input" type="number" step="0.01" value={editForm.cost || ''} onChange={setEdit('cost')} /></div>
                       <div>
                         <label className="label">Date Installed</label>
-                        <DateInput value={editForm.installedDate} onChange={setEdit('installedDate')} />
+                        <DateInput value={editForm.installedDate || ''} onChange={setEdit('installedDate')} />
                       </div>
-                      <div><label className="label">Shop</label><input className="input" value={editForm.shop} onChange={setEdit('shop')} /></div>
+                      <div><label className="label">Shop</label><input className="input" value={editForm.shop || ''} onChange={setEdit('shop')} /></div>
                     </div>
                     <div className="flex gap-2">
                       <button onClick={() => setEditId(null)} className="btn-ghost"><X size={14} /> Cancel</button>
@@ -141,9 +238,22 @@ export default function ModsTab({ car }) {
                         {mod.cost && <span className="text-xs text-accent font-semibold">${Number(mod.cost).toFixed(2)}</span>}
                       </div>
                       {mod.description && <p className="text-xs text-gray-400 mt-1">{mod.description}</p>}
-                      <div className="flex gap-3 mt-1 text-xs text-gray-600 flex-wrap">
+                      <div className="flex gap-3 mt-1.5 text-xs text-gray-600 flex-wrap items-center">
                         {mod.installedDate && <span>{new Date(mod.installedDate + 'T12:00:00').toLocaleDateString()}</span>}
                         {mod.shop && <span>by {mod.shop}</span>}
+                        {mod.link && (
+                          <a href={mod.link} target="_blank" rel="noreferrer"
+                            className="flex items-center gap-1 text-blue-400 hover:text-blue-300 transition-colors">
+                            <ExternalLink size={11} /> View Link
+                          </a>
+                        )}
+                        <button
+                          onClick={() => setLogMod(mod)}
+                          className="flex items-center gap-1 text-accent hover:text-accent-dim font-medium transition-colors ml-auto"
+                          title="Log to Maintenance"
+                        >
+                          <ClipboardList size={11} /> Log to Maintenance
+                        </button>
                       </div>
                     </div>
                     <div className="flex gap-1 shrink-0">
@@ -156,6 +266,14 @@ export default function ModsTab({ car }) {
             </div>
           ))}
         </div>
+      )}
+
+      {logMod && (
+        <LogToMaintenanceModal
+          mod={logMod}
+          carId={car.id}
+          onClose={() => setLogMod(null)}
+        />
       )}
     </div>
   )

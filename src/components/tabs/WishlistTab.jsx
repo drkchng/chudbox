@@ -23,7 +23,8 @@ function MoveToModsModal({ item, carId, onClose }) {
     category:      item.category    || '',
     description:   item.notes       || '',
     cost:          item.price != null ? String(item.price) : '',
-    installedDate: '',
+    link:          item.link        || '',
+    installedDate: new Date().toISOString().slice(0, 10),
     shop:          '',
   })
   const [removeFromWishlist, setRemoveFromWishlist] = useState(true)
@@ -64,6 +65,10 @@ function MoveToModsModal({ item, carId, onClose }) {
           <div>
             <label className="label">Description</label>
             <textarea className="input resize-none" rows={2} value={mod.description} onChange={set('description')} />
+          </div>
+          <div>
+            <label className="label">Link</label>
+            <input className="input" type="url" placeholder="https://…" value={mod.link} onChange={set('link')} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
