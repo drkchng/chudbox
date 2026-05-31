@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Plus, Trash2, ClipboardList, Pencil, Check, X, Calendar } from 'lucide-react'
 import useGarageStore from '../../store/useGarageStore'
+import DateInput from '../DateInput'
 
 const SERVICES = ['Oil Change', 'Tire Rotation', 'Brake Pads', 'Brake Fluid', 'Coolant Flush', 'Transmission Fluid', 'Spark Plugs', 'Air Filter', 'Cabin Filter', 'Belt / Chain', 'Battery', 'Alignment', 'Tires', 'Inspection', 'Other']
 
@@ -11,12 +12,13 @@ export default function MaintenanceTab({ car }) {
   const updateMaintenance = useGarageStore((s) => s.updateMaintenance)
   const deleteMaintenance = useGarageStore((s) => s.deleteMaintenance)
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState(emptyForm)
-  const [editId, setEditId] = useState(null)
+  const [form, setForm]         = useState(emptyForm)
+  const [editId, setEditId]     = useState(null)
   const [editForm, setEditForm] = useState({})
 
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
-  const setEdit = (k) => (e) => setEditForm((f) => ({ ...f, [k]: e.target.value }))
+  // Accepts either a plain value (from DateInput) or a change event (from regular inputs)
+  const set     = (k) => (eOrVal) => setForm((f)     => ({ ...f, [k]: typeof eOrVal === 'string' ? eOrVal : eOrVal.target.value }))
+  const setEdit = (k) => (eOrVal) => setEditForm((f) => ({ ...f, [k]: typeof eOrVal === 'string' ? eOrVal : eOrVal.target.value }))
 
   const handleAdd = (e) => {
     e.preventDefault()
@@ -27,18 +29,14 @@ export default function MaintenanceTab({ car }) {
   }
 
   const startEdit = (rec) => { setEditId(rec.id); setEditForm({ ...rec }) }
-  const saveEdit = () => {
+  const saveEdit  = () => {
     updateMaintenance(car.id, editId, { ...editForm, cost: editForm.cost ? parseFloat(editForm.cost) : null })
     setEditId(null)
   }
 
-  const sorted = [...car.maintenance].sort((a, b) => new Date(b.date) - new Date(a.date))
+  const sorted    = [...car.maintenance].sort((a, b) => new Date(b.date) - new Date(a.date))
   const totalCost = car.maintenance.reduce((s, r) => s + (r.cost || 0), 0)
-
-  const isOverdue = (rec) => {
-    if (rec.nextDueDate && new Date(rec.nextDueDate) < new Date()) return true
-    return false
-  }
+  const isOverdue = (rec) => rec.nextDueDate && new Date(rec.nextDueDate) < new Date()
 
   const FormFields = ({ vals, onChange }) => (
     <>
@@ -50,17 +48,20 @@ export default function MaintenanceTab({ car }) {
         </div>
         <div>
           <label className="label">Date</label>
-          <input className="input" type="date" value={vals.date} onChange={onChange('date')} />
+          <DateInput value={vals.date} onChange={onChange('date')} />
         </div>
       </div>
       <div className="grid sm:grid-cols-3 gap-3">
         <div><label className="label">Mileage</label><input className="input" type="number" placeholder="45000" value={vals.mileage} onChange={onChange('mileage')} /></div>
-        <div><label className="label">Cost</label><input className="input" type="number" step="0.01" placeholder="0.00" value={vals.cost} onChange={onChange('cost')} /></div>
+        <div><label className="label">Cost ($)</label><input className="input" type="number" step="0.01" placeholder="0.00" value={vals.cost} onChange={onChange('cost')} /></div>
         <div><label className="label">Shop</label><input className="input" placeholder="Self / Shop name" value={vals.shop} onChange={onChange('shop')} /></div>
       </div>
       <div><label className="label">Notes</label><textarea className="input resize-none" rows={2} value={vals.notes} onChange={onChange('notes')} /></div>
       <div className="grid sm:grid-cols-2 gap-3">
-        <div><label className="label">Next Due Date</label><input className="input" type="date" value={vals.nextDueDate} onChange={onChange('nextDueDate')} /></div>
+        <div>
+          <label className="label">Next Due Date</label>
+          <DateInput value={vals.nextDueDate} onChange={onChange('nextDueDate')} />
+        </div>
         <div><label className="label">Next Due Mileage</label><input className="input" type="number" placeholder="50000" value={vals.nextDueMileage} onChange={onChange('nextDueMileage')} /></div>
       </div>
     </>
@@ -114,13 +115,16 @@ export default function MaintenanceTab({ car }) {
                 </div>
                 {rec.notes && <p className="text-xs text-gray-400 mt-1">{rec.notes}</p>}
                 <div className="flex gap-3 mt-1.5 text-xs text-gray-500 flex-wrap">
-                  {rec.date && <span className="flex items-center gap-1"><Calendar size={10} />{new Date(rec.date).toLocaleDateString()}</span>}
+                  {rec.date && <span className="flex items-center gap-1"><Calendar size={10} />{new Date(rec.date + 'T12:00:00').toLocaleDateString()}</span>}
                   {rec.mileage && <span>{Number(rec.mileage).toLocaleString()} mi</span>}
                   {rec.shop && <span>at {rec.shop}</span>}
                 </div>
                 {(rec.nextDueDate || rec.nextDueMileage) && (
                   <p className="text-xs text-gray-600 mt-1">
-                    Next: {rec.nextDueDate ? new Date(rec.nextDueDate).toLocaleDateString() : ''}{rec.nextDueDate && rec.nextDueMileage ? ' / ' : ''}{rec.nextDueMileage ? `${Number(rec.nextDueMileage).toLocaleString()} mi` : ''}
+                    Next:{' '}
+                    {rec.nextDueDate ? new Date(rec.nextDueDate + 'T12:00:00').toLocaleDateString() : ''}
+                    {rec.nextDueDate && rec.nextDueMileage ? ' / ' : ''}
+                    {rec.nextDueMileage ? `${Number(rec.nextDueMileage).toLocaleString()} mi` : ''}
                   </p>
                 )}
               </div>

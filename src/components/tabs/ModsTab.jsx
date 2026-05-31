@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Plus, Trash2, Wrench, Pencil, Check, X } from 'lucide-react'
 import useGarageStore from '../../store/useGarageStore'
+import DateInput from '../DateInput'
 
 const CATEGORIES = ['Engine', 'Exhaust', 'Intake', 'Suspension', 'Brakes', 'Wheels / Tires', 'Exterior', 'Interior', 'Audio', 'Lighting', 'Tuning', 'Other']
 
@@ -11,12 +12,13 @@ export default function ModsTab({ car }) {
   const updateMod = useGarageStore((s) => s.updateMod)
   const deleteMod = useGarageStore((s) => s.deleteMod)
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState(emptyForm)
-  const [editId, setEditId] = useState(null)
+  const [form, setForm]         = useState(emptyForm)
+  const [editId, setEditId]     = useState(null)
   const [editForm, setEditForm] = useState({})
 
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
-  const setEdit = (k) => (e) => setEditForm((f) => ({ ...f, [k]: e.target.value }))
+  // Accepts either a plain value (from DateInput) or a change event (from regular inputs)
+  const set     = (k) => (eOrVal) => setForm((f)     => ({ ...f, [k]: typeof eOrVal === 'string' ? eOrVal : eOrVal.target.value }))
+  const setEdit = (k) => (eOrVal) => setEditForm((f) => ({ ...f, [k]: typeof eOrVal === 'string' ? eOrVal : eOrVal.target.value }))
 
   const handleAdd = (e) => {
     e.preventDefault()
@@ -26,19 +28,14 @@ export default function ModsTab({ car }) {
     setShowForm(false)
   }
 
-  const startEdit = (mod) => {
-    setEditId(mod.id)
-    setEditForm({ ...mod })
-  }
-
-  const saveEdit = () => {
+  const startEdit = (mod) => { setEditId(mod.id); setEditForm({ ...mod }) }
+  const saveEdit  = () => {
     updateMod(car.id, editId, { ...editForm, cost: editForm.cost ? parseFloat(editForm.cost) : null })
     setEditId(null)
   }
 
   const totalCost = car.mods.reduce((s, m) => s + (m.cost || 0), 0)
 
-  // Group by category
   const grouped = car.mods.reduce((acc, mod) => {
     const key = mod.category || 'Other'
     if (!acc[key]) acc[key] = []
@@ -80,12 +77,12 @@ export default function ModsTab({ car }) {
           </div>
           <div className="grid sm:grid-cols-3 gap-3">
             <div>
-              <label className="label">Cost</label>
+              <label className="label">Cost ($)</label>
               <input className="input" type="number" step="0.01" placeholder="0.00" value={form.cost} onChange={set('cost')} />
             </div>
             <div>
               <label className="label">Date Installed</label>
-              <input className="input" type="date" value={form.installedDate} onChange={set('installedDate')} />
+              <DateInput value={form.installedDate} onChange={set('installedDate')} />
             </div>
             <div>
               <label className="label">Shop / Installer</label>
@@ -114,7 +111,8 @@ export default function ModsTab({ car }) {
                   <div key={mod.id} className="card border-accent/30 space-y-3">
                     <div className="grid sm:grid-cols-2 gap-3">
                       <div><label className="label">Name</label><input className="input" value={editForm.name} onChange={setEdit('name')} /></div>
-                      <div><label className="label">Category</label>
+                      <div>
+                        <label className="label">Category</label>
                         <select className="input" value={editForm.category} onChange={setEdit('category')}>
                           <option value="">Select…</option>
                           {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
@@ -123,8 +121,11 @@ export default function ModsTab({ car }) {
                     </div>
                     <div><label className="label">Description</label><textarea className="input resize-none" rows={2} value={editForm.description} onChange={setEdit('description')} /></div>
                     <div className="grid sm:grid-cols-3 gap-3">
-                      <div><label className="label">Cost</label><input className="input" type="number" step="0.01" value={editForm.cost} onChange={setEdit('cost')} /></div>
-                      <div><label className="label">Date</label><input className="input" type="date" value={editForm.installedDate} onChange={setEdit('installedDate')} /></div>
+                      <div><label className="label">Cost ($)</label><input className="input" type="number" step="0.01" value={editForm.cost} onChange={setEdit('cost')} /></div>
+                      <div>
+                        <label className="label">Date Installed</label>
+                        <DateInput value={editForm.installedDate} onChange={setEdit('installedDate')} />
+                      </div>
                       <div><label className="label">Shop</label><input className="input" value={editForm.shop} onChange={setEdit('shop')} /></div>
                     </div>
                     <div className="flex gap-2">
@@ -141,7 +142,7 @@ export default function ModsTab({ car }) {
                       </div>
                       {mod.description && <p className="text-xs text-gray-400 mt-1">{mod.description}</p>}
                       <div className="flex gap-3 mt-1 text-xs text-gray-600 flex-wrap">
-                        {mod.installedDate && <span>{new Date(mod.installedDate).toLocaleDateString()}</span>}
+                        {mod.installedDate && <span>{new Date(mod.installedDate + 'T12:00:00').toLocaleDateString()}</span>}
                         {mod.shop && <span>by {mod.shop}</span>}
                       </div>
                     </div>
