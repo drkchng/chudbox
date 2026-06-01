@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Car, Pencil, Trash2, Camera, ShoppingCart, Wrench, ClipboardList, CheckSquare, AlertTriangle, Palette } from 'lucide-react'
+import { ArrowLeft, Car, Pencil, Trash2, Camera, ShoppingCart, Wrench, ClipboardList, CheckSquare, AlertTriangle, Palette, FileDown } from 'lucide-react'
 import useGarageStore from '../store/useGarageStore'
 import { getCarStatus, STATUS_CONFIG } from '../utils/carStatus'
+import { downloadMarkdown } from '../utils/exportMarkdown'
 import PhotosTab from '../components/tabs/PhotosTab'
 import WishlistTab from '../components/tabs/WishlistTab'
 import ModsTab from '../components/tabs/ModsTab'
@@ -77,6 +78,9 @@ export default function CarProfile() {
 
         {/* Actions */}
         <div className="absolute top-4 right-4 flex gap-2">
+          <button onClick={() => downloadMarkdown(car)} className="btn-outline bg-dark/60 backdrop-blur-sm border-white/10 text-white hover:text-accent" title="Export to Markdown">
+            <FileDown size={14} />
+          </button>
           <button onClick={() => setShowTheme(true)} className="btn-outline bg-dark/60 backdrop-blur-sm border-white/10 text-white hover:text-accent" title="Change theme">
             <Palette size={14} />
           </button>
