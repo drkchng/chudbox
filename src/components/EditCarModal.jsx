@@ -71,6 +71,7 @@ export default function EditCarModal({ car, onClose }) {
                   <option value="current">Current</option>
                   <option value="for-sale">For Sale</option>
                   <option value="for-trade">For Trade</option>
+                  <option value="totaled">Totaled</option>
                 </select>
               )}
             </div>
