@@ -78,31 +78,31 @@ export default function CarProfile() {
         {/* Back button */}
         <button
           onClick={() => navigate('/')}
-          className="absolute top-4 left-4 btn-outline bg-dark/60 backdrop-blur-sm border-white/10 text-white hover:text-accent"
+          className="absolute top-4 left-4 btn-outline bg-dark/90 border-white/10 text-white hover:text-accent"
         >
           <ArrowLeft size={14} /> Garage
         </button>
 
         {/* Actions */}
         <div className="absolute top-4 right-4 flex gap-2">
-          <button onClick={() => downloadMarkdown(car)} className="btn-outline bg-dark/60 backdrop-blur-sm border-white/10 text-white hover:text-accent" title="Export to Markdown">
+          <button onClick={() => downloadMarkdown(car)} className="btn-outline bg-dark/90 border-white/10 text-white hover:text-accent" title="Export to Markdown">
             <FileDown size={14} />
           </button>
-          <button onClick={() => setShowSettings(true)} className="btn-outline bg-dark/60 backdrop-blur-sm border-white/10 text-white hover:text-accent" title="Settings">
+          <button onClick={() => setShowSettings(true)} className="btn-outline bg-dark/90 border-white/10 text-white hover:text-accent" title="Settings">
             <Settings size={14} />
           </button>
           {status === 'for-sale' && (
             <button
               onClick={() => setShowSell(true)}
-              className="btn-outline bg-dark/60 backdrop-blur-sm border-green-700/50 text-green-400 hover:text-green-300 hover:border-green-500/60"
+              className="btn-outline bg-dark/90 border-green-700/50 text-green-400 hover:text-green-300 hover:border-green-500/60"
             >
               <DollarSign size={14} /> Sold
             </button>
           )}
-          <button onClick={() => setEditing(true)} className="btn-outline bg-dark/60 backdrop-blur-sm border-white/10 text-white hover:text-accent">
+          <button onClick={() => setEditing(true)} className="btn-outline bg-dark/90 border-white/10 text-white hover:text-accent">
             <Pencil size={14} /> Edit
           </button>
-          <button onClick={() => setConfirmDelete(true)} className="btn-outline bg-dark/60 backdrop-blur-sm border-red-900/40 text-red-400 hover:text-red-300 hover:border-red-500/50">
+          <button onClick={() => setConfirmDelete(true)} className="btn-outline bg-dark/90 border-red-900/40 text-red-400 hover:text-red-300 hover:border-red-500/50">
             <Trash2 size={14} />
           </button>
         </div>

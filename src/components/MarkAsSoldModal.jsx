@@ -16,7 +16,7 @@ export default function MarkAsSoldModal({ car, onClose }) {
   }
 
   return (
-    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80">
       <div className="modal-content bg-surface border border-border rounded-2xl w-full max-w-sm shadow-2xl p-6 space-y-5">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-white">Mark as sold</h3>

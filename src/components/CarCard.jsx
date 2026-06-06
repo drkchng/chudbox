@@ -61,7 +61,7 @@ export default function CarCard({ car }) {
                 {status === 'for-sale' && car.salePrice ? ` · ${sym}${Number(car.salePrice).toLocaleString()}` : ''}
               </span>
               {openIssues > 0 && (
-                <span className="badge bg-red-900/80 text-red-300 border border-red-700/40 backdrop-blur-sm gap-1">
+                <span className="badge bg-red-900/80 text-red-300 border border-red-700/40 gap-1">
                   <AlertTriangle size={10} /> {openIssues}
                 </span>
               )}
@@ -78,7 +78,7 @@ export default function CarCard({ car }) {
                 {status === 'for-sale' && car.salePrice ? ` · ${sym}${Number(car.salePrice).toLocaleString()}` : ''}
               </span>
               {openIssues > 0 && (
-                <span className="badge bg-red-900/80 text-red-300 border border-red-700/40 backdrop-blur-sm gap-1">
+                <span className="badge bg-red-900/80 text-red-300 border border-red-700/40 gap-1">
                   <AlertTriangle size={10} /> {openIssues}
                 </span>
               )}

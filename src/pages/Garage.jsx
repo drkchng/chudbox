@@ -75,7 +75,7 @@ export default function Garage() {
   return (
     <div className="min-h-screen bg-dark">
       {/* Header */}
-      <header className="border-b border-border bg-surface/80 backdrop-blur-md sticky top-0 z-10">
+      <header className="border-b border-border bg-surface sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-accent/15 border border-accent/30 flex items-center justify-center">
@@ -153,7 +153,7 @@ export default function Garage() {
 
       {/* Import confirmation modal */}
       {showConfirm && (
-        <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+        <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80">
           <div className="modal-content bg-surface border border-border rounded-2xl w-full max-w-sm shadow-2xl p-6 space-y-4">
             <div className="flex items-start gap-3">
               <AlertTriangle size={20} className="text-yellow-400 mt-0.5 shrink-0" />

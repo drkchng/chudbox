@@ -17,7 +17,7 @@ export default function SettingsPanel({ onClose }) {
 
   return (
     <>
-      <div className="modal-backdrop fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="modal-backdrop fixed inset-0 z-40 bg-black/70" onClick={onClose} />
       <div className="slide-panel fixed right-0 top-0 bottom-0 z-50 w-80 bg-surface border-l border-border shadow-2xl flex flex-col">
         <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
           <h2 className="font-semibold text-white">Settings</h2>
