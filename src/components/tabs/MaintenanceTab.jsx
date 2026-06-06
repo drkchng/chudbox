@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Plus, Trash2, ClipboardList, Pencil, Check, X, Calendar } from 'lucide-react'
 import useGarageStore from '../../store/useGarageStore'
+import { CURRENCIES, DISTANCE_UNITS } from '../../utils/units'
 import DateInput from '../DateInput'
 import ConfirmModal from '../ConfirmModal'
 
@@ -9,7 +10,7 @@ const SERVICES = ['Oil Change', 'Tire Rotation', 'Brake Pads', 'Brake Fluid', 'C
 const emptyForm = { service: '', date: '', mileage: '', cost: '', shop: '', notes: '', nextDueDate: '', nextDueMileage: '' }
 
 // Defined outside MaintenanceTab so React never unmounts/remounts it on re-render
-function FormFields({ vals, onChange }) {
+function FormFields({ vals, onChange, sym = '$', distShort = 'mi' }) {
   return (
     <>
       <div className="grid sm:grid-cols-2 gap-3">
@@ -24,8 +25,8 @@ function FormFields({ vals, onChange }) {
         </div>
       </div>
       <div className="grid sm:grid-cols-3 gap-3">
-        <div><label className="label">Mileage</label><input className="input" type="number" placeholder="45000" value={vals.mileage} onChange={onChange('mileage')} /></div>
-        <div><label className="label">Cost ($)</label><input className="input" type="number" step="0.01" placeholder="0.00" value={vals.cost} onChange={onChange('cost')} /></div>
+        <div><label className="label">Mileage ({distShort})</label><input className="input" type="number" placeholder="45000" value={vals.mileage} onChange={onChange('mileage')} /></div>
+        <div><label className="label">Cost ({sym})</label><input className="input" type="number" step="0.01" placeholder="0.00" value={vals.cost} onChange={onChange('cost')} /></div>
         <div><label className="label">Shop</label><input className="input" placeholder="Self / Shop name" value={vals.shop} onChange={onChange('shop')} /></div>
       </div>
       <div><label className="label">Notes</label><textarea className="input resize-none" rows={2} value={vals.notes} onChange={onChange('notes')} /></div>
@@ -44,6 +45,10 @@ export default function MaintenanceTab({ car }) {
   const addMaintenance    = useGarageStore((s) => s.addMaintenance)
   const updateMaintenance = useGarageStore((s) => s.updateMaintenance)
   const deleteMaintenance = useGarageStore((s) => s.deleteMaintenance)
+  const currency     = useGarageStore((s) => s.currency)
+  const distanceUnit = useGarageStore((s) => s.distanceUnit)
+  const sym       = CURRENCIES[currency]?.symbol ?? '$'
+  const distShort = DISTANCE_UNITS[distanceUnit]?.short ?? 'mi'
   const [showForm, setShowForm]   = useState(false)
   const [form, setForm]           = useState(emptyForm)
   const [editId, setEditId]       = useState(null)
@@ -78,7 +83,7 @@ export default function MaintenanceTab({ car }) {
         <div>
           <h3 className="text-white font-semibold">Maintenance Log</h3>
           {car.maintenance.length > 0 && (
-            <p className="text-xs text-gray-500 mt-0.5">{car.maintenance.length} records · Total spent: ${totalCost.toFixed(2)}</p>
+            <p className="text-xs text-gray-500 mt-0.5">{car.maintenance.length} records · Total spent: {sym}{totalCost.toFixed(2)}</p>
           )}
         </div>
         <button onClick={() => setShowForm((v) => !v)} className="btn-primary"><Plus size={14} /> Log Service</button>
@@ -87,7 +92,7 @@ export default function MaintenanceTab({ car }) {
       {showForm && (
         <form onSubmit={handleAdd} className="card mb-5 space-y-3 border-accent/30">
           <h4 className="text-sm font-semibold text-white">New Service Record</h4>
-          <FormFields vals={form} onChange={set} />
+          <FormFields vals={form} onChange={set} sym={sym} distShort={distShort} />
           <div className="flex gap-2">
             <button type="button" onClick={() => setShowForm(false)} className="btn-outline">Cancel</button>
             <button type="submit" className="btn-primary">Save Record</button>
@@ -104,7 +109,7 @@ export default function MaintenanceTab({ car }) {
         <div className="space-y-3">
           {sorted.map((rec) => editId === rec.id ? (
             <div key={rec.id} className="card border-accent/30 space-y-3">
-              <FormFields vals={editForm} onChange={setEdit} />
+              <FormFields vals={editForm} onChange={setEdit} sym={sym} distShort={distShort} />
               <div className="flex gap-2">
                 <button onClick={() => setEditId(null)} className="btn-ghost"><X size={14} /> Cancel</button>
                 <button onClick={saveEdit} className="btn-primary"><Check size={14} /> Save</button>
@@ -115,13 +120,13 @@ export default function MaintenanceTab({ car }) {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-medium text-white">{rec.service}</span>
-                  {rec.cost && <span className="text-xs text-accent font-semibold">${Number(rec.cost).toFixed(2)}</span>}
+                  {rec.cost && <span className="text-xs text-accent font-semibold">{sym}{Number(rec.cost).toFixed(2)}</span>}
                   {isOverdue(rec) && <span className="badge bg-red-900/50 text-red-300 border border-red-700/40">Overdue</span>}
                 </div>
                 {rec.notes && <p className="text-xs text-gray-400 mt-1">{rec.notes}</p>}
                 <div className="flex gap-3 mt-1.5 text-xs text-gray-500 flex-wrap">
                   {rec.date && <span className="flex items-center gap-1"><Calendar size={10} />{new Date(rec.date + 'T12:00:00').toLocaleDateString()}</span>}
-                  {rec.mileage && <span>{Number(rec.mileage).toLocaleString()} mi</span>}
+                  {rec.mileage && <span>{Number(rec.mileage).toLocaleString()} {distShort}</span>}
                   {rec.shop && <span>at {rec.shop}</span>}
                 </div>
                 {(rec.nextDueDate || rec.nextDueMileage) && (
@@ -129,7 +134,7 @@ export default function MaintenanceTab({ car }) {
                     Next:{' '}
                     {rec.nextDueDate ? new Date(rec.nextDueDate + 'T12:00:00').toLocaleDateString() : ''}
                     {rec.nextDueDate && rec.nextDueMileage ? ' / ' : ''}
-                    {rec.nextDueMileage ? `${Number(rec.nextDueMileage).toLocaleString()} mi` : ''}
+                    {rec.nextDueMileage ? `${Number(rec.nextDueMileage).toLocaleString()} ${distShort}` : ''}
                   </p>
                 )}
               </div>

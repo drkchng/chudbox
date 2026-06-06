@@ -28,18 +28,128 @@
 }
 
 @layer components {
-  .card { @apply bg-surface border border-border rounded-xl p-5 transition-all duration-200; }
-  .btn-primary { @apply inline-flex items-center gap-2 bg-accent text-white font-semibold px-4 py-2 rounded-lg transition-all duration-150 hover:bg-accent-dim active:scale-95 text-sm; }
-  .btn-outline { @apply inline-flex items-center gap-2 border border-border text-gray-300 font-medium px-4 py-2 rounded-lg transition-all duration-150 hover:border-accent/50 hover:text-accent active:scale-95 text-sm; }
-  .btn-ghost { @apply inline-flex items-center gap-2 text-gray-500 hover:text-gray-200 px-2 py-1 rounded transition-colors text-sm; }
-  .input { @apply w-full bg-surface-2 border border-border rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-accent/60 transition-colors; }
-  .label { @apply block text-xs text-gray-500 mb-1 font-medium uppercase tracking-wide; }
-  .tab-btn { @apply px-4 py-2 text-sm font-medium rounded-lg transition-colors whitespace-nowrap; }
+  /* Card — only animate what changes */
+  .card {
+    @apply bg-surface border border-border rounded-xl p-5;
+    transition: border-color 200ms ease-out, box-shadow 200ms ease-out;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .card:hover {
+      border-color: rgb(var(--accent) / 0.3);
+      box-shadow: 0 24px 40px -8px rgb(0 0 0 / 0.45);
+    }
+  }
+
+  /* Buttons */
+  .btn-primary {
+    @apply inline-flex items-center gap-2 bg-accent text-white font-semibold px-4 py-2 rounded-lg text-sm;
+    transition: background-color 150ms ease-out, box-shadow 150ms ease-out, transform 80ms ease-out;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .btn-primary:hover {
+      background-color: rgb(var(--accent-dim));
+      box-shadow: 0 4px 6px -1px rgb(var(--accent) / 0.3);
+    }
+  }
+  .btn-primary:active { transform: scale(0.97); }
+
+  .btn-outline {
+    @apply inline-flex items-center gap-2 border border-border text-gray-300 font-medium px-4 py-2 rounded-lg text-sm;
+    transition: border-color 150ms ease-out, color 150ms ease-out, transform 80ms ease-out;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .btn-outline:hover {
+      border-color: rgb(var(--accent) / 0.5);
+      color: rgb(var(--accent));
+    }
+  }
+  .btn-outline:active { transform: scale(0.97); }
+
+  .btn-ghost {
+    @apply inline-flex items-center gap-2 text-gray-500 px-2 py-1 rounded text-sm;
+    transition: color 150ms ease-out;
+  }
+  .btn-ghost:hover { color: #e5e5e5; }
+
+  .input {
+    @apply w-full bg-surface-2 border border-border rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-accent/40 focus:border-accent/60;
+    transition: border-color 150ms ease-out;
+  }
+
+  .label { @apply block text-xs text-gray-400 mb-1.5 font-medium; }
+  .badge { @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium; }
+
+  .btn-danger {
+    @apply inline-flex items-center gap-2 bg-red-600 text-white font-semibold px-4 py-2 rounded-lg text-sm;
+    transition: background-color 150ms ease-out, transform 80ms ease-out;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .btn-danger:hover { background-color: #dc2626; }
+  }
+  .btn-danger:active { transform: scale(0.97); }
+
+  .tab-btn {
+    @apply px-4 py-2 text-sm font-medium rounded-lg whitespace-nowrap;
+    transition: color 150ms ease-out, background-color 150ms ease-out;
+  }
   .tab-active { @apply bg-accent/10 text-accent; }
   .tab-inactive { @apply text-gray-400 hover:text-gray-200 hover:bg-surface-2; }
+}
+
+/* Modal & panel animations */
+@keyframes backdropIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+
+.modal-backdrop {
+  animation: backdropIn 200ms ease-out;
+}
+
+.modal-content {
+  animation: modalIn 220ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.slide-panel {
+  animation: slideInRight 280ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* Grain noise overlay */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 200px 200px;
 }
 
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: #1a1a1a; }
 ::-webkit-scrollbar-thumb { background: #2d2d2d; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #3d3d3d; }
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

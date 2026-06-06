@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Plus, Trash2, Wrench, Pencil, Check, X, ExternalLink, ClipboardList } from 'lucide-react'
 import useGarageStore from '../../store/useGarageStore'
+import { CURRENCIES } from '../../utils/units'
 import DateInput from '../DateInput'
 import ConfirmModal from '../ConfirmModal'
 import { CATEGORIES } from '../../utils/categories'
@@ -12,6 +13,8 @@ const today = () => new Date().toISOString().slice(0, 10)
 // Defined outside ModsTab so React never unmounts it on re-render
 function LogToMaintenanceModal({ mod, carId, onClose }) {
   const addMaintenance = useGarageStore((s) => s.addMaintenance)
+  const currency = useGarageStore((s) => s.currency)
+  const sym      = CURRENCIES[currency]?.symbol ?? '$'
   const [form, setForm] = useState({
     service:        mod.name        || '',
     date:           today(),
@@ -31,8 +34,8 @@ function LogToMaintenanceModal({ mod, carId, onClose }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-      <div className="bg-surface border border-border rounded-2xl w-full max-w-md shadow-2xl flex flex-col max-h-[90vh]">
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+      <div className="modal-content bg-surface border border-border rounded-2xl w-full max-w-md shadow-2xl flex flex-col max-h-[90vh]">
         <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
           <div>
             <h2 className="text-base font-semibold text-white">Log to Maintenance</h2>
@@ -58,7 +61,7 @@ function LogToMaintenanceModal({ mod, carId, onClose }) {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="label">Cost ($)</label>
+              <label className="label">Cost ({sym})</label>
               <input className="input" type="number" step="0.01" value={form.cost} onChange={set('cost')} />
             </div>
             <div>
@@ -100,6 +103,8 @@ export default function ModsTab({ car }) {
   const addMod    = useGarageStore((s) => s.addMod)
   const updateMod = useGarageStore((s) => s.updateMod)
   const deleteMod = useGarageStore((s) => s.deleteMod)
+  const currency  = useGarageStore((s) => s.currency)
+  const sym       = CURRENCIES[currency]?.symbol ?? '$'
   const [showForm, setShowForm]   = useState(false)
   const [form, setForm]           = useState(emptyForm)
   const [editId, setEditId]       = useState(null)
@@ -145,7 +150,7 @@ export default function ModsTab({ car }) {
         <div>
           <h3 className="text-white font-semibold">Modifications</h3>
           {car.mods.length > 0 && (
-            <p className="text-xs text-gray-500 mt-0.5">{car.mods.length} mods · Total invested: ${totalCost.toFixed(2)}</p>
+            <p className="text-xs text-gray-500 mt-0.5">{car.mods.length} mods · Total invested: {sym}{totalCost.toFixed(2)}</p>
           )}
         </div>
         <button onClick={() => setShowForm((v) => !v)} className="btn-primary"><Plus size={14} /> Add Mod</button>
@@ -174,7 +179,7 @@ export default function ModsTab({ car }) {
           <LinkField value={form.link} onChange={set('link')} />
           <div className="grid sm:grid-cols-3 gap-3">
             <div>
-              <label className="label">Cost ($)</label>
+              <label className="label">Cost ({sym})</label>
               <input className="input" type="number" step="0.01" placeholder="0.00" value={form.cost} onChange={set('cost')} />
             </div>
             <div>
@@ -219,7 +224,7 @@ export default function ModsTab({ car }) {
                     <div><label className="label">Description</label><textarea className="input resize-none" rows={2} value={editForm.description || ''} onChange={setEdit('description')} /></div>
                     <LinkField value={editForm.link || ''} onChange={setEdit('link')} />
                     <div className="grid sm:grid-cols-3 gap-3">
-                      <div><label className="label">Cost ($)</label><input className="input" type="number" step="0.01" value={editForm.cost || ''} onChange={setEdit('cost')} /></div>
+                      <div><label className="label">Cost ({sym})</label><input className="input" type="number" step="0.01" value={editForm.cost || ''} onChange={setEdit('cost')} /></div>
                       <div>
                         <label className="label">Date Installed</label>
                         <DateInput value={editForm.installedDate || ''} onChange={setEdit('installedDate')} />
@@ -236,7 +241,7 @@ export default function ModsTab({ car }) {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-medium text-white">{mod.name}</span>
-                        {mod.cost && <span className="text-xs text-accent font-semibold">${Number(mod.cost).toFixed(2)}</span>}
+                        {mod.cost && <span className="text-xs text-accent font-semibold">{sym}{Number(mod.cost).toFixed(2)}</span>}
                       </div>
                       {mod.description && <p className="text-xs text-gray-400 mt-1">{mod.description}</p>}
                       <div className="flex gap-3 mt-1.5 text-xs text-gray-600 flex-wrap items-center">

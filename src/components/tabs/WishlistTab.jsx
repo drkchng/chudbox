@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Plus, ExternalLink, Trash2, DollarSign, ShoppingCart, CheckCircle2, Package, Wrench, X } from 'lucide-react'
 import useGarageStore from '../../store/useGarageStore'
+import { CURRENCIES } from '../../utils/units'
 import DateInput from '../DateInput'
 import ConfirmModal from '../ConfirmModal'
 import { CATEGORIES } from '../../utils/categories'
@@ -18,6 +19,8 @@ const emptyForm = { name: '', link: '', price: '', category: '', notes: '' }
 function MoveToModsModal({ item, carId, onClose }) {
   const addMod             = useGarageStore((s) => s.addMod)
   const deleteWishlistItem = useGarageStore((s) => s.deleteWishlistItem)
+  const currency = useGarageStore((s) => s.currency)
+  const sym      = CURRENCIES[currency]?.symbol ?? '$'
 
   const [mod, setMod] = useState({
     name:          item.name        || '',
@@ -39,8 +42,8 @@ function MoveToModsModal({ item, carId, onClose }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-      <div className="bg-surface border border-border rounded-2xl w-full max-w-md shadow-2xl flex flex-col max-h-[90vh]">
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+      <div className="modal-content bg-surface border border-border rounded-2xl w-full max-w-md shadow-2xl flex flex-col max-h-[90vh]">
         <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
           <div>
             <h2 className="text-base font-semibold text-white">Move to Mods</h2>
@@ -73,7 +76,7 @@ function MoveToModsModal({ item, carId, onClose }) {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="label">Cost ($)</label>
+              <label className="label">Cost ({sym})</label>
               <input className="input" type="number" step="0.01" value={mod.cost} onChange={set('cost')} />
             </div>
             <div>
@@ -112,6 +115,8 @@ export default function WishlistTab({ car }) {
   const addWishlistItem    = useGarageStore((s) => s.addWishlistItem)
   const updateWishlistItem = useGarageStore((s) => s.updateWishlistItem)
   const deleteWishlistItem = useGarageStore((s) => s.deleteWishlistItem)
+  const currency = useGarageStore((s) => s.currency)
+  const sym      = CURRENCIES[currency]?.symbol ?? '$'
   const [showForm, setShowForm]       = useState(false)
   const [form, setForm]               = useState(emptyForm)
   const [movingItem, setMovingItem]   = useState(null)
@@ -142,7 +147,7 @@ export default function WishlistTab({ car }) {
           <h3 className="text-white font-semibold">Parts Wishlist</h3>
           {car.wishlist.length > 0 && (
             <p className="text-xs text-gray-500 mt-0.5">
-              {car.wishlist.length} items · Est. remaining: ${totalWanted.toFixed(2)}
+              {car.wishlist.length} items · Est. remaining: {sym}{totalWanted.toFixed(2)}
             </p>
           )}
         </div>
@@ -206,8 +211,8 @@ export default function WishlistTab({ car }) {
                 {item.notes && <p className="text-xs text-gray-500 mt-1">{item.notes}</p>}
                 <div className="flex items-center gap-3 mt-2 flex-wrap">
                   {item.price && (
-                    <span className="flex items-center gap-1 text-sm font-semibold text-accent">
-                      <DollarSign size={12} />{item.price.toFixed(2)}
+                    <span className="text-sm font-semibold text-accent">
+                      {sym}{item.price.toFixed(2)}
                     </span>
                   )}
                   {item.link && (

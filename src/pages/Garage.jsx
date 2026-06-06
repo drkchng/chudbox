@@ -1,9 +1,9 @@
 import { useState, useRef } from 'react'
-import { Plus, Car, Palette, Download, Upload, AlertTriangle } from 'lucide-react'
+import { Plus, Car, Download, Upload, AlertTriangle, Settings } from 'lucide-react'
 import useGarageStore from '../store/useGarageStore'
 import CarCard from '../components/CarCard'
 import AddCarModal from '../components/AddCarModal'
-import ThemePanel from '../components/ThemePanel'
+import SettingsPanel from '../components/SettingsPanel'
 
 function useBackup() {
   const state      = useGarageStore
@@ -64,8 +64,8 @@ function useBackup() {
 
 export default function Garage() {
   const cars     = useGarageStore((s) => s.cars)
-  const [showAdd,   setShowAdd]   = useState(false)
-  const [showTheme, setShowTheme] = useState(false)
+  const [showAdd,      setShowAdd]      = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
 
   const {
     exportData, readFile, importFile, importError,
@@ -75,11 +75,13 @@ export default function Garage() {
   return (
     <div className="min-h-screen bg-dark">
       {/* Header */}
-      <header className="border-b border-border bg-surface/50 backdrop-blur sticky top-0 z-10">
+      <header className="border-b border-border bg-surface/80 backdrop-blur-md sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Car size={22} className="text-accent" />
-            <span className="font-bold text-white text-lg">VroomShop</span>
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-accent/15 border border-accent/30 flex items-center justify-center">
+              <Car size={16} className="text-accent" />
+            </div>
+            <span className="font-bold text-white text-lg tracking-tight">VroomShop</span>
           </div>
           <div className="flex gap-2">
             <button onClick={exportData} className="btn-outline" title="Download backup">
@@ -95,8 +97,8 @@ export default function Garage() {
               className="hidden"
               onChange={(e) => { if (e.target.files[0]) { readFile(e.target.files[0]); e.target.value = '' } }}
             />
-            <button onClick={() => setShowTheme(true)} className="btn-outline" title="Change theme">
-              <Palette size={16} />
+            <button onClick={() => setShowSettings(true)} className="btn-outline" title="Settings">
+              <Settings size={16} />
             </button>
             <button onClick={() => setShowAdd(true)} className="btn-primary">
               <Plus size={16} /> Add Car
@@ -118,13 +120,21 @@ export default function Garage() {
       <main className="max-w-7xl mx-auto px-6 py-10">
         {cars.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-32 text-center">
-            <div className="w-20 h-20 rounded-full bg-surface flex items-center justify-center mb-5">
-              <Car size={36} className="text-gray-600" />
+            <div className="relative mb-8">
+              <div className="w-24 h-24 rounded-2xl bg-surface-2 border border-border flex items-center justify-center">
+                <Car size={40} className="text-gray-600" />
+              </div>
+              <div className="absolute -top-1.5 -right-1.5 w-7 h-7 rounded-full bg-accent/20 border border-accent/30 flex items-center justify-center">
+                <Plus size={13} className="text-accent" />
+              </div>
             </div>
-            <h2 className="text-xl font-semibold text-white mb-2">Your garage is empty</h2>
-            <p className="text-gray-500 mb-6 text-sm">Add your first car to get started.</p>
+            <h2 className="text-2xl font-bold text-white mb-2">Nothing here yet</h2>
+            <p className="text-gray-500 mb-8 max-w-sm text-sm leading-relaxed">
+              Add a car and start logging mods, maintenance records, and parts.
+              Everything stays in your browser — no account, no sync, no cloud.
+            </p>
             <button onClick={() => setShowAdd(true)} className="btn-primary">
-              <Plus size={16} /> Add Your First Car
+              <Plus size={16} /> Add your first car
             </button>
           </div>
         ) : (
@@ -143,8 +153,8 @@ export default function Garage() {
 
       {/* Import confirmation modal */}
       {showConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="bg-surface border border-border rounded-2xl w-full max-w-sm shadow-2xl p-6 space-y-4">
+        <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="modal-content bg-surface border border-border rounded-2xl w-full max-w-sm shadow-2xl p-6 space-y-4">
             <div className="flex items-start gap-3">
               <AlertTriangle size={20} className="text-yellow-400 mt-0.5 shrink-0" />
               <div>
@@ -171,8 +181,8 @@ export default function Garage() {
         </div>
       )}
 
-      {showAdd   && <AddCarModal onClose={() => setShowAdd(false)} />}
-      {showTheme && <ThemePanel  onClose={() => setShowTheme(false)} />}
+      {showAdd      && <AddCarModal   onClose={() => setShowAdd(false)} />}
+      {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
     </div>
   )
 }

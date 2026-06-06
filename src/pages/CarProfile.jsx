@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Car, Pencil, Trash2, Camera, ShoppingCart, Wrench, ClipboardList, CheckSquare, AlertTriangle, Palette, FileDown } from 'lucide-react'
+import { ArrowLeft, Car, Pencil, Trash2, Camera, ShoppingCart, Wrench, ClipboardList, CheckSquare, AlertTriangle, Settings, FileDown, DollarSign } from 'lucide-react'
 import useGarageStore from '../store/useGarageStore'
 import { getCarStatus, STATUS_CONFIG } from '../utils/carStatus'
+import { CURRENCIES, DISTANCE_UNITS } from '../utils/units'
 import { downloadMarkdown } from '../utils/exportMarkdown'
 import PhotosTab from '../components/tabs/PhotosTab'
 import WishlistTab from '../components/tabs/WishlistTab'
@@ -11,7 +12,8 @@ import MaintenanceTab from '../components/tabs/MaintenanceTab'
 import TodoTab from '../components/tabs/TodoTab'
 import IssuesTab from '../components/tabs/IssuesTab'
 import EditCarModal from '../components/EditCarModal'
-import ThemePanel from '../components/ThemePanel'
+import MarkAsSoldModal from '../components/MarkAsSoldModal'
+import SettingsPanel from '../components/SettingsPanel'
 import ConfirmModal from '../components/ConfirmModal'
 
 const TABS = [
@@ -26,12 +28,17 @@ const TABS = [
 export default function CarProfile() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const car = useGarageStore((s) => s.cars.find((c) => c.id === id))
-  const deleteCar = useGarageStore((s) => s.deleteCar)
+  const car          = useGarageStore((s) => s.cars.find((c) => c.id === id))
+  const deleteCar    = useGarageStore((s) => s.deleteCar)
+  const currency     = useGarageStore((s) => s.currency)
+  const distanceUnit = useGarageStore((s) => s.distanceUnit)
+  const sym          = CURRENCIES[currency]?.symbol ?? '$'
+  const distShort    = DISTANCE_UNITS[distanceUnit]?.short ?? 'mi'
   const [tab, setTab] = useState('photos')
-  const [editing, setEditing]       = useState(false)
-  const [showTheme, setShowTheme]   = useState(false)
+  const [editing, setEditing]             = useState(false)
+  const [showSettings, setShowSettings]   = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [showSell, setShowSell]           = useState(false)
 
   if (!car) {
     return (
@@ -66,7 +73,7 @@ export default function CarProfile() {
             <Car size={64} className="text-gray-700" />
           </div>
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-dark via-dark/40 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-dark via-dark/60 to-transparent" />
 
         {/* Back button */}
         <button
@@ -81,9 +88,17 @@ export default function CarProfile() {
           <button onClick={() => downloadMarkdown(car)} className="btn-outline bg-dark/60 backdrop-blur-sm border-white/10 text-white hover:text-accent" title="Export to Markdown">
             <FileDown size={14} />
           </button>
-          <button onClick={() => setShowTheme(true)} className="btn-outline bg-dark/60 backdrop-blur-sm border-white/10 text-white hover:text-accent" title="Change theme">
-            <Palette size={14} />
+          <button onClick={() => setShowSettings(true)} className="btn-outline bg-dark/60 backdrop-blur-sm border-white/10 text-white hover:text-accent" title="Settings">
+            <Settings size={14} />
           </button>
+          {status === 'for-sale' && (
+            <button
+              onClick={() => setShowSell(true)}
+              className="btn-outline bg-dark/60 backdrop-blur-sm border-green-700/50 text-green-400 hover:text-green-300 hover:border-green-500/60"
+            >
+              <DollarSign size={14} /> Sold
+            </button>
+          )}
           <button onClick={() => setEditing(true)} className="btn-outline bg-dark/60 backdrop-blur-sm border-white/10 text-white hover:text-accent">
             <Pencil size={14} /> Edit
           </button>
@@ -97,7 +112,7 @@ export default function CarProfile() {
           <div className="flex items-center gap-2 mb-1.5">
             <span className={`badge border text-xs ${statusCfg.class}`}>
               {statusCfg.label}
-              {status === 'for-sale' && car.salePrice ? ` · $${Number(car.salePrice).toLocaleString()}` : ''}
+              {status === 'for-sale' && car.salePrice ? ` · ${sym}${Number(car.salePrice).toLocaleString()}` : ''}
             </span>
             {car.purchaseDate && (
               <span className="text-xs text-gray-500">
@@ -116,7 +131,7 @@ export default function CarProfile() {
           <div className="flex items-center gap-3 mt-1 flex-wrap">
             {car.trim && <span className="text-sm text-gray-300">{car.trim}</span>}
             {car.color && <span className="text-sm text-gray-400">· {car.color}</span>}
-            {car.mileage && <span className="text-sm text-gray-400">· {Number(car.mileage).toLocaleString()} mi</span>}
+            {car.mileage && <span className="text-sm text-gray-400">· {Number(car.mileage).toLocaleString()} {distShort}</span>}
             {car.nickname && <span className="text-sm text-accent font-medium">· "{car.nickname}"</span>}
           </div>
           {status === 'for-trade' && car.tradeFor && (
@@ -144,7 +159,7 @@ export default function CarProfile() {
       {/* Tab bar */}
       <div className="border-b border-border bg-surface/30 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-6">
-          <div className="flex gap-1 py-2 overflow-x-auto no-scrollbar">
+          <div className="flex gap-1 py-2 overflow-x-auto no-scrollbar" style={{ scrollbarWidth: 'none' }}>
             {TABS.map(({ id: tid, label, icon: Icon }) => (
               <button
                 key={tid}
@@ -179,8 +194,9 @@ export default function CarProfile() {
         {tab === 'issues'      && <IssuesTab car={car} />}
       </div>
 
-      {editing    && <EditCarModal car={car} onClose={() => setEditing(false)} />}
-      {showTheme  && <ThemePanel onClose={() => setShowTheme(false)} />}
+      {showSell     && <MarkAsSoldModal car={car} onClose={() => setShowSell(false)} />}
+      {editing      && <EditCarModal car={car} onClose={() => setEditing(false)} />}
+      {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
       {confirmDelete && (
         <ConfirmModal
           title={`Delete ${car.year} ${car.make} ${car.model}?`}

@@ -7,6 +7,7 @@ export const STATUS_CONFIG = {
 }
 
 export function getCarStatus(car) {
+  if (car.status === 'sold') return 'sold'
   if (car.saleDate && new Date(car.saleDate + 'T12:00:00') <= new Date()) return 'sold'
   return car.status || 'current'
 }

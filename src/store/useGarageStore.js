@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import localforage from 'localforage'
+import { CURRENCIES, convertPrice, convertDistance } from '../utils/units'
 
 const idbStorage = {
   getItem: (name) => localforage.getItem(name),
@@ -18,10 +19,48 @@ const useGarageStore = create(
 
       // ── Theme ─────────────────────────────────────────
       themeId: 'garage',
-      customAccent: null, // hex string when using custom color
+      customAccent: null,
 
       setTheme: (themeId) => set({ themeId, customAccent: null }),
       setCustomAccent: (hex) => set({ themeId: 'custom', customAccent: hex }),
+
+      // ── Settings ──────────────────────────────────────
+      currency: 'USD',
+      distanceUnit: 'mi',
+
+      setCurrency: (to) => set((s) => {
+        const from = s.currency
+        if (from === to || !CURRENCIES[to]) return {}
+        const conv = (val) => convertPrice(val, from, to)
+        return {
+          currency: to,
+          cars: s.cars.map((car) => ({
+            ...car,
+            salePrice: conv(car.salePrice),
+            mods: car.mods.map((m) => ({ ...m, cost: conv(m.cost) })),
+            maintenance: car.maintenance.map((r) => ({ ...r, cost: conv(r.cost) })),
+            wishlist: car.wishlist.map((i) => ({ ...i, price: conv(i.price) })),
+          })),
+        }
+      }),
+
+      setDistanceUnit: (to) => set((s) => {
+        const from = s.distanceUnit
+        if (from === to) return {}
+        const conv = (val) => convertDistance(val, from, to)
+        return {
+          distanceUnit: to,
+          cars: s.cars.map((car) => ({
+            ...car,
+            mileage: conv(car.mileage),
+            maintenance: car.maintenance.map((r) => ({
+              ...r,
+              mileage:       conv(r.mileage),
+              nextDueMileage: conv(r.nextDueMileage),
+            })),
+          })),
+        }
+      }),
 
       // ── Cars ──────────────────────────────────────────
       addCar: (data) => set((s) => ({
