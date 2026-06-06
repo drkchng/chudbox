@@ -10,7 +10,7 @@ Car enthusiasts and hobbyists who actively build, modify, and maintain their own
 
 ## Product Purpose
 
-VroomShop is a local-first car management app. No backend, no account, no sync — everything lives in the browser. Users track builds per car: mods installed, maintenance records, parts on the wishlist, open issues, and to-dos. Success means a user can open it mid-build and log a new mod in under 10 seconds.
+Chudbox is a local-first car management app. No backend, no account, no sync — everything lives in the browser. Users track builds per car: mods installed, maintenance records, parts on the wishlist, open issues, and to-dos. Success means a user can open it mid-build and log a new mod in under 10 seconds.
 
 ## Brand Personality
 

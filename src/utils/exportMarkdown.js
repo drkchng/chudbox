@@ -47,7 +47,7 @@ export function generateMarkdown(car) {
     `status: ${statusLabel}`,
     car.purchaseDate ? `purchased: ${fmt(car.purchaseDate)}` : null,
     car.saleDate     ? `sold: ${fmt(car.saleDate)}`          : null,
-    `tags: [vroomshop, car, ${car.make.toLowerCase()}]`,
+    `tags: [chudbox, car, ${car.make.toLowerCase()}]`,
     `exported: ${fmt(new Date().toISOString().slice(0, 10))}`,
     '---',
   ].filter(Boolean).join('\n')

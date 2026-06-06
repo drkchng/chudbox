@@ -1,8 +1,8 @@
-# VroomShop 🚗
+# Chudbox 🚗
 
 A personal car management app for enthusiasts. Track your builds, mods, maintenance, parts wishlist, todos, and issues — all stored locally in your browser.
 
-**Live demo:** https://drkchng.github.io/vroomshop/
+**Live demo:** https://drkchng.github.io/chudbox/
 
 ## Features
 
@@ -20,7 +20,7 @@ A personal car management app for enthusiasts. Track your builds, mods, maintena
 
 ## Using the Live App
 
-Just visit **https://drkchng.github.io/vroomshop/** — no account or install needed. Your data stays in your browser.
+Just visit **https://drkchng.github.io/chudbox/** — no account or install needed. Your data stays in your browser.
 
 > **Note:** Data is stored locally in the browser you use. Clearing browser data will erase it. Use the Download Backup button to save your data regularly.
 
@@ -29,8 +29,8 @@ Just visit **https://drkchng.github.io/vroomshop/** — no account or install ne
 Requires [Node.js](https://nodejs.org/) v18 or later.
 
 ```bash
-git clone https://github.com/drkchng/vroomshop.git
-cd vroomshop
+git clone https://github.com/drkchng/chudbox.git
+cd chudbox
 npm install
 npm run dev
 ```
@@ -41,20 +41,20 @@ Then open http://localhost:5173 in your browser.
 
 ### GitHub Pages (recommended — free, no server needed)
 
-1. [Fork this repo](https://github.com/drkchng/vroomshop/fork)
+1. [Fork this repo](https://github.com/drkchng/chudbox/fork)
 2. In your fork, go to **Settings → Pages**
 3. Under **Build and deployment**, set Source to **GitHub Actions**
 4. Push any change to `master` — the workflow will build and deploy automatically
 
-Your app will be live at `https://<your-username>.github.io/vroomshop/`
+Your app will be live at `https://<your-username>.github.io/chudbox/`
 
 ### Vercel / Netlify (one click)
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/drkchng/vroomshop)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/drkchng/chudbox)
 
 For Netlify or any other static host: run `npm run build` and upload the `dist/` folder.
 
-> If you deploy to a different path than `/vroomshop/`, update the `base` field in `vite.config.js` to match.
+> If you deploy to a different path than `/chudbox/`, update the `base` field in `vite.config.js` to match.
 
 ## Tech Stack
 
