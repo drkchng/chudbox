@@ -121,7 +121,7 @@
 }
 
 .slide-panel {
-  animation: slideInRight 280ms cubic-bezier(0.23, 1, 0.32, 1);
+  animation: backdropIn 150ms ease-out;
 }
 
 /* Grain noise overlay */
