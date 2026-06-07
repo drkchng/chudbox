@@ -1,20 +1,38 @@
 import { useState, useRef } from 'react'
+import type { ChangeEvent } from 'react'
 import { Plus, Car, Download, Upload, AlertTriangle, Settings } from 'lucide-react'
 import useGarageStore from '../store/useGarageStore'
 import CarCard from '../components/CarCard'
 import AddCarModal from '../components/AddCarModal'
 import SettingsPanel from '../components/SettingsPanel'
+import type { Car as CarType } from '../types'
+
+interface BackupData {
+  version?: number
+  exportedAt?: string
+  cars: CarType[]
+  themeId?: string
+  customAccent?: string | null
+}
+
+function isBackupData(value: unknown): value is BackupData {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    Array.isArray((value as Record<string, unknown>).cars)
+  )
+}
 
 function useBackup() {
   const state      = useGarageStore
-  const importFile = useRef()
+  const importFile = useRef<HTMLInputElement | null>(null)
   const [importError, setImportError] = useState('')
   const [showConfirm, setShowConfirm] = useState(false)
-  const [pending, setPending] = useState(null)
+  const [pending, setPending] = useState<BackupData | null>(null)
 
   const exportData = () => {
     const { cars, themeId, customAccent } = state.getState()
-    const backup = {
+    const backup: BackupData = {
       version: 1,
       exportedAt: new Date().toISOString(),
       cars,
@@ -30,13 +48,15 @@ function useBackup() {
     URL.revokeObjectURL(url)
   }
 
-  const readFile = (file) => {
+  const readFile = (file: File) => {
     setImportError('')
     const reader = new FileReader()
     reader.onload = (e) => {
       try {
-        const data = JSON.parse(e.target.result)
-        if (!data.cars || !Array.isArray(data.cars)) throw new Error('Invalid format')
+        const result = e.target?.result
+        if (typeof result !== 'string') throw new Error('Invalid format')
+        const data: unknown = JSON.parse(result)
+        if (!isBackupData(data)) throw new Error('Invalid format')
         setPending(data)
         setShowConfirm(true)
       } catch {
@@ -72,6 +92,11 @@ export default function Garage() {
     showConfirm, confirmImport, cancelImport, pending,
   } = useBackup()
 
+  const handleImportChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) { readFile(file); e.target.value = '' }
+  }
+
   return (
     <div className="min-h-screen bg-dark">
       {/* Header */}
@@ -87,7 +112,7 @@ export default function Garage() {
             <button onClick={exportData} className="btn-outline" title="Download backup">
               <Download size={16} />
             </button>
-            <button onClick={() => importFile.current.click()} className="btn-outline" title="Restore backup">
+            <button onClick={() => importFile.current?.click()} className="btn-outline" title="Restore backup">
               <Upload size={16} />
             </button>
             <input
@@ -95,7 +120,7 @@ export default function Garage() {
               type="file"
               accept=".json,application/json"
               className="hidden"
-              onChange={(e) => { if (e.target.files[0]) { readFile(e.target.files[0]); e.target.value = '' } }}
+              onChange={handleImportChange}
             />
             <button onClick={() => setShowSettings(true)} className="btn-outline" title="Settings">
               <Settings size={16} />

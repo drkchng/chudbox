@@ -2,9 +2,14 @@ import { useRef } from 'react'
 import { X, DollarSign, Gauge, Palette, Check, Pipette } from 'lucide-react'
 import useGarageStore from '../store/useGarageStore'
 import { CURRENCIES, DISTANCE_UNITS } from '../utils/units'
+import type { CurrencyCode, DistanceUnitCode } from '../utils/units'
 import { THEMES } from '../utils/themes'
 
-export default function SettingsPanel({ onClose }) {
+interface SettingsPanelProps {
+  onClose: () => void
+}
+
+export default function SettingsPanel({ onClose }: SettingsPanelProps) {
   const currency        = useGarageStore((s) => s.currency)
   const distanceUnit    = useGarageStore((s) => s.distanceUnit)
   const themeId         = useGarageStore((s) => s.themeId)
@@ -13,7 +18,7 @@ export default function SettingsPanel({ onClose }) {
   const setDistanceUnit = useGarageStore((s) => s.setDistanceUnit)
   const setTheme        = useGarageStore((s) => s.setTheme)
   const setCustom       = useGarageStore((s) => s.setCustomAccent)
-  const pickerRef       = useRef()
+  const pickerRef       = useRef<HTMLInputElement | null>(null)
 
   return (
     <>
@@ -36,7 +41,7 @@ export default function SettingsPanel({ onClose }) {
               {Object.entries(CURRENCIES).map(([code, { symbol, name }]) => (
                 <button
                   key={code}
-                  onClick={() => setCurrency(code)}
+                  onClick={() => setCurrency(code as CurrencyCode)}
                   className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border text-sm transition-[border-color,color,background-color] text-left ${
                     currency === code
                       ? 'bg-accent/10 border-accent/50 text-accent'
@@ -61,7 +66,7 @@ export default function SettingsPanel({ onClose }) {
               {Object.entries(DISTANCE_UNITS).map(([unit, { label }]) => (
                 <button
                   key={unit}
-                  onClick={() => setDistanceUnit(unit)}
+                  onClick={() => setDistanceUnit(unit as DistanceUnitCode)}
                   className={`px-3 py-2.5 rounded-lg border text-sm font-medium transition-[border-color,color,background-color] ${
                     distanceUnit === unit
                       ? 'bg-accent/10 border-accent/50 text-accent'
@@ -109,7 +114,7 @@ export default function SettingsPanel({ onClose }) {
 
             {/* Custom accent */}
             <button
-              onClick={() => pickerRef.current.click()}
+              onClick={() => pickerRef.current?.click()}
               className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl border transition-[border-color,background-color] ${
                 themeId === 'custom'
                   ? 'border-accent/60 bg-accent/10'

@@ -1,25 +1,98 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
+import type { StateStorage } from 'zustand/middleware'
 import localforage from 'localforage'
 import { CURRENCIES, convertPrice, convertDistance } from '../utils/units'
+import type { CurrencyCode, DistanceUnitCode } from '../utils/units'
+import type {
+  Car,
+  CarDetails,
+  Photo,
+  WishlistItem,
+  Mod,
+  MaintenanceRecord,
+  Todo,
+  Issue,
+  TodoPriority,
+} from '../types'
 
-const idbStorage = {
-  getItem: (name) => localforage.getItem(name),
+const idbStorage: StateStorage = {
+  getItem: (name) => localforage.getItem<string>(name),
   setItem: (name, value) => localforage.setItem(name, value),
   removeItem: (name) => localforage.removeItem(name),
 }
 
-const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36)
-const now = () => new Date().toISOString()
+const uid = (): string => Math.random().toString(36).slice(2, 10) + Date.now().toString(36)
+const now = (): string => new Date().toISOString()
 
-const useGarageStore = create(
+// ── Input shapes for create actions (store-generated fields omitted) ──
+type PhotoInput = Pick<Photo, 'dataUrl' | 'caption'>
+type WishlistInput = Omit<WishlistItem, 'id' | 'status' | 'addedAt'>
+type ModInput = Omit<Mod, 'id' | 'addedAt'>
+type MaintenanceInput = Omit<MaintenanceRecord, 'id' | 'createdAt'>
+type IssueInput = Pick<Issue, 'title' | 'description' | 'severity'>
+
+export interface GarageState {
+  cars: Car[]
+
+  // Theme
+  themeId: string
+  customAccent: string | null
+  setTheme: (themeId: string) => void
+  setCustomAccent: (hex: string) => void
+
+  // Settings
+  currency: CurrencyCode
+  distanceUnit: DistanceUnitCode
+  setCurrency: (to: CurrencyCode) => void
+  setDistanceUnit: (to: DistanceUnitCode) => void
+
+  // Cars
+  addCar: (data: CarDetails) => void
+  updateCar: (id: string, data: Partial<CarDetails>) => void
+  deleteCar: (id: string) => void
+  getCar: (id: string) => Car | undefined
+
+  // Photos
+  addPhoto: (carId: string, photo: PhotoInput) => void
+  deletePhoto: (carId: string, photoId: string) => void
+  setCoverPhoto: (carId: string, photoId: string) => void
+
+  // Wishlist
+  addWishlistItem: (carId: string, data: WishlistInput) => void
+  updateWishlistItem: (carId: string, itemId: string, data: Partial<WishlistItem>) => void
+  deleteWishlistItem: (carId: string, itemId: string) => void
+
+  // Mods
+  addMod: (carId: string, data: ModInput) => void
+  updateMod: (carId: string, modId: string, data: Partial<Mod>) => void
+  deleteMod: (carId: string, modId: string) => void
+
+  // Maintenance
+  addMaintenance: (carId: string, data: MaintenanceInput) => void
+  updateMaintenance: (carId: string, recId: string, data: Partial<MaintenanceRecord>) => void
+  deleteMaintenance: (carId: string, recId: string) => void
+
+  // Todos
+  addTodo: (carId: string, text: string, priority?: TodoPriority) => void
+  toggleTodo: (carId: string, todoId: string) => void
+  deleteTodo: (carId: string, todoId: string) => void
+  updateTodo: (carId: string, todoId: string, data: Partial<Todo>) => void
+
+  // Issues
+  addIssue: (carId: string, data: IssueInput) => void
+  updateIssue: (carId: string, issueId: string, data: Partial<Issue>) => void
+  deleteIssue: (carId: string, issueId: string) => void
+}
+
+const useGarageStore = create<GarageState>()(
   persist(
     (set, get) => ({
       cars: [],
 
       // ── Theme ─────────────────────────────────────────
       themeId: 'garage',
-      customAccent: null,
+      customAccent: null, // hex string when using custom color
 
       setTheme: (themeId) => set({ themeId, customAccent: null }),
       setCustomAccent: (hex) => set({ themeId: 'custom', customAccent: hex }),
@@ -31,15 +104,14 @@ const useGarageStore = create(
       setCurrency: (to) => set((s) => {
         const from = s.currency
         if (from === to || !CURRENCIES[to]) return {}
-        const conv = (val) => convertPrice(val, from, to)
         return {
           currency: to,
           cars: s.cars.map((car) => ({
             ...car,
-            salePrice: conv(car.salePrice),
-            mods: car.mods.map((m) => ({ ...m, cost: conv(m.cost) })),
-            maintenance: car.maintenance.map((r) => ({ ...r, cost: conv(r.cost) })),
-            wishlist: car.wishlist.map((i) => ({ ...i, price: conv(i.price) })),
+            salePrice:   convertPrice(car.salePrice, from, to),
+            mods:        car.mods.map((m) => ({ ...m, cost: convertPrice(m.cost, from, to) })),
+            maintenance: car.maintenance.map((r) => ({ ...r, cost: convertPrice(r.cost, from, to) })),
+            wishlist:    car.wishlist.map((i) => ({ ...i, price: convertPrice(i.price, from, to) })),
           })),
         }
       }),
@@ -47,16 +119,15 @@ const useGarageStore = create(
       setDistanceUnit: (to) => set((s) => {
         const from = s.distanceUnit
         if (from === to) return {}
-        const conv = (val) => convertDistance(val, from, to)
         return {
           distanceUnit: to,
           cars: s.cars.map((car) => ({
             ...car,
-            mileage: conv(car.mileage),
+            mileage: convertDistance(car.mileage, from, to),
             maintenance: car.maintenance.map((r) => ({
               ...r,
-              mileage:       conv(r.mileage),
-              nextDueMileage: conv(r.nextDueMileage),
+              mileage:        convertDistance(r.mileage, from, to),
+              nextDueMileage: convertDistance(r.nextDueMileage, from, to),
             })),
           })),
         }

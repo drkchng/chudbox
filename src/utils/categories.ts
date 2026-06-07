@@ -1,4 +1,4 @@
-export const CATEGORIES = [
+export const CATEGORIES: string[] = [
   'Engine',
   'Exhaust',
   'Intake',

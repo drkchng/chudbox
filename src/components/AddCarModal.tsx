@@ -1,24 +1,34 @@
 import { useState } from 'react'
+import type { ChangeEvent, FormEvent } from 'react'
 import { X } from 'lucide-react'
 import useGarageStore from '../store/useGarageStore'
 import DateInput from './DateInput'
+import type { CarDetails, CarStoredStatus, FieldChangeEvent } from '../types'
 
 const today = new Date().toISOString().slice(0, 10)
 
-const empty = {
+const empty: CarDetails = {
   year: '', make: '', model: '', trim: '', color: '', mileage: '', nickname: '',
   purchaseDate: '', saleDate: '', status: 'current', salePrice: '', tradeFor: '',
 }
 
-export default function AddCarModal({ onClose }) {
+interface AddCarModalProps {
+  onClose: () => void
+}
+
+export default function AddCarModal({ onClose }: AddCarModalProps) {
   const addCar = useGarageStore((s) => s.addCar)
-  const [form, setForm] = useState(empty)
+  const [form, setForm] = useState<CarDetails>(empty)
 
-  const set = (k) => (eOrVal) =>
-    setForm((f) => ({ ...f, [k]: typeof eOrVal === 'string' ? eOrVal : eOrVal.target.value }))
+  const set =
+    <K extends keyof CarDetails>(key: K) =>
+    (eOrVal: string | FieldChangeEvent): void => {
+      const value = typeof eOrVal === 'string' ? eOrVal : eOrVal.target.value
+      setForm((f) => ({ ...f, [key]: value as CarDetails[K] }))
+    }
 
-  const setStatus = (e) => {
-    const newStatus = e.target.value
+  const setStatus = (e: ChangeEvent<HTMLSelectElement>) => {
+    const newStatus = e.target.value as CarStoredStatus
     setForm((f) => ({
       ...f,
       status: newStatus,
@@ -26,7 +36,7 @@ export default function AddCarModal({ onClose }) {
     }))
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!form.year || !form.make || !form.model) return
     addCar(form)

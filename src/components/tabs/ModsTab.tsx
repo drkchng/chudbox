@@ -1,21 +1,50 @@
 import { useState } from 'react'
+import type { FormEvent } from 'react'
 import { Plus, Trash2, Wrench, Pencil, Check, X, ExternalLink, ClipboardList } from 'lucide-react'
 import useGarageStore from '../../store/useGarageStore'
 import { CURRENCIES } from '../../utils/units'
 import DateInput from '../DateInput'
 import ConfirmModal from '../ConfirmModal'
 import { CATEGORIES } from '../../utils/categories'
+import type { Car, Mod, FieldChangeEvent } from '../../types'
 
-const emptyForm = { name: '', category: '', description: '', cost: '', installedDate: '', shop: '', link: '' }
+interface ModForm {
+  name: string
+  category: string
+  description: string
+  cost: string
+  installedDate: string
+  shop: string
+  link: string
+}
 
-const today = () => new Date().toISOString().slice(0, 10)
+const emptyForm: ModForm = { name: '', category: '', description: '', cost: '', installedDate: '', shop: '', link: '' }
+
+const today = (): string => new Date().toISOString().slice(0, 10)
+
+interface LogMaintenanceForm {
+  service: string
+  date: string
+  mileage: string
+  cost: string
+  shop: string
+  notes: string
+  nextDueDate: string
+  nextDueMileage: string
+}
+
+interface LogToMaintenanceModalProps {
+  mod: Mod
+  carId: string
+  onClose: () => void
+}
 
 // Defined outside ModsTab so React never unmounts it on re-render
-function LogToMaintenanceModal({ mod, carId, onClose }) {
+function LogToMaintenanceModal({ mod, carId, onClose }: LogToMaintenanceModalProps) {
   const addMaintenance = useGarageStore((s) => s.addMaintenance)
   const currency = useGarageStore((s) => s.currency)
   const sym      = CURRENCIES[currency]?.symbol ?? '$'
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<LogMaintenanceForm>({
     service:        mod.name        || '',
     date:           today(),
     mileage:        '',
@@ -26,7 +55,10 @@ function LogToMaintenanceModal({ mod, carId, onClose }) {
     nextDueMileage: '',
   })
 
-  const set = (k) => (eOrVal) => setForm((f) => ({ ...f, [k]: typeof eOrVal === 'string' ? eOrVal : eOrVal.target.value }))
+  const set =
+    <K extends keyof LogMaintenanceForm>(key: K) =>
+    (eOrVal: string | FieldChangeEvent): void =>
+      setForm((f) => ({ ...f, [key]: typeof eOrVal === 'string' ? eOrVal : eOrVal.target.value }))
 
   const handleConfirm = () => {
     addMaintenance(carId, { ...form, cost: form.cost ? parseFloat(form.cost) : null, mileage: form.mileage || null })
@@ -99,23 +131,47 @@ function LogToMaintenanceModal({ mod, carId, onClose }) {
   )
 }
 
-export default function ModsTab({ car }) {
+interface LinkFieldProps {
+  value: string
+  onChange: (eOrVal: string | FieldChangeEvent) => void
+}
+
+function LinkField({ value, onChange }: LinkFieldProps) {
+  return (
+    <div>
+      <label className="label">Link (optional)</label>
+      <input className="input" type="url" placeholder="https://…" value={value} onChange={onChange} />
+    </div>
+  )
+}
+
+interface ModsTabProps {
+  car: Car
+}
+
+export default function ModsTab({ car }: ModsTabProps) {
   const addMod    = useGarageStore((s) => s.addMod)
   const updateMod = useGarageStore((s) => s.updateMod)
   const deleteMod = useGarageStore((s) => s.deleteMod)
   const currency  = useGarageStore((s) => s.currency)
   const sym       = CURRENCIES[currency]?.symbol ?? '$'
   const [showForm, setShowForm]   = useState(false)
-  const [form, setForm]           = useState(emptyForm)
-  const [editId, setEditId]       = useState(null)
-  const [editForm, setEditForm]   = useState({})
-  const [logMod, setLogMod]       = useState(null)
-  const [confirmMod, setConfirmMod] = useState(null)
+  const [form, setForm]           = useState<ModForm>(emptyForm)
+  const [editId, setEditId]       = useState<string | null>(null)
+  const [editForm, setEditForm]   = useState<ModForm>(emptyForm)
+  const [logMod, setLogMod]       = useState<Mod | null>(null)
+  const [confirmMod, setConfirmMod] = useState<Mod | null>(null)
 
-  const set     = (k) => (eOrVal) => setForm((f)     => ({ ...f, [k]: typeof eOrVal === 'string' ? eOrVal : eOrVal.target.value }))
-  const setEdit = (k) => (eOrVal) => setEditForm((f) => ({ ...f, [k]: typeof eOrVal === 'string' ? eOrVal : eOrVal.target.value }))
+  const set =
+    <K extends keyof ModForm>(key: K) =>
+    (eOrVal: string | FieldChangeEvent): void =>
+      setForm((f) => ({ ...f, [key]: typeof eOrVal === 'string' ? eOrVal : eOrVal.target.value }))
+  const setEdit =
+    <K extends keyof ModForm>(key: K) =>
+    (eOrVal: string | FieldChangeEvent): void =>
+      setEditForm((f) => ({ ...f, [key]: typeof eOrVal === 'string' ? eOrVal : eOrVal.target.value }))
 
-  const handleAdd = (e) => {
+  const handleAdd = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!form.name) return
     addMod(car.id, { ...form, cost: form.cost ? parseFloat(form.cost) : null })
@@ -123,26 +179,31 @@ export default function ModsTab({ car }) {
     setShowForm(false)
   }
 
-  const startEdit = (mod) => { setEditId(mod.id); setEditForm({ ...mod }) }
-  const saveEdit  = () => {
+  const startEdit = (mod: Mod) => {
+    setEditId(mod.id)
+    setEditForm({
+      name: mod.name,
+      category: mod.category,
+      description: mod.description,
+      cost: mod.cost != null ? String(mod.cost) : '',
+      installedDate: mod.installedDate,
+      shop: mod.shop,
+      link: mod.link,
+    })
+  }
+  const saveEdit = () => {
+    if (!editId) return
     updateMod(car.id, editId, { ...editForm, cost: editForm.cost ? parseFloat(editForm.cost) : null })
     setEditId(null)
   }
 
   const totalCost = car.mods.reduce((s, m) => s + (m.cost || 0), 0)
-  const grouped   = car.mods.reduce((acc, mod) => {
+  const grouped   = car.mods.reduce<Record<string, Mod[]>>((acc, mod) => {
     const key = mod.category || 'Other'
     if (!acc[key]) acc[key] = []
     acc[key].push(mod)
     return acc
   }, {})
-
-  const LinkField = ({ value, onChange }) => (
-    <div>
-      <label className="label">Link (optional)</label>
-      <input className="input" type="url" placeholder="https://…" value={value} onChange={onChange} />
-    </div>
-  )
 
   return (
     <div>
@@ -221,15 +282,15 @@ export default function ModsTab({ car }) {
                         </select>
                       </div>
                     </div>
-                    <div><label className="label">Description</label><textarea className="input resize-none" rows={2} value={editForm.description || ''} onChange={setEdit('description')} /></div>
-                    <LinkField value={editForm.link || ''} onChange={setEdit('link')} />
+                    <div><label className="label">Description</label><textarea className="input resize-none" rows={2} value={editForm.description} onChange={setEdit('description')} /></div>
+                    <LinkField value={editForm.link} onChange={setEdit('link')} />
                     <div className="grid sm:grid-cols-3 gap-3">
-                      <div><label className="label">Cost ({sym})</label><input className="input" type="number" step="0.01" value={editForm.cost || ''} onChange={setEdit('cost')} /></div>
+                      <div><label className="label">Cost ({sym})</label><input className="input" type="number" step="0.01" value={editForm.cost} onChange={setEdit('cost')} /></div>
                       <div>
                         <label className="label">Date Installed</label>
-                        <DateInput value={editForm.installedDate || ''} onChange={setEdit('installedDate')} />
+                        <DateInput value={editForm.installedDate} onChange={setEdit('installedDate')} />
                       </div>
-                      <div><label className="label">Shop</label><input className="input" value={editForm.shop || ''} onChange={setEdit('shop')} /></div>
+                      <div><label className="label">Shop</label><input className="input" value={editForm.shop} onChange={setEdit('shop')} /></div>
                     </div>
                     <div className="flex gap-2">
                       <button onClick={() => setEditId(null)} className="btn-ghost"><X size={14} /> Cancel</button>

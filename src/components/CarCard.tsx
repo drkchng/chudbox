@@ -3,8 +3,13 @@ import { Car, AlertTriangle, CheckSquare, Wrench } from 'lucide-react'
 import { getCarStatus, STATUS_CONFIG } from '../utils/carStatus'
 import useGarageStore from '../store/useGarageStore'
 import { CURRENCIES, DISTANCE_UNITS } from '../utils/units'
+import type { Car as CarType } from '../types'
 
-export default function CarCard({ car }) {
+interface CarCardProps {
+  car: CarType
+}
+
+export default function CarCard({ car }: CarCardProps) {
   const navigate     = useNavigate()
   const currency     = useGarageStore((s) => s.currency)
   const distanceUnit = useGarageStore((s) => s.distanceUnit)

@@ -54,11 +54,12 @@ Your app will be live at `https://<your-username>.github.io/chudbox/`
 
 For Netlify or any other static host: run `npm run build` and upload the `dist/` folder.
 
-> If you deploy to a different path than `/chudbox/`, update the `base` field in `vite.config.js` to match.
+> If you deploy to a different path than `/chudbox/`, update the `base` field in `vite.config.ts` to match.
 
 ## Tech Stack
 
 - [React](https://react.dev/) + [Vite](https://vite.dev/)
+- [TypeScript](https://www.typescriptlang.org/) — fully typed, `strict` mode
 - [Tailwind CSS](https://tailwindcss.com/)
 - [Zustand](https://zustand-demo.pmnd.rs/) — state management
 - [localForage](https://localforage.github.io/localForage/) — IndexedDB persistence

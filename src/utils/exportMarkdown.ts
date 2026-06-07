@@ -1,36 +1,37 @@
 import { getCarStatus, STATUS_CONFIG } from './carStatus'
+import type { Car, Issue } from '../types'
 
-const fmt = (dateStr) => {
+const fmt = (dateStr?: string | null): string => {
   if (!dateStr) return '—'
   return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-CA', {
     year: 'numeric', month: 'short', day: 'numeric',
   })
 }
 
-const money = (val) => (val != null && val !== '' ? `$${Number(val).toFixed(2)}` : '—')
-const dash  = (val) => (val ? String(val) : '—')
+const money = (val: number | null | undefined): string =>
+  val != null ? `$${val.toFixed(2)}` : '—'
+const dash = (val: string | null | undefined): string => (val ? String(val) : '—')
 
 // Pad table columns so Obsidian renders them cleanly
-function table(headers, rows) {
+function table(headers: string[], rows: string[][]): string {
   if (rows.length === 0) return '_None recorded._\n'
-  const cols = headers.length
   const widths = headers.map((h, i) =>
     Math.max(h.length, ...rows.map((r) => (r[i] ? String(r[i]).length : 1)))
   )
-  const pad = (s, w) => String(s ?? '').padEnd(w)
+  const pad = (s: string, w: number): string => s.padEnd(w)
   const divider = widths.map((w) => '-'.repeat(w)).join(' | ')
   const header  = headers.map((h, i) => pad(h, widths[i])).join(' | ')
   const body    = rows.map((r) => r.map((c, i) => pad(c ?? '', widths[i])).join(' | '))
   return ['| ' + header + ' |', '| ' + divider + ' |', ...body.map((r) => '| ' + r + ' |')].join('\n') + '\n'
 }
 
-export function generateMarkdown(car) {
-  const status     = getCarStatus(car)
+export function generateMarkdown(car: Car): string {
+  const status      = getCarStatus(car)
   const statusLabel = STATUS_CONFIG[status]?.label ?? status
-  const title      = `${car.year} ${car.make} ${car.model}${car.trim ? ' ' + car.trim : ''}`
-  const totalMods  = car.mods.reduce((s, m) => s + (m.cost || 0), 0)
-  const totalMaint = car.maintenance.reduce((s, r) => s + (r.cost || 0), 0)
-  const openIssues = car.issues.filter((i) => i.status !== 'resolved')
+  const title       = `${car.year} ${car.make} ${car.model}${car.trim ? ' ' + car.trim : ''}`
+  const totalMods   = car.mods.reduce((s, m) => s + (m.cost || 0), 0)
+  const totalMaint  = car.maintenance.reduce((s, r) => s + (r.cost || 0), 0)
+  const openIssues     = car.issues.filter((i) => i.status !== 'resolved')
   const resolvedIssues = car.issues.filter((i) => i.status === 'resolved')
 
   // ── Frontmatter ─────────────────────────────────────────────────────────────
@@ -114,14 +115,14 @@ export function generateMarkdown(car) {
   ].join('\n')
 
   // ── Issues ────────────────────────────────────────────────────────────────────
-  const renderIssue = (issue) => {
+  const renderIssue = (issue: Issue): string => {
     const checkbox = issue.status === 'resolved' ? '- [x]' : '- [ ]'
     const severity = issue.severity ? ` *(${issue.severity[0].toUpperCase() + issue.severity.slice(1)})*` : ''
     const inProgress = issue.status === 'in-progress' ? ' 🔧' : ''
     const lines = [`${checkbox} **${issue.title}**${severity}${inProgress}`]
     if (issue.description) lines.push(`  > ${issue.description}`)
     const meta = [
-      `Opened: ${fmt(issue.createdAt?.slice(0, 10))}`,
+      `Opened: ${fmt(issue.createdAt.slice(0, 10))}`,
       issue.resolvedAt ? `Resolved: ${fmt(issue.resolvedAt.slice(0, 10))}` : null,
     ].filter(Boolean).join('  ·  ')
     lines.push(`  <sub>${meta}</sub>`)
@@ -143,7 +144,7 @@ export function generateMarkdown(car) {
   return [frontmatter, header, modsSection, maintSection, issuesSection].join('\n\n') + '\n'
 }
 
-export function downloadMarkdown(car) {
+export function downloadMarkdown(car: Car): void {
   const content  = generateMarkdown(car)
   const filename = `${car.year}-${car.make}-${car.model}${car.trim ? '-' + car.trim : ''}`
     .replace(/\s+/g, '-')

@@ -1,51 +1,56 @@
-import { useRef, useEffect, useState } from 'react'
+import { useRef, useState } from 'react'
+import type { ChangeEvent, KeyboardEvent, RefObject } from 'react'
 
-export default function DateInput({ value = '', onChange, className = '' }) {
-  const dayRef   = useRef()
-  const monthRef = useRef()
-  const yearRef  = useRef()
+interface DateInputProps {
+  value?: string
+  onChange: (value: string) => void
+  className?: string
+}
 
-  // Track the last value we emitted so the useEffect doesn't reset
-  // local state while the user is mid-edit (e.g. clearing a field).
-  const lastEmitted = useRef(value)
+export default function DateInput({ value = '', onChange, className = '' }: DateInputProps) {
+  const dayRef   = useRef<HTMLInputElement | null>(null)
+  const monthRef = useRef<HTMLInputElement | null>(null)
+  const yearRef  = useRef<HTMLInputElement | null>(null)
 
-  const [d, setD] = useState(() => value?.slice(8, 10) ?? '')
-  const [m, setM] = useState(() => value?.slice(5, 7)  ?? '')
-  const [y, setY] = useState(() => value?.slice(0, 4)  ?? '')
+  const [d, setD] = useState<string>(() => value.slice(8, 10))
+  const [m, setM] = useState<string>(() => value.slice(5, 7))
+  const [y, setY] = useState<string>(() => value.slice(0, 4))
 
-  // Only sync from the parent when the parent *externally* changed the value
-  // (not when we ourselves emitted it).
-  useEffect(() => {
-    if (value === lastEmitted.current) return
-    lastEmitted.current = value
-    if (value && value.length === 10) {
+  // Adjust local segments during render when the parent changes `value` (e.g. a
+  // reset). When we emit a value ourselves we advance `prevValue` in emit() so
+  // this sync is skipped and the user's unpadded input is preserved. This is
+  // React's recommended way to sync state to a prop without an effect.
+  const [prevValue, setPrevValue] = useState<string>(value)
+  if (value !== prevValue) {
+    setPrevValue(value)
+    if (value.length === 10) {
       setY(value.slice(0, 4))
       setM(value.slice(5, 7))
       setD(value.slice(8, 10))
     } else {
       setD(''); setM(''); setY('')
     }
-  }, [value])
-
-  const emit = (newD, newM, newY) => {
-    if (newD && newM && newY && newY.length === 4) {
-      const result = `${newY}-${newM.padStart(2, '0')}-${newD.padStart(2, '0')}`
-      lastEmitted.current = result
-      onChange(result)
-    } else if (!newD && !newM && !newY) {
-      lastEmitted.current = ''
-      onChange('')
-    }
-    // If partially filled, don't call onChange — and don't let the
-    // useEffect reset us since lastEmitted hasn't changed.
   }
 
-  const focusAndSelect = (ref) => {
+  const emit = (newD: string, newM: string, newY: string): void => {
+    if (newD && newM && newY && newY.length === 4) {
+      const result = `${newY}-${newM.padStart(2, '0')}-${newD.padStart(2, '0')}`
+      setPrevValue(result)
+      onChange(result)
+    } else if (!newD && !newM && !newY) {
+      setPrevValue('')
+      onChange('')
+    }
+    // If partially filled, don't call onChange — value stays unchanged, so the
+    // render-time sync above is skipped (prevValue is unchanged too).
+  }
+
+  const focusAndSelect = (ref: RefObject<HTMLInputElement | null>): void => {
     ref.current?.focus()
     ref.current?.select()
   }
 
-  const handleDay = (e) => {
+  const handleDay = (e: ChangeEvent<HTMLInputElement>): void => {
     const raw = e.target.value.replace(/\D/g, '').slice(0, 2)
     if (raw !== '' && Number(raw) > 31) return
     setD(raw)
@@ -56,7 +61,7 @@ export default function DateInput({ value = '', onChange, className = '' }) {
     }
   }
 
-  const handleMonth = (e) => {
+  const handleMonth = (e: ChangeEvent<HTMLInputElement>): void => {
     const raw = e.target.value.replace(/\D/g, '').slice(0, 2)
     if (raw !== '' && Number(raw) > 12) return
     setM(raw)
@@ -66,13 +71,13 @@ export default function DateInput({ value = '', onChange, className = '' }) {
     }
   }
 
-  const handleYear = (e) => {
+  const handleYear = (e: ChangeEvent<HTMLInputElement>): void => {
     const raw = e.target.value.replace(/\D/g, '').slice(0, 4)
     setY(raw)
     emit(d, m, raw)
   }
 
-  const handleKeyDown = (field, e) => {
+  const handleKeyDown = (field: 'month' | 'year', e: KeyboardEvent<HTMLInputElement>): void => {
     if (e.key === 'Backspace') {
       if (field === 'month' && m === '') { e.preventDefault(); focusAndSelect(dayRef) }
       if (field === 'year'  && y === '') { e.preventDefault(); focusAndSelect(monthRef) }
