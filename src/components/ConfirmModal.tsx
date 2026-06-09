@@ -1,6 +1,14 @@
 import { AlertTriangle } from 'lucide-react'
 
-export default function ConfirmModal({ title, message, onConfirm, onClose, confirmLabel = 'Delete' }) {
+interface ConfirmModalProps {
+  title: string
+  message?: string
+  onConfirm: () => void
+  onClose: () => void
+  confirmLabel?: string
+}
+
+export default function ConfirmModal({ title, message, onConfirm, onClose, confirmLabel = 'Delete' }: ConfirmModalProps) {
   const handleConfirm = () => { onConfirm(); onClose() }
 
   return (

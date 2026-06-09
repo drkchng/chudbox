@@ -1,33 +1,37 @@
 import { useState } from 'react'
+import type { FormEvent } from 'react'
 import { Plus, Trash2, CheckSquare } from 'lucide-react'
 import useGarageStore from '../../store/useGarageStore'
 import ConfirmModal from '../ConfirmModal'
+import type { Car, Todo, TodoPriority } from '../../types'
 
-const PRIORITY = {
+const PRIORITY: Record<TodoPriority, { label: string; class: string }> = {
   low:    { label: 'Low',    class: 'bg-gray-800 text-gray-400 border-gray-700' },
   medium: { label: 'Medium', class: 'bg-blue-900/50 text-blue-300 border-blue-700/40' },
   high:   { label: 'High',   class: 'bg-red-900/50 text-red-300 border-red-700/40' },
 }
 
-export default function TodoTab({ car }) {
+interface TodoTabProps {
+  car: Car
+}
+
+export default function TodoTab({ car }: TodoTabProps) {
   const addTodo    = useGarageStore((s) => s.addTodo)
   const toggleTodo = useGarageStore((s) => s.toggleTodo)
   const deleteTodo = useGarageStore((s) => s.deleteTodo)
   const [text, setText]           = useState('')
-  const [priority, setPriority]   = useState('medium')
-  const [confirmTodo, setConfirmTodo] = useState(null)
+  const [priority, setPriority]   = useState<TodoPriority>('medium')
+  const [confirmTodo, setConfirmTodo] = useState<Todo | null>(null)
 
-  const handleAdd = (e) => {
+  const handleAdd = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!text.trim()) return
     addTodo(car.id, text.trim(), priority)
     setText('')
   }
 
-  const pending = car.todos.filter((t) => !t.done).sort((a, b) => {
-    const order = { high: 0, medium: 1, low: 2 }
-    return order[a.priority] - order[b.priority]
-  })
+  const order: Record<TodoPriority, number> = { high: 0, medium: 1, low: 2 }
+  const pending = car.todos.filter((t) => !t.done).sort((a, b) => order[a.priority] - order[b.priority])
   const done = car.todos.filter((t) => t.done)
 
   return (
@@ -44,7 +48,7 @@ export default function TodoTab({ car }) {
         </div>
         <div className="w-28">
           <label className="label">Priority</label>
-          <select className="input" value={priority} onChange={(e) => setPriority(e.target.value)}>
+          <select className="input" value={priority} onChange={(e) => setPriority(e.target.value as TodoPriority)}>
             <option value="low">Low</option>
             <option value="medium">Medium</option>
             <option value="high">High</option>

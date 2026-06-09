@@ -1,23 +1,32 @@
 import { useRef, useState } from 'react'
+import type { ChangeEvent } from 'react'
 import { Upload, Star, Trash2, X } from 'lucide-react'
 import useGarageStore from '../../store/useGarageStore'
 import ConfirmModal from '../ConfirmModal'
+import type { Car, Photo } from '../../types'
 
-export default function PhotosTab({ car }) {
+interface PhotosTabProps {
+  car: Car
+}
+
+export default function PhotosTab({ car }: PhotosTabProps) {
   const addPhoto = useGarageStore((s) => s.addPhoto)
   const deletePhoto = useGarageStore((s) => s.deletePhoto)
   const setCoverPhoto = useGarageStore((s) => s.setCoverPhoto)
-  const fileRef = useRef()
+  const fileRef = useRef<HTMLInputElement | null>(null)
   const [caption, setCaption] = useState('')
-  const [preview, setPreview] = useState(null)
-  const [lightbox, setLightbox] = useState(null)
-  const [confirmPhoto, setConfirmPhoto] = useState(null)
+  const [preview, setPreview] = useState<string | null>(null)
+  const [lightbox, setLightbox] = useState<Photo | null>(null)
+  const [confirmPhoto, setConfirmPhoto] = useState<Photo | null>(null)
 
-  const handleFile = (e) => {
-    const file = e.target.files[0]
+  const handleFile = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
     if (!file) return
     const reader = new FileReader()
-    reader.onload = (ev) => setPreview(ev.target.result)
+    reader.onload = (ev) => {
+      const result = ev.target?.result
+      if (typeof result === 'string') setPreview(result)
+    }
     reader.readAsDataURL(file)
     e.target.value = ''
   }
@@ -50,7 +59,7 @@ export default function PhotosTab({ car }) {
           </div>
         ) : (
           <button
-            onClick={() => fileRef.current.click()}
+            onClick={() => fileRef.current?.click()}
             className="w-full h-32 border-2 border-dashed border-border rounded-xl flex flex-col items-center justify-center gap-2 text-gray-500 hover:border-accent/50 hover:text-accent transition-colors cursor-pointer"
           >
             <Upload size={24} />

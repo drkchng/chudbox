@@ -1,16 +1,38 @@
 import { useState } from 'react'
+import type { FormEvent } from 'react'
 import { Plus, Trash2, ClipboardList, Pencil, Check, X, Calendar } from 'lucide-react'
 import useGarageStore from '../../store/useGarageStore'
 import { CURRENCIES, DISTANCE_UNITS } from '../../utils/units'
 import DateInput from '../DateInput'
 import ConfirmModal from '../ConfirmModal'
+import type { Car, MaintenanceRecord, FieldChangeEvent } from '../../types'
 
 const SERVICES = ['Oil Change', 'Tire Rotation', 'Brake Pads', 'Brake Fluid', 'Coolant Flush', 'Transmission Fluid', 'Spark Plugs', 'Air Filter', 'Cabin Filter', 'Belt / Chain', 'Battery', 'Alignment', 'Tires', 'Inspection', 'Other']
 
-const emptyForm = { service: '', date: '', mileage: '', cost: '', shop: '', notes: '', nextDueDate: '', nextDueMileage: '' }
+interface MaintenanceForm {
+  service: string
+  date: string
+  mileage: string
+  cost: string
+  shop: string
+  notes: string
+  nextDueDate: string
+  nextDueMileage: string
+}
+
+const emptyForm: MaintenanceForm = { service: '', date: '', mileage: '', cost: '', shop: '', notes: '', nextDueDate: '', nextDueMileage: '' }
+
+type MaintenanceFieldSetter = <K extends keyof MaintenanceForm>(key: K) => (eOrVal: string | FieldChangeEvent) => void
+
+interface FormFieldsProps {
+  vals: MaintenanceForm
+  onChange: MaintenanceFieldSetter
+  sym?: string
+  distShort?: string
+}
 
 // Defined outside MaintenanceTab so React never unmounts/remounts it on re-render
-function FormFields({ vals, onChange, sym = '$', distShort = 'mi' }) {
+function FormFields({ vals, onChange, sym = '$', distShort = 'mi' }: FormFieldsProps) {
   return (
     <>
       <div className="grid sm:grid-cols-2 gap-3">
@@ -41,7 +63,11 @@ function FormFields({ vals, onChange, sym = '$', distShort = 'mi' }) {
   )
 }
 
-export default function MaintenanceTab({ car }) {
+interface MaintenanceTabProps {
+  car: Car
+}
+
+export default function MaintenanceTab({ car }: MaintenanceTabProps) {
   const addMaintenance    = useGarageStore((s) => s.addMaintenance)
   const updateMaintenance = useGarageStore((s) => s.updateMaintenance)
   const deleteMaintenance = useGarageStore((s) => s.deleteMaintenance)
@@ -50,16 +76,20 @@ export default function MaintenanceTab({ car }) {
   const sym       = CURRENCIES[currency]?.symbol ?? '$'
   const distShort = DISTANCE_UNITS[distanceUnit]?.short ?? 'mi'
   const [showForm, setShowForm]   = useState(false)
-  const [form, setForm]           = useState(emptyForm)
-  const [editId, setEditId]       = useState(null)
-  const [editForm, setEditForm]   = useState({})
-  const [confirmRec, setConfirmRec] = useState(null)
+  const [form, setForm]           = useState<MaintenanceForm>(emptyForm)
+  const [editId, setEditId]       = useState<string | null>(null)
+  const [editForm, setEditForm]   = useState<MaintenanceForm>(emptyForm)
+  const [confirmRec, setConfirmRec] = useState<MaintenanceRecord | null>(null)
 
   // Accepts either a plain string (from DateInput) or a change event (from regular inputs)
-  const set     = (k) => (eOrVal) => setForm((f)     => ({ ...f, [k]: typeof eOrVal === 'string' ? eOrVal : eOrVal.target.value }))
-  const setEdit = (k) => (eOrVal) => setEditForm((f) => ({ ...f, [k]: typeof eOrVal === 'string' ? eOrVal : eOrVal.target.value }))
+  const set: MaintenanceFieldSetter =
+    (key) => (eOrVal) =>
+      setForm((f) => ({ ...f, [key]: typeof eOrVal === 'string' ? eOrVal : eOrVal.target.value }))
+  const setEdit: MaintenanceFieldSetter =
+    (key) => (eOrVal) =>
+      setEditForm((f) => ({ ...f, [key]: typeof eOrVal === 'string' ? eOrVal : eOrVal.target.value }))
 
-  const handleAdd = (e) => {
+  const handleAdd = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!form.service) return
     addMaintenance(car.id, { ...form, cost: form.cost ? parseFloat(form.cost) : null, mileage: form.mileage || null })
@@ -67,15 +97,28 @@ export default function MaintenanceTab({ car }) {
     setShowForm(false)
   }
 
-  const startEdit = (rec) => { setEditId(rec.id); setEditForm({ ...rec }) }
-  const saveEdit  = () => {
-    updateMaintenance(car.id, editId, { ...editForm, cost: editForm.cost ? parseFloat(editForm.cost) : null })
+  const startEdit = (rec: MaintenanceRecord) => {
+    setEditId(rec.id)
+    setEditForm({
+      service: rec.service,
+      date: rec.date,
+      mileage: rec.mileage ?? '',
+      cost: rec.cost != null ? String(rec.cost) : '',
+      shop: rec.shop,
+      notes: rec.notes,
+      nextDueDate: rec.nextDueDate,
+      nextDueMileage: rec.nextDueMileage,
+    })
+  }
+  const saveEdit = () => {
+    if (!editId) return
+    updateMaintenance(car.id, editId, { ...editForm, cost: editForm.cost ? parseFloat(editForm.cost) : null, mileage: editForm.mileage || null })
     setEditId(null)
   }
 
-  const sorted    = [...car.maintenance].sort((a, b) => new Date(b.date) - new Date(a.date))
+  const sorted    = [...car.maintenance].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
   const totalCost = car.maintenance.reduce((s, r) => s + (r.cost || 0), 0)
-  const isOverdue = (rec) => rec.nextDueDate && new Date(rec.nextDueDate) < new Date()
+  const isOverdue = (rec: MaintenanceRecord): boolean => Boolean(rec.nextDueDate) && new Date(rec.nextDueDate) < new Date()
 
   return (
     <div>

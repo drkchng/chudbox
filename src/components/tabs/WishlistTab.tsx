@@ -1,28 +1,53 @@
 import { useState } from 'react'
-import { Plus, ExternalLink, Trash2, DollarSign, ShoppingCart, CheckCircle2, Package, Wrench, X } from 'lucide-react'
+import type { FormEvent } from 'react'
+import { Plus, ExternalLink, Trash2, ShoppingCart, CheckCircle2, Package, Wrench, X } from 'lucide-react'
 import useGarageStore from '../../store/useGarageStore'
 import { CURRENCIES } from '../../utils/units'
 import DateInput from '../DateInput'
 import ConfirmModal from '../ConfirmModal'
 import { CATEGORIES } from '../../utils/categories'
+import type { Car, WishlistItem, WishlistStatus, FieldChangeEvent } from '../../types'
 
-const STATUS_STYLES = {
+const STATUS_STYLES: Record<WishlistStatus, { label: string; class: string }> = {
   wanted:    { label: 'Wanted',    class: 'bg-blue-900/50 text-blue-300 border-blue-700/40' },
   ordered:   { label: 'Ordered',   class: 'bg-yellow-900/50 text-yellow-300 border-yellow-700/40' },
   installed: { label: 'Installed', class: 'bg-green-900/50 text-green-300 border-green-700/40' },
 }
 
+interface WishlistForm {
+  name: string
+  link: string
+  price: string
+  category: string
+  notes: string
+}
 
-const emptyForm = { name: '', link: '', price: '', category: '', notes: '' }
+const emptyForm: WishlistForm = { name: '', link: '', price: '', category: '', notes: '' }
+
+interface MoveModForm {
+  name: string
+  category: string
+  description: string
+  cost: string
+  link: string
+  installedDate: string
+  shop: string
+}
+
+interface MoveToModsModalProps {
+  item: WishlistItem
+  carId: string
+  onClose: () => void
+}
 
 // Modal shown when moving an installed wishlist item to mods
-function MoveToModsModal({ item, carId, onClose }) {
+function MoveToModsModal({ item, carId, onClose }: MoveToModsModalProps) {
   const addMod             = useGarageStore((s) => s.addMod)
   const deleteWishlistItem = useGarageStore((s) => s.deleteWishlistItem)
   const currency = useGarageStore((s) => s.currency)
   const sym      = CURRENCIES[currency]?.symbol ?? '$'
 
-  const [mod, setMod] = useState({
+  const [mod, setMod] = useState<MoveModForm>({
     name:          item.name        || '',
     category:      item.category    || '',
     description:   item.notes       || '',
@@ -33,7 +58,10 @@ function MoveToModsModal({ item, carId, onClose }) {
   })
   const [removeFromWishlist, setRemoveFromWishlist] = useState(true)
 
-  const set    = (k) => (eOrVal) => setMod((m) => ({ ...m, [k]: typeof eOrVal === 'string' ? eOrVal : eOrVal.target.value }))
+  const set =
+    <K extends keyof MoveModForm>(key: K) =>
+    (eOrVal: string | FieldChangeEvent): void =>
+      setMod((m) => ({ ...m, [key]: typeof eOrVal === 'string' ? eOrVal : eOrVal.target.value }))
 
   const handleConfirm = () => {
     addMod(carId, { ...mod, cost: mod.cost ? parseFloat(mod.cost) : null })
@@ -111,20 +139,27 @@ function MoveToModsModal({ item, carId, onClose }) {
   )
 }
 
-export default function WishlistTab({ car }) {
+interface WishlistTabProps {
+  car: Car
+}
+
+export default function WishlistTab({ car }: WishlistTabProps) {
   const addWishlistItem    = useGarageStore((s) => s.addWishlistItem)
   const updateWishlistItem = useGarageStore((s) => s.updateWishlistItem)
   const deleteWishlistItem = useGarageStore((s) => s.deleteWishlistItem)
   const currency = useGarageStore((s) => s.currency)
   const sym      = CURRENCIES[currency]?.symbol ?? '$'
   const [showForm, setShowForm]       = useState(false)
-  const [form, setForm]               = useState(emptyForm)
-  const [movingItem, setMovingItem]   = useState(null)
-  const [confirmItem, setConfirmItem] = useState(null)
+  const [form, setForm]               = useState<WishlistForm>(emptyForm)
+  const [movingItem, setMovingItem]   = useState<WishlistItem | null>(null)
+  const [confirmItem, setConfirmItem] = useState<WishlistItem | null>(null)
 
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
+  const set =
+    <K extends keyof WishlistForm>(key: K) =>
+    (e: FieldChangeEvent): void =>
+      setForm((f) => ({ ...f, [key]: e.target.value }))
 
-  const handleAdd = (e) => {
+  const handleAdd = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!form.name) return
     addWishlistItem(car.id, { ...form, price: form.price ? parseFloat(form.price) : null })
@@ -132,7 +167,7 @@ export default function WishlistTab({ car }) {
     setShowForm(false)
   }
 
-  const markInstalled = (item) => {
+  const markInstalled = (item: WishlistItem) => {
     updateWishlistItem(car.id, item.id, { status: 'installed' })
     setMovingItem(item)
   }

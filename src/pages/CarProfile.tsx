@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import type { LucideIcon } from 'lucide-react'
 import { ArrowLeft, Car, Pencil, Trash2, Camera, ShoppingCart, Wrench, ClipboardList, CheckSquare, AlertTriangle, Settings, FileDown, DollarSign } from 'lucide-react'
 import useGarageStore from '../store/useGarageStore'
 import { getCarStatus, STATUS_CONFIG } from '../utils/carStatus'
@@ -16,7 +17,15 @@ import MarkAsSoldModal from '../components/MarkAsSoldModal'
 import SettingsPanel from '../components/SettingsPanel'
 import ConfirmModal from '../components/ConfirmModal'
 
-const TABS = [
+type TabId = 'photos' | 'wishlist' | 'mods' | 'maintenance' | 'todos' | 'issues'
+
+interface TabDef {
+  id: TabId
+  label: string
+  icon: LucideIcon
+}
+
+const TABS: TabDef[] = [
   { id: 'photos',      label: 'Photos',       icon: Camera },
   { id: 'wishlist',    label: 'Wishlist',      icon: ShoppingCart },
   { id: 'mods',        label: 'Mods',          icon: Wrench },
@@ -26,7 +35,7 @@ const TABS = [
 ]
 
 export default function CarProfile() {
-  const { id } = useParams()
+  const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const car          = useGarageStore((s) => s.cars.find((c) => c.id === id))
   const deleteCar    = useGarageStore((s) => s.deleteCar)
@@ -34,7 +43,7 @@ export default function CarProfile() {
   const distanceUnit = useGarageStore((s) => s.distanceUnit)
   const sym          = CURRENCIES[currency]?.symbol ?? '$'
   const distShort    = DISTANCE_UNITS[distanceUnit]?.short ?? 'mi'
-  const [tab, setTab] = useState('photos')
+  const [tab, setTab] = useState<TabId>('photos')
   const [editing, setEditing]             = useState(false)
   const [showSettings, setShowSettings]   = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -58,6 +67,7 @@ export default function CarProfile() {
   const statusCfg   = STATUS_CONFIG[status]
 
   const handleDelete = () => {
+    if (!id) return
     deleteCar(id)
     navigate('/')
   }

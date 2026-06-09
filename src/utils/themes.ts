@@ -1,7 +1,22 @@
 // All color values are space-separated RGB channels (e.g. "249 115 22")
 // so Tailwind's opacity modifiers like bg-accent/10 work correctly.
 
-export const THEMES = [
+export interface ThemeColors {
+  accent: string
+  accentDim: string
+  dark: string
+  surface: string
+  surface2: string
+  border: string
+}
+
+export interface Theme extends ThemeColors {
+  id: string
+  name: string
+  preview: string
+}
+
+export const THEMES: Theme[] = [
   {
     id: 'garage',
     name: 'Garage',
@@ -72,7 +87,7 @@ export const THEMES = [
 
 export const DEFAULT_THEME_ID = 'garage'
 
-export function applyTheme(theme) {
+export function applyTheme(theme: ThemeColors): void {
   const root = document.documentElement
   root.style.setProperty('--accent',     theme.accent)
   root.style.setProperty('--accent-dim', theme.accentDim)
@@ -83,7 +98,7 @@ export function applyTheme(theme) {
 }
 
 // Convert a hex color (#rrggbb) to space-separated RGB channels
-export function hexToRgbChannels(hex) {
+export function hexToRgbChannels(hex: string): string {
   const clean = hex.replace('#', '')
   const r = parseInt(clean.slice(0, 2), 16)
   const g = parseInt(clean.slice(2, 4), 16)
@@ -92,7 +107,7 @@ export function hexToRgbChannels(hex) {
 }
 
 // Slightly darken an RGB channels string for the dim variant
-export function darkenChannels(channels, amount = 20) {
+export function darkenChannels(channels: string, amount = 20): string {
   const [r, g, b] = channels.split(' ').map(Number)
   return `${Math.max(0, r - amount)} ${Math.max(0, g - amount)} ${Math.max(0, b - amount)}`
 }

@@ -1,37 +1,53 @@
 import { useState } from 'react'
+import type { FormEvent } from 'react'
+import type { LucideIcon } from 'lucide-react'
 import { Plus, Trash2, AlertTriangle, CheckCircle2, Clock, Pencil, Check, X } from 'lucide-react'
 import useGarageStore from '../../store/useGarageStore'
 import ConfirmModal from '../ConfirmModal'
+import type { Car, Issue, IssueSeverity, IssueStatus, FieldChangeEvent } from '../../types'
 
-const SEVERITY = {
+const SEVERITY: Record<IssueSeverity, { label: string; class: string }> = {
   minor:    { label: 'Minor',    class: 'bg-gray-800 text-gray-300 border-gray-700' },
   moderate: { label: 'Moderate', class: 'bg-yellow-900/50 text-yellow-300 border-yellow-700/40' },
   critical: { label: 'Critical', class: 'bg-red-900/50 text-red-300 border-red-700/40' },
 }
 
-const STATUS_ICON = {
-  open:        { icon: AlertTriangle, class: 'text-red-400' },
-  'in-progress': { icon: Clock,        class: 'text-yellow-400' },
-  resolved:    { icon: CheckCircle2,  class: 'text-green-400' },
+const STATUS_ICON: Record<IssueStatus, { icon: LucideIcon; class: string }> = {
+  open:          { icon: AlertTriangle, class: 'text-red-400' },
+  'in-progress': { icon: Clock,         class: 'text-yellow-400' },
+  resolved:      { icon: CheckCircle2,  class: 'text-green-400' },
 }
 
-const emptyForm = { title: '', description: '', severity: 'moderate' }
+type IssueForm = Pick<Issue, 'title' | 'description' | 'severity'>
 
-export default function IssuesTab({ car }) {
+const emptyForm: IssueForm = { title: '', description: '', severity: 'moderate' }
+
+interface IssuesTabProps {
+  car: Car
+}
+
+export default function IssuesTab({ car }: IssuesTabProps) {
   const addIssue    = useGarageStore((s) => s.addIssue)
   const updateIssue = useGarageStore((s) => s.updateIssue)
   const deleteIssue = useGarageStore((s) => s.deleteIssue)
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState(emptyForm)
-  const [editId, setEditId] = useState(null)
-  const [editForm, setEditForm] = useState({})
-  const [filter, setFilter]         = useState('open')
-  const [confirmIssue, setConfirmIssue] = useState(null)
+  const [form, setForm] = useState<IssueForm>(emptyForm)
+  const [editId, setEditId] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState<Partial<Issue>>({})
+  const [filter, setFilter]         = useState<'open' | 'resolved'>('open')
+  const [confirmIssue, setConfirmIssue] = useState<Issue | null>(null)
 
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
-  const setEdit = (k) => (e) => setEditForm((f) => ({ ...f, [k]: e.target.value }))
+  const set =
+    <K extends keyof IssueForm>(key: K) =>
+    (e: FieldChangeEvent): void =>
+      setForm((f) => ({ ...f, [key]: e.target.value as IssueForm[K] }))
 
-  const handleAdd = (e) => {
+  const setEdit =
+    <K extends keyof Issue>(key: K) =>
+    (e: FieldChangeEvent): void =>
+      setEditForm((f) => ({ ...f, [key]: e.target.value as Issue[K] }))
+
+  const handleAdd = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!form.title) return
     addIssue(car.id, form)
@@ -39,12 +55,16 @@ export default function IssuesTab({ car }) {
     setShowForm(false)
   }
 
-  const startEdit = (issue) => { setEditId(issue.id); setEditForm({ ...issue }) }
-  const saveEdit = () => { updateIssue(car.id, editId, editForm); setEditId(null) }
+  const startEdit = (issue: Issue) => { setEditId(issue.id); setEditForm({ ...issue }) }
+  const saveEdit = () => {
+    if (editId) updateIssue(car.id, editId, editForm)
+    setEditId(null)
+  }
 
-  const cycleStatus = (issue) => {
-    const next = { open: 'in-progress', 'in-progress': 'resolved', resolved: 'open' }
-    updateIssue(car.id, issue.id, { status: next[issue.status], resolvedAt: next[issue.status] === 'resolved' ? new Date().toISOString() : null })
+  const cycleStatus = (issue: Issue) => {
+    const next: Record<IssueStatus, IssueStatus> = { open: 'in-progress', 'in-progress': 'resolved', resolved: 'open' }
+    const nextStatus = next[issue.status]
+    updateIssue(car.id, issue.id, { status: nextStatus, resolvedAt: nextStatus === 'resolved' ? new Date().toISOString() : null })
   }
 
   const open = car.issues.filter((i) => i.status !== 'resolved')
@@ -104,8 +124,8 @@ export default function IssuesTab({ car }) {
             const { icon: StatusIcon, class: statusClass } = STATUS_ICON[issue.status]
             return editId === issue.id ? (
               <div key={issue.id} className="card border-accent/30 space-y-3">
-                <div><label className="label">Title</label><input className="input" value={editForm.title} onChange={setEdit('title')} /></div>
-                <div><label className="label">Description</label><textarea className="input resize-none" rows={3} value={editForm.description} onChange={setEdit('description')} /></div>
+                <div><label className="label">Title</label><input className="input" value={editForm.title ?? ''} onChange={setEdit('title')} /></div>
+                <div><label className="label">Description</label><textarea className="input resize-none" rows={3} value={editForm.description ?? ''} onChange={setEdit('description')} /></div>
                 <div className="grid grid-cols-2 gap-3">
                   <div><label className="label">Severity</label>
                     <select className="input" value={editForm.severity} onChange={setEdit('severity')}>

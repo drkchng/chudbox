@@ -1,11 +1,18 @@
 import { useState } from 'react'
+import type { ChangeEvent } from 'react'
 import { X } from 'lucide-react'
 import useGarageStore from '../store/useGarageStore'
 import DateInput from './DateInput'
+import type { Car } from '../types'
 
 const today = new Date().toISOString().slice(0, 10)
 
-export default function MarkAsSoldModal({ car, onClose }) {
+interface MarkAsSoldModalProps {
+  car: Car
+  onClose: () => void
+}
+
+export default function MarkAsSoldModal({ car, onClose }: MarkAsSoldModalProps) {
   const updateCar = useGarageStore((s) => s.updateCar)
   const [saleDate, setSaleDate] = useState(today)
   const [salePrice, setSalePrice] = useState(car.salePrice || '')
@@ -43,7 +50,7 @@ export default function MarkAsSoldModal({ car, onClose }) {
                 step="0.01"
                 placeholder="25000"
                 value={salePrice}
-                onChange={(e) => setSalePrice(e.target.value)}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setSalePrice(e.target.value)}
               />
             </div>
           </div>

@@ -1,24 +1,35 @@
 import { useState } from 'react'
+import type { ChangeEvent, FormEvent } from 'react'
 import { X } from 'lucide-react'
 import useGarageStore from '../store/useGarageStore'
 import DateInput from './DateInput'
+import type { Car, CarDetails, CarStoredStatus, FieldChangeEvent } from '../types'
 
 const today = new Date().toISOString().slice(0, 10)
 
-export default function EditCarModal({ car, onClose }) {
+interface EditCarModalProps {
+  car: Car
+  onClose: () => void
+}
+
+export default function EditCarModal({ car, onClose }: EditCarModalProps) {
   const updateCar = useGarageStore((s) => s.updateCar)
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<CarDetails>({
     year: car.year || '', make: car.make || '', model: car.model || '',
     trim: car.trim || '', color: car.color || '', mileage: car.mileage || '', nickname: car.nickname || '',
     purchaseDate: car.purchaseDate || '', saleDate: car.saleDate || '',
     status: car.status || 'current', salePrice: car.salePrice || '', tradeFor: car.tradeFor || '',
   })
 
-  const set = (k) => (eOrVal) =>
-    setForm((f) => ({ ...f, [k]: typeof eOrVal === 'string' ? eOrVal : eOrVal.target.value }))
+  const set =
+    <K extends keyof CarDetails>(key: K) =>
+    (eOrVal: string | FieldChangeEvent): void => {
+      const value = typeof eOrVal === 'string' ? eOrVal : eOrVal.target.value
+      setForm((f) => ({ ...f, [key]: value as CarDetails[K] }))
+    }
 
-  const setStatus = (e) => {
-    const newStatus = e.target.value
+  const setStatus = (e: ChangeEvent<HTMLSelectElement>) => {
+    const newStatus = e.target.value as CarStoredStatus
     setForm((f) => ({
       ...f,
       status: newStatus,
@@ -26,7 +37,7 @@ export default function EditCarModal({ car, onClose }) {
     }))
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     updateCar(car.id, form)
     onClose()
