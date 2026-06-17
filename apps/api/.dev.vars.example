@@ -1,0 +1,8 @@
+# Copy to .dev.vars (gitignored) and fill in. Generate a secret with:
+#   openssl rand -base64 32
+BETTER_AUTH_SECRET=""
+
+# Optional: leave empty in local dev — verification / reset links are then
+# logged to the wrangler dev console instead of being emailed.
+RESEND_API_KEY=""
+AUTH_EMAIL_FROM="Chudbox <onboarding@resend.dev>"

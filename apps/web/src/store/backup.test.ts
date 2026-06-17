@@ -1,0 +1,149 @@
+// Backup contract (M2 verification (f) support): v2 round-trip through the
+// shared flatten/join seam, v1 current-device-settings tagging (plan F2), and
+// replace semantics with a wholesale stamp reset (no tombstones).
+import { describe, expect, it } from 'vitest'
+import { createStore } from 'tinybase'
+import type { MergeableStore, Store } from 'tinybase'
+import { createGarageStore } from '@chudbox/shared'
+import { PHOTO_PAYLOADS_TABLE, createGarageAdapter } from './adapter'
+import { applyBackupImport, buildBackupV2, parseBackup } from './backup'
+import { writeNestedCars } from './migrate'
+import { plainCar, richCar } from './testFixtures'
+
+function makeStores(): { store: MergeableStore; localStore: Store } {
+  return { store: createGarageStore(), localStore: createStore() }
+}
+
+describe('parseBackup', () => {
+  it('recognizes v2 with its settings', () => {
+    const parsed = parseBackup({
+      version: 2,
+      exportedAt: '2026-06-12T00:00:00.000Z',
+      cars: [],
+      themeId: 'sunset',
+      customAccent: '#123456',
+      currency: 'EUR',
+      distanceUnit: 'km',
+    })
+    expect(parsed?.version).toBe(2)
+    expect(parsed?.currency).toBe('EUR')
+    expect(parsed?.distanceUnit).toBe('km')
+  })
+
+  it('treats anything else with a cars array as v1 (legacy leniency)', () => {
+    expect(parseBackup({ cars: [] })?.version).toBe(1)
+    expect(parseBackup({ version: 1, cars: [] })?.version).toBe(1)
+    expect(parseBackup({ version: 1, cars: [], currency: 'EUR' })?.currency).toBeNull()
+  })
+
+  it('rejects non-backups', () => {
+    expect(parseBackup(null)).toBeNull()
+    expect(parseBackup({})).toBeNull()
+    expect(parseBackup({ cars: 'nope' })).toBeNull()
+  })
+})
+
+describe('v2 round trip', () => {
+  it('export → JSON → import reproduces the garage exactly (incl. photos and settings)', () => {
+    const source = makeStores()
+    const cars = [richCar('car-a', 0), plainCar('car-b', 100)]
+    writeNestedCars(source.store, source.localStore, cars, {
+      currency: 'EUR',
+      distanceUnit: 'km',
+    })
+    source.store.setValue('themeId', 'sunset')
+    source.store.setValue('customAccent', '#ff8800')
+    source.store.setValue('currency', 'EUR')
+    source.store.setValue('distanceUnit', 'km')
+    const sourceAdapter = createGarageAdapter(source.store, source.localStore)
+    const sourceState = sourceAdapter.getState()
+
+    const backup = buildBackupV2({
+      cars: sourceState.cars,
+      themeId: sourceState.themeId,
+      customAccent: sourceState.customAccent,
+      currency: sourceState.currency,
+      distanceUnit: sourceState.distanceUnit,
+    })
+    const parsed = parseBackup(JSON.parse(JSON.stringify(backup)))
+    expect(parsed).not.toBeNull()
+
+    const target = makeStores()
+    applyBackupImport({ store: target.store, localStore: target.localStore, backup: parsed! })
+    const targetAdapter = createGarageAdapter(target.store, target.localStore)
+    const targetState = targetAdapter.getState()
+
+    expect(targetState.cars).toEqual(sourceState.cars)
+    expect(targetState.themeId).toBe('sunset')
+    expect(targetState.customAccent).toBe('#ff8800')
+    expect(targetState.currency).toBe('EUR')
+    expect(targetState.distanceUnit).toBe('km')
+    // Tags came from the BACKUP's settings.
+    expect(target.store.getCell('mods', 'car-a-m1', 'costCurrency')).toBe('EUR')
+    // Photo payload round-tripped into the side store.
+    expect(target.store.hasCell('photos', 'car-a-p1', 'dataUrl' as never)).toBe(false)
+    expect(target.localStore.getCell(PHOTO_PAYLOADS_TABLE, 'car-a-p1', 'dataUrl')).toBe(
+      'data:image/png;base64,AAAA',
+    )
+  })
+})
+
+describe('v1 import', () => {
+  it("tags amounts/mileage with the importing device's CURRENT settings and keeps them", () => {
+    const target = makeStores()
+    target.store.setValue('currency', 'CAD')
+    target.store.setValue('distanceUnit', 'km')
+    const parsed = parseBackup({
+      version: 1,
+      exportedAt: '2025-01-01T00:00:00.000Z',
+      cars: [richCar('v1-car', 0)],
+      themeId: 'midnight',
+      customAccent: null,
+    })
+    applyBackupImport({ store: target.store, localStore: target.localStore, backup: parsed! })
+
+    expect(target.store.getCell('mods', 'v1-car-m1', 'costCurrency')).toBe('CAD')
+    // 12,000 entered under the device's km setting → canonical miles.
+    expect(target.store.getCell('maintenance', 'v1-car-r1', 'mileageMiles')).toBe(
+      12000 / 1.609344,
+    )
+    // v1 has no currency/distanceUnit → device settings preserved.
+    expect(target.store.getValue('currency')).toBe('CAD')
+    expect(target.store.getValue('distanceUnit')).toBe('km')
+    expect(target.store.getValue('themeId')).toBe('midnight')
+  })
+})
+
+describe('replace semantics', () => {
+  it('drops pre-existing data AND its stamp history (no tombstones to fight sync later)', () => {
+    const target = makeStores()
+    writeNestedCars(target.store, target.localStore, [richCar('old-car', 0)], {
+      currency: 'USD',
+      distanceUnit: 'mi',
+    })
+    expect(target.localStore.getRowIds(PHOTO_PAYLOADS_TABLE)).toHaveLength(1)
+
+    const parsed = parseBackup({ cars: [plainCar('new-car', 50)] })
+    applyBackupImport({ store: target.store, localStore: target.localStore, backup: parsed! })
+
+    expect(target.store.getRowIds('cars')).toEqual(['new-car'])
+    expect(target.localStore.getRowIds(PHOTO_PAYLOADS_TABLE)).toHaveLength(0)
+    // Stamp map was RESET: no tombstone stamps survive for the old rows
+    // (delRow-style clearing would leave them and they would out-stamp cloud
+    // rows on a later attach).
+    const [tablesStamp] = target.store.getMergeableContent()
+    const carsRowStamps = tablesStamp[0]['cars'][0]
+    expect(Object.keys(carsRowStamps)).toEqual(['new-car'])
+  })
+
+  it('normalizes user-supplied cars with missing child arrays instead of crashing', () => {
+    const target = makeStores()
+    const partial = { ...plainCar('sparse-car', 0) } as Record<string, unknown>
+    delete partial.photos
+    delete partial.todos
+    const parsed = parseBackup({ cars: [partial] })
+    expect(parsed).not.toBeNull()
+    applyBackupImport({ store: target.store, localStore: target.localStore, backup: parsed! })
+    expect(target.store.getRowIds('cars')).toEqual(['sparse-car'])
+  })
+})

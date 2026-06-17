@@ -10,7 +10,7 @@ Car enthusiasts and hobbyists who actively build, modify, and maintain their own
 
 ## Product Purpose
 
-Chudbox is a local-first car management app. No backend, no account, no sync — everything lives in the browser. Users track builds per car: mods installed, maintenance records, parts on the wishlist, open issues, and to-dos. Success means a user can open it mid-build and log a new mod in under 10 seconds.
+Chudbox is a local-first car management app. Everything lives in the browser and the full app works with no account and no connection; an optional account adds cross-device sync and cloud backup on top. Users track builds per car: mods installed, maintenance records, parts on the wishlist, open issues, and to-dos. Success means a user can open it mid-build and log a new mod in under 10 seconds.
 
 ## Brand Personality
 
@@ -28,7 +28,7 @@ Enthusiast, precise, dark. The tool should feel like a gearhead built it for the
 2. **Dark is native, not a preference.** This is not a light-mode app with a dark toggle. The dark palette is load-bearing.
 3. **Orange marks what matters.** Accent color earns its place: primary actions, current state, alert badges. Never decoration.
 4. **Dense by default.** Car data is rich. Tables, stat rows, and tag lists should be compact enough to scan, not airy enough to feel like a landing page.
-5. **Local is a feature.** No spinner waiting for a server. No empty state waiting for an account. The app is always ready.
+5. **Local is a feature.** No spinner waiting for a server. No empty state waiting for an account. The app is always ready — local-first never requires the server. An account is strictly additive: it turns on cross-device sync and cloud backup, and its absence (or an unreachable backend) changes nothing.
 
 ## Accessibility & Inclusion
 

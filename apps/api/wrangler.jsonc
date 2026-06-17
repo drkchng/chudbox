@@ -1,0 +1,58 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "chudbox",
+  "main": "src/index.ts",
+  // Plan requires >= 2025-04-01 (navigation requests to assets don't bill
+  // Worker invocations from that date).
+  "compatibility_date": "2026-06-01",
+  // Better Auth imports node:crypto / node:async_hooks.
+  "compatibility_flags": ["nodejs_compat"],
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "chudbox",
+      // Placeholder — replaced with the real database id at first deploy.
+      // Local dev/tests (wrangler dev --local, vitest-pool-workers) emulate
+      // D1 and don't dial this id.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "drizzle"
+    }
+  ],
+
+  "r2_buckets": [
+    {
+      "binding": "BUCKET",
+      // Placeholder — unused until M3 (image pipeline).
+      "bucket_name": "chudbox-images"
+    }
+  ],
+
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "GARAGE_DO",
+        "class_name": "GarageDO"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      // MUST be new_sqlite_classes: SQLite-backed DOs run on the Free plan,
+      // and the TinyBase DO-SQL persister needs ctx.storage.sql.
+      "new_sqlite_classes": ["GarageDO"]
+    }
+  ],
+
+  "assets": {
+    "directory": "../web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/sync"]
+  },
+
+  "observability": {
+    "enabled": true
+  }
+}

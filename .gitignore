@@ -12,6 +12,14 @@ dist
 dist-ssr
 *.local
 
+# Monorepo tooling
+.turbo
+*.tsbuildinfo
+
+# Cloudflare Workers local dev (wrangler state + local secrets)
+.wrangler
+.dev.vars
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

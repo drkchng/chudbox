@@ -1,0 +1,60 @@
+/**
+ * Chudbox Worker — Hono router.
+ *
+ * `run_worker_first: ["/api/*", "/sync"]` in wrangler.jsonc scopes the Worker
+ * to exactly these paths; every other request is served directly from the
+ * static assets binding (the SPA), with `single-page-application` not-found
+ * handling. The notFound fallback below only matters for requests that did
+ * reach the Worker.
+ */
+import { Hono } from 'hono'
+
+import { createAuth } from './auth'
+import { syncApi } from './routes/sync'
+
+const app = new Hono<{ Bindings: Env }>()
+
+app.get('/api/health', (c) => c.json({ ok: true }))
+
+// Chunked stamped seeding / clearing / meta for the user's GarageDO (M2).
+// Each route validates the session before touching the DO.
+app.route('/', syncApi)
+
+// Better Auth owns everything under /api/auth/*.
+app.on(['GET', 'POST'], '/api/auth/*', (c) =>
+  createAuth(c.env).handler(c.req.raw),
+)
+
+// WebSocket sync. AUTH FIRST: the session is validated before the Durable
+// Object is touched, and the DO name comes ONLY from the verified session's
+// userId — never from client input.
+app.get('/sync', async (c) => {
+  const auth = createAuth(c.env)
+  const session = await auth.api.getSession({ headers: c.req.raw.headers })
+  if (!session) {
+    return c.json({ error: 'Unauthorized' }, 401)
+  }
+  if (c.req.header('Upgrade')?.toLowerCase() !== 'websocket') {
+    return c.json({ error: 'Expected a WebSocket upgrade request' }, 426)
+  }
+  const id = c.env.GARAGE_DO.idFromName(session.user.id)
+  const stub = c.env.GARAGE_DO.get(id)
+  // Rewrite the path so the DO's pathId is the verified userId (useful for
+  // logging; the DO identity above is what actually isolates users).
+  const url = new URL(c.req.raw.url)
+  url.pathname = `/${session.user.id}`
+  return stub.fetch(new Request(url, c.req.raw))
+})
+
+app.notFound((c) => {
+  // Unknown /api or /sync routes are real 404s; anything else that somehow
+  // reached the Worker falls through to the static SPA assets.
+  const { pathname } = new URL(c.req.url)
+  if (pathname.startsWith('/api/') || pathname === '/sync') {
+    return c.json({ error: 'Not found' }, 404)
+  }
+  return c.env.ASSETS.fetch(c.req.raw)
+})
+
+export default app
+export { GarageDO } from './durable/GarageDO'

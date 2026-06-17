@@ -1,0 +1,13 @@
+// @chudbox/shared — RN-safe domain types + the shared sync core.
+// Must stay free of Node/DOM/React deps so Vite, Workers, and Metro can all
+// consume the compiled output.
+export * from './types'
+export * from './units'
+export * from './schema'
+export * from './flatten'
+export * from './money'
+export * from './store'
+export * from './seed'
+export * from './zod'
+export * from './contracts'
+export * from './id'
