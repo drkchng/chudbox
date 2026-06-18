@@ -20,10 +20,13 @@ import type { Car, CreateShareResponse, PublicCarSnapshot } from '@chudbox/share
 import type { MergeableStore } from 'tinybase'
 import {
   escapeHtmlAttr,
+  escapeHtmlText,
   injectIntoHead,
+  overrideDocumentMeta,
   renderShareMetaTags,
   shareMetaFromSnapshot,
 } from '../src/og'
+import type { ShareMeta } from '../src/og'
 
 const BASE = 'https://example.com'
 
@@ -109,6 +112,71 @@ describe('renderShareMetaTags', () => {
     expect(block).not.toContain('<script>')
     expect(block).not.toContain('"><script')
     expect(block).toContain('&lt;script&gt;')
+  })
+})
+
+describe('escapeHtmlText', () => {
+  it('escapes the text-content-breaking characters but leaves quotes', () => {
+    expect(escapeHtmlText('a&b<c>d"e\'f')).toBe('a&amp;b&lt;c&gt;d"e\'f')
+  })
+})
+
+describe('overrideDocumentMeta', () => {
+  const SHELL =
+    '<!doctype html><html><head>' +
+    '<meta name="description" content="DEFAULT BLURB" />' +
+    '<title>Chudbox — My Garage</title>' +
+    '</head><body><div id="root"></div></body></html>'
+  const META: ShareMeta = {
+    title: '2008 Acura RSX — Track Rat',
+    description: '1 mod · 1 maintenance record — shared on Chudbox',
+    url: 'https://example.com/share/tok',
+  }
+
+  it('replaces the shell <title> and <meta name="description"> with the share values', () => {
+    const out = overrideDocumentMeta(SHELL, META)
+    expect(out).toContain('<title>2008 Acura RSX — Track Rat</title>')
+    expect(out).toContain(
+      '<meta name="description" content="1 mod · 1 maintenance record — shared on Chudbox" />',
+    )
+    expect(out).not.toContain('My Garage')
+    expect(out).not.toContain('DEFAULT BLURB')
+    expect(out.match(/<title>/g)?.length).toBe(1)
+    // The rest of the document (the SPA root) is untouched.
+    expect(out).toContain('<div id="root"></div>')
+  })
+
+  it('text-escapes a </title> breakout attempt in the title (crawler-safe)', () => {
+    const out = overrideDocumentMeta(SHELL, {
+      ...META,
+      title: '</title><script>alert(1)</script>',
+    })
+    expect(out).not.toContain('<script>')
+    expect(out).not.toContain('</title><script')
+    expect(out).toContain('&lt;/title&gt;&lt;script&gt;')
+  })
+
+  it('attribute-escapes a breakout attempt in the description', () => {
+    const out = overrideDocumentMeta(SHELL, {
+      ...META,
+      description: '"><script>alert(1)</script>',
+    })
+    expect(out).not.toContain('<script>')
+    expect(out).not.toContain('"><script')
+    expect(out).toContain('&quot;&gt;&lt;script&gt;')
+  })
+
+  it('leaves HTML untouched when the shell has no title/description tags', () => {
+    const plain = '<html><head></head><body></body></html>'
+    expect(overrideDocumentMeta(plain, META)).toBe(plain)
+  })
+
+  it('inserts $-sequences in the title verbatim (no String.replace pattern corruption)', () => {
+    // `$&`/`$$` are special in a replacement STRING; with a replacer function
+    // they must survive verbatim (only `&` is escaped by escapeHtmlText).
+    const out = overrideDocumentMeta(SHELL, { ...META, title: 'Big $& Deal $$ Co' })
+    expect(out).toContain('<title>Big $&amp; Deal $$ Co</title>')
+    expect(out).not.toContain('My Garage')
   })
 })
 
@@ -207,9 +275,11 @@ async function seedStore(store: MergeableStore): Promise<void> {
   }
 }
 
-async function seedCar(ids: Ids): Promise<void> {
+async function seedCar(ids: Ids, opts?: { noCover?: boolean }): Promise<void> {
   const store = createGarageStore('og-client')
-  const flat = flattenCar(makeCar(ids), { currency: 'USD', distanceUnit: 'mi' })
+  const base = makeCar(ids)
+  const car = opts?.noCover ? { ...base, coverPhoto: '', photos: [] } : base
+  const flat = flattenCar(car, { currency: 'USD', distanceUnit: 'mi' })
   store.setRow('cars', flat.carId, flat.car)
   for (const [table, rows] of [
     ['photos', flat.photos],
@@ -305,5 +375,75 @@ describe('GET /share/:token document — OG injection', () => {
     const html = await res.text()
     expect(html).not.toContain('property="og:title"')
     expect(html).toContain('id="root"')
+  })
+})
+
+// ── Regression (#13): the share document must OVERRIDE the shell's default
+// <title> + <meta name="description"> — not merely APPEND og/twitter tags.
+// Crawlers/unfurlers that read the BARE <title> / <meta name="description">
+// (the universal fallback, and several prefer it) otherwise keep the baked-in
+// generic shell values → the preview shows "Chudbox — My Garage" + the generic
+// blurb instead of the curated car snapshot (the reported production symptom).
+// "My Garage" / "All local, no account needed" are ASCII fragments UNIQUE to
+// the two default tags in apps/web/index.html.
+describe('GET /share/:token document — overrides the default shell title/description', () => {
+  it('replaces the default <title> + description with curated values (curated link)', async () => {
+    const ids = freshIds()
+    await seedCar(ids)
+    const link = await createLink(ids.carId)
+
+    const res = await SELF.fetch(`${BASE}/share/${link.token}`)
+    expect(res.status).toBe(200)
+    const html = await res.text()
+
+    // The car-specific values now drive the bare-HTML fallback…
+    expect(html).toContain('<title>2008 Acura RSX')
+    expect(html).toContain('<meta name="description" content="1 mod')
+    // …and the generic shell defaults are GONE (the reported symptom).
+    expect(html).not.toContain('My Garage')
+    expect(html).not.toContain('All local, no account needed')
+    // Exactly one <title> element survives (no duplicate appended tag).
+    expect(html.match(/<title>/g)?.length).toBe(1)
+    // The SPA bundle still loads for human visitors.
+    expect(html).toContain('id="root"')
+    expect(html).toContain('<script')
+  })
+
+  it('also overrides the title/description for a FULL-scoped link (still curated, defaults gone)', async () => {
+    const ids = freshIds()
+    await seedCar(ids)
+    const link = await createLink(ids.carId, 'full')
+
+    const res = await SELF.fetch(`${BASE}/share/${link.token}`)
+    expect(res.status).toBe(200)
+    const html = await res.text()
+
+    expect(html).toContain('<title>2008 Acura RSX')
+    expect(html).toContain('<meta name="description" content="1 mod')
+    expect(html).not.toContain('My Garage')
+    expect(html).not.toContain('All local, no account needed')
+    expect(html.match(/<title>/g)?.length).toBe(1)
+  })
+
+  // A valid build with NO cover photo still gets a correct title/description
+  // preview (just no image) — the injection is gated on the snapshot, not on a
+  // cover photo. Previously a photo-less share fell through to the generic shell.
+  it('overrides title/description for a photo-less build, omitting og:image', async () => {
+    const ids = freshIds()
+    await seedCar(ids, { noCover: true })
+    const link = await createLink(ids.carId)
+
+    const res = await SELF.fetch(`${BASE}/share/${link.token}`)
+    expect(res.status).toBe(200)
+    const html = await res.text()
+
+    // Title + description + og:title are still curated…
+    expect(html).toContain('<title>2008 Acura RSX')
+    expect(html).toContain('property="og:title" content="2008 Acura RSX')
+    expect(html).not.toContain('My Garage')
+    expect(html).not.toContain('All local, no account needed')
+    // …but with no cover there are no image tags.
+    expect(html).not.toContain('property="og:image"')
+    expect(html).not.toContain('name="twitter:image"')
   })
 })

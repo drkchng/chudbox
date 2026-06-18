@@ -17,7 +17,12 @@
 import { Hono } from 'hono'
 
 import { createAuth } from './auth'
-import { injectIntoHead, renderShareMetaTags, shareMetaFromSnapshot } from './og'
+import {
+  injectIntoHead,
+  overrideDocumentMeta,
+  renderShareMetaTags,
+  shareMetaFromSnapshot,
+} from './og'
 import { imgApi } from './routes/img'
 import { lookupCuratedShareSnapshot, shareApi } from './routes/share'
 import { syncApi } from './routes/sync'
@@ -143,9 +148,15 @@ app.get('/share/:token', async (c) => {
   try {
     const token = c.req.param('token')
     const snapshot = await lookupCuratedShareSnapshot(c.env, token)
-    if (snapshot && snapshot.coverPhotoId !== undefined) {
+    if (snapshot) {
       const meta = shareMetaFromSnapshot(snapshot, token, url.origin)
-      body = injectIntoHead(html, renderShareMetaTags(meta))
+      // Override the shell's own <title>/<meta name="description"> AND inject the
+      // og/twitter block: crawlers that read the bare <title> (the universal
+      // fallback) must get the curated values too, not the baked-in defaults.
+      // Gated on the snapshot alone (not a cover photo): a photo-less build still
+      // gets a correct title/description — shareMetaFromSnapshot/renderShareMetaTags
+      // simply omit og:image when there's no cover.
+      body = injectIntoHead(overrideDocumentMeta(html, meta), renderShareMetaTags(meta))
     }
   } catch {
     body = html
