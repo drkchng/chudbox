@@ -116,6 +116,9 @@ export const rateLimit = sqliteTable('rate_limit', {
  * - created_at / expires_at / revoked_at are epoch SECONDS (pinned repo-wide;
  *   distinct from the Better Auth tables above, which store ms because that is
  *   what the adapter writes).
+ * - view_count is a soft, public hit counter: POST /api/share/:token/view bumps
+ *   it for VALID links only. Additive column (added in drizzle/0001), NOT NULL
+ *   DEFAULT 0 so every pre-existing row reads as 0.
  */
 export const shareLinks = sqliteTable(
   'share_links',
@@ -128,6 +131,7 @@ export const shareLinks = sqliteTable(
     createdAt: integer('created_at').notNull(),
     expiresAt: integer('expires_at'),
     revokedAt: integer('revoked_at'),
+    viewCount: integer('view_count').notNull().default(0),
   },
   (t) => [
     index('share_links_user_car').on(t.userId, t.carId),

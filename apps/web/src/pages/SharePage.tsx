@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { Loader2, LinkIcon, Ban, WifiOff } from 'lucide-react'
-import { fetchShareSnapshot } from '../share/shareClient'
+import { fetchShareSnapshot, recordShareView } from '../share/shareClient'
 import type { SnapshotResult } from '../share/shareClient'
 import { applyThemeFromSettings, captureThemeVars, restoreThemeVars } from '../utils/themes'
 import ShareCarView from '../components/share/ShareCarView'
@@ -36,7 +36,12 @@ export default function SharePage() {
     // App.tsx keys this route by :token, so a share→share navigation remounts
     // (fresh loading state + theme) rather than reusing this element.
     void fetchShareSnapshot(token).then((result) => {
-      if (!cancelled) setState({ phase: 'done', result })
+      if (cancelled) return
+      setState({ phase: 'done', result })
+      // On a successful load, record ONE view. recordShareView is fire-and-
+      // forget (never throws) and sessionStorage-guarded per token, so a refresh
+      // or remount won't re-count and a failed ping never blocks the render.
+      if (result.kind === 'ok') void recordShareView(token)
     })
     return () => {
       cancelled = true

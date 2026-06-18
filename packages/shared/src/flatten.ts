@@ -90,6 +90,16 @@ export function parseMileageMiles(
   return distanceUnit === 'km' ? value / KM_PER_MILE : value
 }
 
+/**
+ * Inverse of parseMileageMiles' scaling: convert a canonical miles value to the
+ * given display unit using the EXACT ×1.609344 factor. Display-only — the
+ * stored canonical (mileageMiles) is the source of truth, so callers convert
+ * from it rather than round-tripping a raw string through a lossy factor.
+ */
+export function milesToUnit(miles: number, distanceUnit: DistanceUnitCode): number {
+  return distanceUnit === 'km' ? miles * KM_PER_MILE : miles
+}
+
 export function flattenCar(car: Car, settings: FlattenSettings): FlattenedCar {
   const carRow: CarsRow = {
     year: car.year,

@@ -223,6 +223,15 @@ export const SHARE_REVOKE_PATH = '/api/cars/:carId/share/:id'
 export const SHARE_PUBLIC_PATH = `${SHARE_ROUTE_PREFIX}/:token`
 /** GET (public, no session) — a token-scoped image, resolved to R2 server-side. */
 export const SHARE_IMG_ROUTE = `${SHARE_ROUTE_PREFIX}/:token/img/:photoId`
+/**
+ * POST (public, no session) — record ONE view of a valid share link. Kept
+ * SEPARATE from the snapshot GET (which is edge-cached ~60s, so incrementing
+ * there would undercount) and served UNCACHED (Cache-Control: no-store). Bumps
+ * view_count only for a link that exists, isn't revoked and isn't expired; it
+ * returns the same tiny body either way (never leaking owner/car internals or
+ * even the link's validity).
+ */
+export const SHARE_VIEW_PATH = `${SHARE_ROUTE_PREFIX}/:token/view`
 
 /** DELETE here to revoke one share link (`id` = ShareLinkMeta.id). */
 export function shareRevokePath(carId: string, id: string): string {
@@ -239,6 +248,25 @@ export function shareRevokePath(carId: string, id: string): string {
  */
 export function shareImgPath(token: string, photoId: string): string {
   return `${SHARE_ROUTE_PREFIX}/${encodeURIComponent(token)}/img/${encodeURIComponent(photoId)}`
+}
+
+/**
+ * Public view-recording URL: `/api/share/<token>/view`. The viewer POSTs this
+ * once per browser session (sessionStorage-guarded) right after the snapshot
+ * loads; the server validates the token and bumps view_count for a valid link
+ * only. Token is percent-encoded (URL-safe base64 needs none, but stay defensive).
+ */
+export function shareViewPath(token: string): string {
+  return `${SHARE_ROUTE_PREFIX}/${encodeURIComponent(token)}/view`
+}
+
+/**
+ * Body of POST SHARE_VIEW_PATH. Deliberately content-free: it must not reveal
+ * whether the link was valid (and thus whether the count moved) or anything
+ * about the owner/car — the viewer fires it fire-and-forget and ignores the body.
+ */
+export interface RecordShareViewResponse {
+  ok: true
 }
 
 export interface CreateShareRequest {
@@ -288,6 +316,13 @@ export interface ShareLinkMeta {
   expiresAt: number | null
   /** Epoch seconds; null = still active. */
   revokedAt: number | null
+  /**
+   * Total recorded views of this link (POST SHARE_VIEW_PATH bumps it per
+   * browser session). A SOFT/approximate count — it counts sessions, not
+   * guaranteed-unique humans, and is publicly POSTable — so the UI labels it
+   * "views", not "visitors".
+   */
+  viewCount: number
 }
 
 export interface ShareLinkListResponse {

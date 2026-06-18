@@ -29,7 +29,7 @@
  * Timestamps are epoch SECONDS throughout (share_links is pinned to seconds).
  */
 import { Hono } from 'hono'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/d1'
 import {
   SHARE_CREATE_PATH,
@@ -37,12 +37,14 @@ import {
   SHARE_LIST_PATH,
   SHARE_PUBLIC_PATH,
   SHARE_REVOKE_PATH,
+  SHARE_VIEW_PATH,
   contentTypeForExt,
   createShareRequestSchema,
   parsePhotoKey,
 } from '@chudbox/shared'
 import type {
   CreateShareResponse,
+  RecordShareViewResponse,
   ShareLinkListResponse,
   ShareLinkMeta,
   ShareSnapshotResponse,
@@ -141,6 +143,7 @@ function toMeta(row: ShareLinkRow): ShareLinkMeta {
     createdAt: row.createdAt,
     expiresAt: row.expiresAt,
     revokedAt: row.revokedAt,
+    viewCount: row.viewCount,
   }
 }
 
@@ -287,6 +290,30 @@ shareApi.get(SHARE_PUBLIC_PATH, async (c) => {
   // token-scoped image URL via shareImgPath(token, photoId), served below.
   const body: ShareSnapshotResponse = { car: snapshot, expiresAt: row.expiresAt }
   c.header('Cache-Control', shareCacheControl(row.expiresAt, now))
+  return c.json(body)
+})
+
+// ── PUBLIC: record one view ─────────────────────────────────
+// Separate from the snapshot GET ON PURPOSE: that response is edge-cached
+// (~60s s-maxage), so incrementing there would undercount. This endpoint is
+// UNCACHED (Cache-Control: no-store) so every legitimate ping reaches the
+// origin. It hashes the token exactly like the GET and bumps view_count ONLY
+// for a valid link (exists, not revoked, not expired) via a single atomic SQL
+// increment. It returns the same tiny body whether or not the link was valid,
+// so it never leaks the link's validity, the owner, or any car internals. The
+// counter is a SOFT metric: it is public + unauthenticated, so a determined
+// client could inflate it — that is accepted (no tracking/fingerprinting).
+shareApi.post(SHARE_VIEW_PATH, async (c) => {
+  c.header('Cache-Control', 'no-store')
+  const tokenHash = await sha256Hex(c.req.param('token'))
+  const row = await findByHash(c.env, tokenHash)
+  if (row && isLinkActive(row, nowSeconds())) {
+    await db(c.env)
+      .update(shareLinks)
+      .set({ viewCount: sql`${shareLinks.viewCount} + 1` })
+      .where(eq(shareLinks.tokenHash, tokenHash))
+  }
+  const body: RecordShareViewResponse = { ok: true }
   return c.json(body)
 })
 

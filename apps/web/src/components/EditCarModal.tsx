@@ -2,24 +2,33 @@ import { useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import { X } from 'lucide-react'
 import useGarageStore from '../store/useGarageStore'
+import { DISTANCE_UNITS, mileagePrefill } from '../utils/units'
+import { useModalDismiss } from '../hooks/useModalDismiss'
 import DateInput from './DateInput'
-import type { Car, CarDetails, CarStoredStatus, FieldChangeEvent } from '../types'
+import type { CarDetails, CarStoredStatus, StoredCar, FieldChangeEvent } from '../types'
 
 const today = new Date().toISOString().slice(0, 10)
 
 interface EditCarModalProps {
-  car: Car
+  car: StoredCar
   onClose: () => void
 }
 
 export default function EditCarModal({ car, onClose }: EditCarModalProps) {
   const updateCar = useGarageStore((s) => s.updateCar)
+  const distanceUnit = useGarageStore((s) => s.distanceUnit)
+  const distShort = DISTANCE_UNITS[distanceUnit]?.short ?? 'mi'
   const [form, setForm] = useState<CarDetails>({
+    // Mileage prefills from the canonical miles converted to the ACTIVE unit
+    // (not the raw string) so editing under a different unit shows the right
+    // number and saving re-canonicalizes correctly — never 1.6×-corrupting it.
     year: car.year || '', make: car.make || '', model: car.model || '',
-    trim: car.trim || '', color: car.color || '', mileage: car.mileage || '', nickname: car.nickname || '',
+    trim: car.trim || '', color: car.color || '',
+    mileage: mileagePrefill(car.mileage, car.mileageMiles, distanceUnit), nickname: car.nickname || '',
     purchaseDate: car.purchaseDate || '', saleDate: car.saleDate || '',
     status: car.status || 'current', salePrice: car.salePrice || '', tradeFor: car.tradeFor || '',
   })
+  const onBackdropClick = useModalDismiss(onClose)
 
   const set =
     <K extends keyof CarDetails>(key: K) =>
@@ -44,7 +53,7 @@ export default function EditCarModal({ car, onClose }: EditCarModalProps) {
   }
 
   return (
-    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80">
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80" onClick={onBackdropClick}>
       <div className="modal-content bg-surface border border-border rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]">
         <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
           <h2 className="text-lg font-semibold text-white">Edit car</h2>
@@ -63,7 +72,7 @@ export default function EditCarModal({ car, onClose }: EditCarModalProps) {
             <div><label className="label">Color</label><input className="input" value={form.color} onChange={set('color')} /></div>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div><label className="label">Mileage</label><input className="input" type="number" value={form.mileage} onChange={set('mileage')} /></div>
+            <div><label className="label">Mileage ({distShort})</label><input className="input" type="number" value={form.mileage} onChange={set('mileage')} /></div>
             <div><label className="label">Nickname</label><input className="input" value={form.nickname} onChange={set('nickname')} /></div>
           </div>
 

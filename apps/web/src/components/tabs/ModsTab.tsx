@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Plus, Trash2, Wrench, Pencil, Check, X, ExternalLink, ClipboardList } from 'lucide-react'
 import useGarageStore from '../../store/useGarageStore'
-import { CURRENCIES } from '../../utils/units'
+import { CURRENCIES, DISTANCE_UNITS } from '../../utils/units'
 import DateInput from '../DateInput'
 import ConfirmModal from '../ConfirmModal'
 import { CATEGORIES } from '../../utils/categories'
@@ -44,6 +44,8 @@ function LogToMaintenanceModal({ mod, carId, onClose }: LogToMaintenanceModalPro
   const addMaintenance = useGarageStore((s) => s.addMaintenance)
   const currency = useGarageStore((s) => s.currency)
   const sym      = CURRENCIES[currency]?.symbol ?? '$'
+  const distanceUnit = useGarageStore((s) => s.distanceUnit)
+  const distShort = DISTANCE_UNITS[distanceUnit]?.short ?? 'mi'
   const [form, setForm] = useState<LogMaintenanceForm>({
     service:        mod.name        || '',
     date:           today(),
@@ -87,7 +89,7 @@ function LogToMaintenanceModal({ mod, carId, onClose }: LogToMaintenanceModalPro
               <DateInput value={form.date} onChange={set('date')} />
             </div>
             <div>
-              <label className="label">Mileage</label>
+              <label className="label">Mileage ({distShort})</label>
               <input className="input" type="number" placeholder="45000" value={form.mileage} onChange={set('mileage')} />
             </div>
           </div>
@@ -113,7 +115,7 @@ function LogToMaintenanceModal({ mod, carId, onClose }: LogToMaintenanceModalPro
                 <DateInput value={form.nextDueDate} onChange={set('nextDueDate')} />
               </div>
               <div>
-                <label className="label">Next Due Mileage</label>
+                <label className="label">Next Due Mileage ({distShort})</label>
                 <input className="input" type="number" placeholder="50000" value={form.nextDueMileage} onChange={set('nextDueMileage')} />
               </div>
             </div>

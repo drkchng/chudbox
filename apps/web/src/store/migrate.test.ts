@@ -103,7 +103,21 @@ describe('runFirstRunImport', () => {
     const { store, localStore } = makeStores()
     await runFirstRunImport({ store, localStore, readLegacyBlob: async () => legacyBlob() })
     const adapter = createGarageAdapter(store, localStore)
-    expect(adapter.getState().cars).toEqual([richCar('legacy-1', 0), richCar('legacy-2', 100)])
+    // The read model additionally surfaces the canonical miles that joinCar
+    // drops (mileageMiles / nextDueMileageMiles) so the UI can convert to the
+    // active unit — derived display fields, not part of the user-facing nested
+    // round trip. Strip them before the deep compare (their correctness lives
+    // in adapter.test.ts / MileageText.test.ts).
+    const stripDerived = adapter.getState().cars.map((car) => {
+      const clone = structuredClone(car)
+      delete clone.mileageMiles
+      for (const rec of clone.maintenance) {
+        delete rec.mileageMiles
+        delete rec.nextDueMileageMiles
+      }
+      return clone
+    })
+    expect(stripDerived).toEqual([richCar('legacy-1', 0), richCar('legacy-2', 100)])
   })
 
   it('is idempotent: a second run changes nothing', async () => {

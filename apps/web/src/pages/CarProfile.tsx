@@ -6,7 +6,7 @@ import useGarageStore from '../store/useGarageStore'
 import { authClient } from '../auth/client'
 import { getCarStatus, STATUS_CONFIG } from '../utils/carStatus'
 import { resolvePhotoSrc } from '../utils/image'
-import { CURRENCIES, DISTANCE_UNITS } from '../utils/units'
+import { CURRENCIES, formatMileage } from '../utils/units'
 import { downloadMarkdown } from '../utils/exportMarkdown'
 import PhotosTab from '../components/tabs/PhotosTab'
 import WishlistTab from '../components/tabs/WishlistTab'
@@ -46,7 +46,6 @@ export default function CarProfile() {
   const currency     = useGarageStore((s) => s.currency)
   const distanceUnit = useGarageStore((s) => s.distanceUnit)
   const sym          = CURRENCIES[currency]?.symbol ?? '$'
-  const distShort    = DISTANCE_UNITS[distanceUnit]?.short ?? 'mi'
   // Sharing requires the car to live in the owner's DO, so it is offered only
   // when signed in. The probe never gates rendering — logged out simply hides
   // the button (the app stays fully local-first).
@@ -148,7 +147,9 @@ export default function CarProfile() {
           <>
             {car.trim && <span className="text-sm text-gray-300">{car.trim}</span>}
             {car.color && <span className="text-sm text-gray-400">· {car.color}</span>}
-            {car.mileage && <span className="text-sm text-gray-400">· {Number(car.mileage).toLocaleString()} {distShort}</span>}
+            {formatMileage(car.mileage, car.mileageMiles, distanceUnit) && (
+              <span className="text-sm text-gray-400">· {formatMileage(car.mileage, car.mileageMiles, distanceUnit)}</span>
+            )}
             {car.nickname && <span className="text-sm text-accent font-medium">· "{car.nickname}"</span>}
           </>
         }

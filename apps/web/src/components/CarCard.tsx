@@ -3,11 +3,11 @@ import { Car, AlertTriangle, CheckSquare, Wrench } from 'lucide-react'
 import { getCarStatus, STATUS_CONFIG } from '../utils/carStatus'
 import useGarageStore from '../store/useGarageStore'
 import { resolvePhotoSrc } from '../utils/image'
-import { CURRENCIES, DISTANCE_UNITS } from '../utils/units'
-import type { Car as CarType } from '../types'
+import { CURRENCIES, formatMileage } from '../utils/units'
+import type { StoredCar } from '../types'
 
 interface CarCardProps {
-  car: CarType
+  car: StoredCar
 }
 
 export default function CarCard({ car }: CarCardProps) {
@@ -15,7 +15,7 @@ export default function CarCard({ car }: CarCardProps) {
   const currency     = useGarageStore((s) => s.currency)
   const distanceUnit = useGarageStore((s) => s.distanceUnit)
   const sym          = CURRENCIES[currency]?.symbol ?? '$'
-  const distShort    = DISTANCE_UNITS[distanceUnit]?.short ?? 'mi'
+  const mileageText  = formatMileage(car.mileage, car.mileageMiles, distanceUnit)
   const coverPhoto   = car.photos.find((p) => p.id === car.coverPhoto) || car.photos[0]
   const coverSrc     = coverPhoto ? resolvePhotoSrc(coverPhoto) : ''
   const openIssues   = car.issues.filter((i) => i.status !== 'resolved').length
@@ -130,9 +130,9 @@ export default function CarCard({ car }: CarCardProps) {
               {pendingTodos} to-do
             </span>
           )}
-          {car.mileage && (
+          {mileageText && (
             <span className="ml-auto font-mono text-gray-600">
-              {Number(car.mileage).toLocaleString()} {distShort}
+              {mileageText}
             </span>
           )}
         </div>

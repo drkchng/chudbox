@@ -2,10 +2,11 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Plus, Trash2, ClipboardList, Pencil, Check, X, Calendar } from 'lucide-react'
 import useGarageStore from '../../store/useGarageStore'
-import { CURRENCIES, DISTANCE_UNITS } from '../../utils/units'
+import { CURRENCIES, DISTANCE_UNITS, formatMileage, mileagePrefill } from '../../utils/units'
 import DateInput from '../DateInput'
 import ConfirmModal from '../ConfirmModal'
-import type { Car, MaintenanceRecord, FieldChangeEvent } from '../../types'
+import MileageText from '../MileageText'
+import type { MaintenanceRecord, StoredCar, StoredMaintenance, FieldChangeEvent } from '../../types'
 
 const SERVICES = ['Oil Change', 'Tire Rotation', 'Brake Pads', 'Brake Fluid', 'Coolant Flush', 'Transmission Fluid', 'Spark Plugs', 'Air Filter', 'Cabin Filter', 'Belt / Chain', 'Battery', 'Alignment', 'Tires', 'Inspection', 'Other']
 
@@ -64,7 +65,7 @@ function FormFields({ vals, onChange, sym = '$', distShort = 'mi' }: FormFieldsP
 }
 
 interface MaintenanceTabProps {
-  car: Car
+  car: StoredCar
 }
 
 export default function MaintenanceTab({ car }: MaintenanceTabProps) {
@@ -97,17 +98,21 @@ export default function MaintenanceTab({ car }: MaintenanceTabProps) {
     setShowForm(false)
   }
 
-  const startEdit = (rec: MaintenanceRecord) => {
+  // Prefill mileage fields from the canonical miles converted to the ACTIVE
+  // unit (not the raw string), so editing a record entered under a different
+  // unit shows the right number and saving doesn't re-canonicalize the raw
+  // under the wrong unit. Non-numeric raw is preserved verbatim.
+  const startEdit = (rec: StoredMaintenance) => {
     setEditId(rec.id)
     setEditForm({
       service: rec.service,
       date: rec.date,
-      mileage: rec.mileage ?? '',
+      mileage: mileagePrefill(rec.mileage, rec.mileageMiles, distanceUnit),
       cost: rec.cost != null ? String(rec.cost) : '',
       shop: rec.shop,
       notes: rec.notes,
       nextDueDate: rec.nextDueDate,
-      nextDueMileage: rec.nextDueMileage,
+      nextDueMileage: mileagePrefill(rec.nextDueMileage, rec.nextDueMileageMiles, distanceUnit),
     })
   }
   const saveEdit = () => {
@@ -169,7 +174,7 @@ export default function MaintenanceTab({ car }: MaintenanceTabProps) {
                 {rec.notes && <p className="text-xs text-gray-400 mt-1">{rec.notes}</p>}
                 <div className="flex gap-3 mt-1.5 text-xs text-gray-500 flex-wrap">
                   {rec.date && <span className="flex items-center gap-1"><Calendar size={10} />{new Date(rec.date + 'T12:00:00').toLocaleDateString()}</span>}
-                  {rec.mileage && <span>{Number(rec.mileage).toLocaleString()} {distShort}</span>}
+                  <MileageText raw={rec.mileage} miles={rec.mileageMiles} unit={distanceUnit} />
                   {rec.shop && <span>at {rec.shop}</span>}
                 </div>
                 {(rec.nextDueDate || rec.nextDueMileage) && (
@@ -177,7 +182,7 @@ export default function MaintenanceTab({ car }: MaintenanceTabProps) {
                     Next:{' '}
                     {rec.nextDueDate ? new Date(rec.nextDueDate + 'T12:00:00').toLocaleDateString() : ''}
                     {rec.nextDueDate && rec.nextDueMileage ? ' / ' : ''}
-                    {rec.nextDueMileage ? `${Number(rec.nextDueMileage).toLocaleString()} ${distShort}` : ''}
+                    {formatMileage(rec.nextDueMileage, rec.nextDueMileageMiles, distanceUnit) ?? ''}
                   </p>
                 )}
               </div>

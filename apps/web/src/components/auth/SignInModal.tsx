@@ -67,9 +67,10 @@ export default function SignInModal({ onClose, onForgotPassword, onCreateAccount
             <label className="label" htmlFor="signin-email">Email</label>
             <input
               id="signin-email"
+              name="email"
               className="input"
               type="email"
-              autoComplete="email"
+              autoComplete="username"
               placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -91,6 +92,7 @@ export default function SignInModal({ onClose, onForgotPassword, onCreateAccount
             </div>
             <input
               id="signin-password"
+              name="password"
               className="input"
               type="password"
               autoComplete="current-password"

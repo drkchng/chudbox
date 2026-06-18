@@ -8,7 +8,7 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { drizzle } from 'drizzle-orm/d1'
 
 import * as schema from './db/schema'
-import { sendAuthEmail } from './email'
+import { renderAuthEmail, sendAuthEmail } from './email'
 
 export interface AuthEnv {
   DB: D1Database
@@ -50,9 +50,8 @@ export function createAuth(env: AuthEnv) {
       sendResetPassword: async ({ user, url }) => {
         await sendAuthEmail(env, {
           to: user.email,
-          subject: 'Reset your Chudbox password',
           url,
-          text: `Click the link to reset your Chudbox password: ${url}\n\nIf you didn't request this, you can ignore this email.`,
+          ...renderAuthEmail('reset', url),
         })
       },
     },
@@ -62,9 +61,8 @@ export function createAuth(env: AuthEnv) {
       sendVerificationEmail: async ({ user, url }) => {
         await sendAuthEmail(env, {
           to: user.email,
-          subject: 'Verify your Chudbox email',
           url,
-          text: `Welcome to Chudbox! Verify your email address by clicking: ${url}`,
+          ...renderAuthEmail('verification', url),
         })
       },
     },

@@ -1,4 +1,5 @@
 import { AlertTriangle } from 'lucide-react'
+import { useModalDismiss } from '../hooks/useModalDismiss'
 
 interface ConfirmModalProps {
   title: string
@@ -10,9 +11,10 @@ interface ConfirmModalProps {
 
 export default function ConfirmModal({ title, message, onConfirm, onClose, confirmLabel = 'Delete' }: ConfirmModalProps) {
   const handleConfirm = () => { onConfirm(); onClose() }
+  const onBackdropClick = useModalDismiss(onClose)
 
   return (
-    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80">
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80" onClick={onBackdropClick}>
       <div className="modal-content bg-surface border border-border rounded-2xl w-full max-w-sm shadow-2xl p-6 space-y-4">
         <div className="flex items-start gap-3">
           <AlertTriangle size={20} className="text-red-400 mt-0.5 shrink-0" />

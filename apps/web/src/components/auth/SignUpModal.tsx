@@ -77,6 +77,7 @@ export default function SignUpModal({ onClose, onSignIn }: SignUpModalProps) {
             <label className="label" htmlFor="signup-name">Name</label>
             <input
               id="signup-name"
+              name="name"
               className="input"
               type="text"
               autoComplete="name"
@@ -92,9 +93,10 @@ export default function SignUpModal({ onClose, onSignIn }: SignUpModalProps) {
             <label className="label" htmlFor="signup-email">Email</label>
             <input
               id="signup-email"
+              name="email"
               className="input"
               type="email"
-              autoComplete="email"
+              autoComplete="username"
               placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -106,6 +108,7 @@ export default function SignUpModal({ onClose, onSignIn }: SignUpModalProps) {
             <label className="label" htmlFor="signup-password">Password</label>
             <input
               id="signup-password"
+              name="password"
               className="input"
               type="password"
               autoComplete="new-password"
@@ -124,6 +127,7 @@ export default function SignUpModal({ onClose, onSignIn }: SignUpModalProps) {
             <label className="label" htmlFor="signup-confirm">Confirm password</label>
             <input
               id="signup-confirm"
+              name="confirm-password"
               className="input"
               type="password"
               autoComplete="new-password"

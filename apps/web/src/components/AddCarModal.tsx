@@ -2,6 +2,8 @@ import { useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import { X } from 'lucide-react'
 import useGarageStore from '../store/useGarageStore'
+import { DISTANCE_UNITS } from '../utils/units'
+import { useModalDismiss } from '../hooks/useModalDismiss'
 import DateInput from './DateInput'
 import type { CarDetails, CarStoredStatus, FieldChangeEvent } from '../types'
 
@@ -18,7 +20,10 @@ interface AddCarModalProps {
 
 export default function AddCarModal({ onClose }: AddCarModalProps) {
   const addCar = useGarageStore((s) => s.addCar)
+  const distanceUnit = useGarageStore((s) => s.distanceUnit)
+  const distShort = DISTANCE_UNITS[distanceUnit]?.short ?? 'mi'
   const [form, setForm] = useState<CarDetails>(empty)
+  const onBackdropClick = useModalDismiss(onClose)
 
   const set =
     <K extends keyof CarDetails>(key: K) =>
@@ -44,7 +49,7 @@ export default function AddCarModal({ onClose }: AddCarModalProps) {
   }
 
   return (
-    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80">
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80" onClick={onBackdropClick}>
       <div className="modal-content bg-surface border border-border rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]">
         <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
           <h2 className="text-lg font-semibold text-white">Add car</h2>
@@ -63,7 +68,7 @@ export default function AddCarModal({ onClose }: AddCarModalProps) {
             <div><label className="label">Color</label><input className="input" placeholder="Matte Black" value={form.color} onChange={set('color')} /></div>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div><label className="label">Mileage</label><input className="input" type="number" placeholder="45000" value={form.mileage} onChange={set('mileage')} /></div>
+            <div><label className="label">Mileage ({distShort})</label><input className="input" type="number" placeholder="45000" value={form.mileage} onChange={set('mileage')} /></div>
             <div><label className="label">Nickname</label><input className="input" placeholder="Project S" value={form.nickname} onChange={set('nickname')} /></div>
           </div>
 

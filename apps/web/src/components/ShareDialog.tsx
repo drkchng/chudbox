@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
-import { X, Share2, Copy, Check, Link2, Trash2, Plus, AlertTriangle, Clock } from 'lucide-react'
+import { X, Share2, Copy, Check, Link2, Trash2, Plus, AlertTriangle, Clock, Eye } from 'lucide-react'
 import DateInput from './DateInput'
 import ConfirmModal from './ConfirmModal'
 import {
   copyToClipboard,
   createShareLink,
   expiryInputToEpochSeconds,
+  formatViewCount,
   listShareLinks,
   revokeShareLink,
 } from '../share/shareClient'
@@ -201,6 +202,13 @@ export default function ShareDialog({ carId, carLabel, onClose }: ShareDialogPro
                         <p className="text-xs text-gray-500 mt-0.5">
                           Created {fmtDate(link.createdAt)}
                           {link.expiresAt != null ? ` · expires ${fmtDate(link.expiresAt)}` : ' · no expiry'}
+                          {' · '}
+                          <span
+                            className="text-accent inline-flex items-center gap-1 align-middle"
+                            title="Views (counted once per browser session)"
+                          >
+                            <Eye size={11} /> {formatViewCount(link.viewCount)}
+                          </span>
                         </p>
                       </div>
                       {state !== 'revoked' && (

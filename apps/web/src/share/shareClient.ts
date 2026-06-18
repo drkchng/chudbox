@@ -16,6 +16,7 @@ import {
   shareRevokePath,
   shareSnapshotPath,
   shareSnapshotResponseSchema,
+  shareViewPath,
 } from '@chudbox/shared'
 import type {
   CreateShareRequest,
@@ -160,6 +161,61 @@ export async function fetchShareSnapshot(
   return { kind: 'ok', data: parsed.data }
 }
 
+// ── Record a view (public, no session, fire-and-forget) ─────
+
+/** Minimal sessionStorage shape so the once-per-session guard is injectable. */
+export interface SessionStorageLike {
+  getItem: (key: string) => string | null
+  setItem: (key: string, value: string) => void
+}
+
+/** sessionStorage key marking a token already counted this browser session. */
+export function viewedSessionKey(token: string): string {
+  return `chudbox:viewed:${token}`
+}
+
+/** The ambient sessionStorage, or undefined under node / SSR (importing is safe). */
+function defaultSessionStorage(): SessionStorageLike | undefined {
+  return typeof sessionStorage !== 'undefined' ? sessionStorage : undefined
+}
+
+export interface RecordShareViewOptions {
+  fetchImpl?: FetchLike
+  storage?: SessionStorageLike | undefined
+}
+
+/**
+ * POST one view of a share link — ONCE PER BROWSER SESSION PER TOKEN. The
+ * sessionStorage guard (keyed by token) is checked + set BEFORE the request
+ * fires, so a page refresh or a remount never re-counts. Public + credential-
+ * less (the counter needs no session), and fully FIRE-AND-FORGET: it never
+ * throws and never rejects, so the viewer can `void recordShareView(token)`
+ * without blocking or breaking the page render. A failed ping (offline, etc.)
+ * is silently dropped — this is a soft, approximate metric.
+ */
+export async function recordShareView(
+  token: string,
+  { fetchImpl = fetch, storage = defaultSessionStorage() }: RecordShareViewOptions = {},
+): Promise<void> {
+  if (!token) return
+  const key = viewedSessionKey(token)
+  try {
+    // Already pinged this session → do nothing (a refresh must not re-count).
+    if (storage && storage.getItem(key) != null) return
+    // Mark BEFORE firing so a rapid refresh/remount can't double-count even if
+    // the request is still in flight. sessionStorage can throw (private mode /
+    // disabled) — fall through and still ping (worst case: a re-count later).
+    storage?.setItem(key, '1')
+  } catch {
+    /* storage unavailable — proceed without the guard */
+  }
+  try {
+    await fetchImpl(shareViewPath(token), { method: 'POST', credentials: 'omit' })
+  } catch {
+    /* fire-and-forget: a failed view ping must never surface to the viewer */
+  }
+}
+
 // ── Expiry helper ───────────────────────────────────────────
 
 /** Result of turning the optional date-picker value into an epoch-seconds expiry. */
@@ -217,4 +273,18 @@ export async function copyToClipboard(
   } catch {
     return false
   }
+}
+
+// ── View-count display ──────────────────────────────────────
+
+/**
+ * Render a share link's view count for the owner list, e.g. `0 views`,
+ * `1 view`, `12 views`. Coerces a missing/negative/non-finite count to 0 and
+ * floors fractional values so the label is always a clean integer. The metric
+ * counts browser sessions (not guaranteed-unique humans), so the label is
+ * deliberately "views", never "visitors".
+ */
+export function formatViewCount(count: number): string {
+  const n = Number.isFinite(count) && count > 0 ? Math.floor(count) : 0
+  return `${n} ${n === 1 ? 'view' : 'views'}`
 }

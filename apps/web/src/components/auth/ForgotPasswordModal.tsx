@@ -68,6 +68,7 @@ export default function ForgotPasswordModal({ onClose, onBackToSignIn }: ForgotP
             <label className="label" htmlFor="forgot-email">Email</label>
             <input
               id="forgot-email"
+              name="email"
               className="input"
               type="email"
               autoComplete="email"

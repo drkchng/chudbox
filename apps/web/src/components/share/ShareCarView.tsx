@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { Camera, Wrench, ClipboardList, ExternalLink, Calendar, X, Eye } from 'lucide-react'
-import { shareImgPath, DISTANCE_UNITS } from '@chudbox/shared'
+import { shareImgPath, formatMileage } from '@chudbox/shared'
 import type {
+  DistanceUnitCode,
   PublicCarSnapshot,
   PublicMaintenance,
   PublicMod,
@@ -10,6 +11,7 @@ import type {
 } from '@chudbox/shared'
 import { STATUS_CONFIG } from '../../utils/carStatus'
 import CarHero from '../CarHero'
+import MileageText from '../MileageText'
 
 /**
  * Read-only public build viewer. Driven ENTIRELY by the allowlisted
@@ -35,12 +37,6 @@ interface TabDef {
 }
 
 const fmtDay = (d: string): string => new Date(`${d}T12:00:00`).toLocaleDateString()
-
-function MileageText({ raw, miles, unit }: { raw?: string; miles?: number; unit: string }) {
-  if (raw == null || raw === '') return null
-  const showUnit = miles != null
-  return <span>{raw}{showUnit ? ` ${unit}` : ''}</span>
-}
 
 function PhotoGrid({ photos, token }: { photos: PublicPhoto[]; token: string }) {
   const [lightbox, setLightbox] = useState<PublicPhoto | null>(null)
@@ -131,7 +127,7 @@ function ModList({ mods }: { mods: PublicMod[] }) {
   )
 }
 
-function MaintenanceList({ records, unit }: { records: PublicMaintenance[]; unit: string }) {
+function MaintenanceList({ records, unit }: { records: PublicMaintenance[]; unit: DistanceUnitCode }) {
   if (records.length === 0) {
     return (
       <div className="text-center py-16 text-gray-600">
@@ -157,9 +153,7 @@ function MaintenanceList({ records, unit }: { records: PublicMaintenance[]; unit
               Next:{' '}
               {rec.nextDueDate ? fmtDay(rec.nextDueDate) : ''}
               {rec.nextDueDate && rec.nextDueMileageRaw ? ' / ' : ''}
-              {rec.nextDueMileageRaw
-                ? `${rec.nextDueMileageRaw}${rec.nextDueMileageMiles != null ? ` ${unit}` : ''}`
-                : ''}
+              {formatMileage(rec.nextDueMileageRaw, rec.nextDueMileageMiles, unit) ?? ''}
             </p>
           )}
         </div>
@@ -169,7 +163,7 @@ function MaintenanceList({ records, unit }: { records: PublicMaintenance[]; unit
 }
 
 export default function ShareCarView({ car, token }: ShareCarViewProps) {
-  const unit = DISTANCE_UNITS[car.settings.distanceUnit]?.short ?? 'mi'
+  const unit = car.settings.distanceUnit
   const statusCfg = STATUS_CONFIG[car.status] ?? STATUS_CONFIG.current
   const coverSrc = car.coverPhotoId ? shareImgPath(token, car.coverPhotoId) : ''
 

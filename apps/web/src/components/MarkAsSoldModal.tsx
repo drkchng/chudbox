@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { X } from 'lucide-react'
 import useGarageStore from '../store/useGarageStore'
+import { useModalDismiss } from '../hooks/useModalDismiss'
 import DateInput from './DateInput'
 import type { Car } from '../types'
 
@@ -16,6 +17,7 @@ export default function MarkAsSoldModal({ car, onClose }: MarkAsSoldModalProps) 
   const updateCar = useGarageStore((s) => s.updateCar)
   const [saleDate, setSaleDate] = useState(today)
   const [salePrice, setSalePrice] = useState(car.salePrice || '')
+  const onBackdropClick = useModalDismiss(onClose)
 
   const handleConfirm = () => {
     updateCar(car.id, { status: 'sold', saleDate, salePrice })
@@ -23,7 +25,7 @@ export default function MarkAsSoldModal({ car, onClose }: MarkAsSoldModalProps) 
   }
 
   return (
-    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80">
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80" onClick={onBackdropClick}>
       <div className="modal-content bg-surface border border-border rounded-2xl w-full max-w-sm shadow-2xl p-6 space-y-5">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-white">Mark as sold</h3>

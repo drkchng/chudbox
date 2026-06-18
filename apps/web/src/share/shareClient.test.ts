@@ -8,6 +8,7 @@ import {
   createShareLinkPath,
   shareRevokePath,
   shareSnapshotPath,
+  shareViewPath,
 } from '@chudbox/shared'
 import type {
   CreateShareResponse,
@@ -19,10 +20,13 @@ import {
   createShareLink,
   expiryInputToEpochSeconds,
   fetchShareSnapshot,
+  formatViewCount,
   listShareLinks,
+  recordShareView,
   revokeShareLink,
+  viewedSessionKey,
 } from './shareClient'
-import type { FetchLike } from './shareClient'
+import type { FetchLike, SessionStorageLike } from './shareClient'
 
 type Responder = (url: string, init?: RequestInit) => Response | Promise<Response>
 
@@ -50,6 +54,19 @@ const META: ShareLinkMeta = {
   createdAt: 1_700_000_000,
   expiresAt: null,
   revokedAt: null,
+  viewCount: 0,
+}
+
+/** Map-backed sessionStorage stub so the once-per-session guard is observable. */
+function makeStorage(initial: Record<string, string> = {}): SessionStorageLike & {
+  map: Map<string, string>
+} {
+  const map = new Map(Object.entries(initial))
+  return {
+    map,
+    getItem: (key) => map.get(key) ?? null,
+    setItem: (key, value) => void map.set(key, value),
+  }
 }
 
 describe('createShareLink', () => {
@@ -253,5 +270,89 @@ describe('copyToClipboard', () => {
 
   it('reports failure when no clipboard is available', async () => {
     expect(await copyToClipboard('x', undefined)).toBe(false)
+  })
+})
+
+describe('recordShareView — once per browser session per token', () => {
+  it('POSTs the view path WITHOUT credentials and marks the session on first call', async () => {
+    const { fetchImpl, calls } = makeFetch(() => json({ ok: true }))
+    const storage = makeStorage()
+    await recordShareView('TOK', { fetchImpl, storage })
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0].url).toBe(shareViewPath('TOK'))
+    expect(calls[0].init?.method).toBe('POST')
+    expect(calls[0].init?.credentials).toBe('omit') // public — no session
+    // The guard key is set so a later call this session is a no-op.
+    expect(storage.map.get(viewedSessionKey('TOK'))).toBe('1')
+  })
+
+  it('does NOT re-POST when the token is already marked viewed this session (refresh)', async () => {
+    const { fetchImpl, calls } = makeFetch(() => json({ ok: true }))
+    const storage = makeStorage({ [viewedSessionKey('TOK')]: '1' })
+    await recordShareView('TOK', { fetchImpl, storage })
+    expect(calls).toHaveLength(0)
+  })
+
+  it('fires exactly once across two calls in the same session (guard set before fetch)', async () => {
+    const { fetchImpl, calls } = makeFetch(() => json({ ok: true }))
+    const storage = makeStorage()
+    await recordShareView('TOK', { fetchImpl, storage })
+    await recordShareView('TOK', { fetchImpl, storage })
+    expect(calls).toHaveLength(1)
+  })
+
+  it('still pings a DIFFERENT token (the guard is per-token)', async () => {
+    const { fetchImpl, calls } = makeFetch(() => json({ ok: true }))
+    const storage = makeStorage({ [viewedSessionKey('TOK')]: '1' })
+    await recordShareView('OTHER', { fetchImpl, storage })
+    expect(calls).toHaveLength(1)
+    expect(calls[0].url).toBe(shareViewPath('OTHER'))
+  })
+
+  it('never throws/rejects when the network fails (fire-and-forget), but still marks the session', async () => {
+    const fetchImpl = vi.fn<FetchLike>(async () => {
+      throw new TypeError('offline')
+    })
+    const storage = makeStorage()
+    await expect(recordShareView('TOK', { fetchImpl, storage })).resolves.toBeUndefined()
+    expect(storage.map.get(viewedSessionKey('TOK'))).toBe('1')
+  })
+
+  it('proceeds to ping when sessionStorage throws (private mode / disabled)', async () => {
+    const { fetchImpl, calls } = makeFetch(() => json({ ok: true }))
+    const throwing: SessionStorageLike = {
+      getItem: () => {
+        throw new Error('blocked')
+      },
+      setItem: () => {
+        throw new Error('blocked')
+      },
+    }
+    await expect(recordShareView('TOK', { fetchImpl, storage: throwing })).resolves.toBeUndefined()
+    expect(calls).toHaveLength(1) // counts rather than silently skipping
+  })
+
+  it('does nothing for an empty token', async () => {
+    const { fetchImpl, calls } = makeFetch(() => json({ ok: true }))
+    await recordShareView('', { fetchImpl, storage: makeStorage() })
+    expect(calls).toHaveLength(0)
+  })
+})
+
+describe('formatViewCount — owner-list display', () => {
+  it('singularizes exactly one view', () => {
+    expect(formatViewCount(1)).toBe('1 view')
+  })
+
+  it('pluralizes zero and many', () => {
+    expect(formatViewCount(0)).toBe('0 views')
+    expect(formatViewCount(12)).toBe('12 views')
+  })
+
+  it('coerces missing/negative/non-finite/fractional counts to a clean integer', () => {
+    expect(formatViewCount(-5)).toBe('0 views')
+    expect(formatViewCount(Number.NaN)).toBe('0 views')
+    expect(formatViewCount(3.9)).toBe('3 views')
   })
 })

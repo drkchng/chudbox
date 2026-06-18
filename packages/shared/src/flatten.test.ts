@@ -4,6 +4,7 @@ import {
   KM_PER_MILE,
   flattenCar,
   joinCar,
+  milesToUnit,
   parseMileageMiles,
 } from './flatten'
 import type { FlattenSettings, FlattenedCar } from './flatten'
@@ -432,6 +433,23 @@ describe('parseMileageMiles', () => {
     expect(parseMileageMiles('0', 'mi')).toBe(0)
     expect(parseMileageMiles(' 42 ', 'mi')).toBe(42)
     expect(parseMileageMiles('123456.5', 'mi')).toBe(123_456.5)
+  })
+})
+
+describe('milesToUnit', () => {
+  it('returns miles unchanged for the mi unit', () => {
+    expect(milesToUnit(74_565, 'mi')).toBe(74_565)
+    expect(milesToUnit(0, 'mi')).toBe(0)
+  })
+
+  it('scales by the exact ×1.609344 factor for km', () => {
+    expect(milesToUnit(100_000, 'km')).toBe(100_000 * KM_PER_MILE)
+    expect(milesToUnit(1, 'km')).toBe(1.609344)
+  })
+
+  it('is the inverse of parseMileageMiles (km round-trip is lossless)', () => {
+    const miles = parseMileageMiles('120000', 'km')! // canonical from a km entry
+    expect(milesToUnit(miles, 'km')).toBeCloseTo(120_000, 6)
   })
 })
 

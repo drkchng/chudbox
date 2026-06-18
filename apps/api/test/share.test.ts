@@ -23,6 +23,7 @@ import {
   shareImgPath,
   shareRevokePath,
   shareSnapshotPath,
+  shareViewPath,
 } from '@chudbox/shared'
 import type {
   Car,
@@ -93,8 +94,13 @@ beforeAll(async () => {
     body: JSON.stringify({ email, password }),
   })
   expect(signIn.ok).toBe(true)
+  // BETTER_AUTH_URL is the https production domain, so Better Auth issues a
+  // `__Secure-`-prefixed session cookie. Capture the optional prefix — without
+  // it the cookie name we send back never matches and getSession returns null
+  // (every authed route then 401s). (Pre-existing harness gotcha shared by the
+  // other test files; the prefix is correct + expected under https.)
   const cookie = (signIn.headers.get('set-cookie') ?? '').match(
-    /better-auth\.session_token=[^;]+/,
+    /(?:__Secure-)?better-auth\.session_token=[^;]+/,
   )?.[0]
   if (!cookie) throw new Error('no session cookie after sign-in')
   session = { cookie, userId: user.id }
@@ -241,6 +247,14 @@ async function createLink(carId: string, expiresAt?: number): Promise<CreateShar
   })
   expect(res.status).toBe(200)
   return (await res.json()) as CreateShareResponse
+}
+
+/** Read view_count for a raw token straight from D1 (asserts the stored value). */
+async function viewCountFor(token: string): Promise<number | undefined> {
+  const row = await env.DB.prepare('SELECT view_count FROM share_links WHERE token_hash = ?')
+    .bind(await sha256Hex(token))
+    .first<{ view_count: number }>()
+  return row?.view_count
 }
 
 // ── Auth gating ─────────────────────────────────────────────
@@ -542,5 +556,94 @@ describe('list + revoke', () => {
       headers: { cookie: session.cookie },
     })
     expect(res.status).toBe(404)
+  })
+})
+
+// ── View counter (POST /api/share/:token/view) ──────────────
+describe('record view', () => {
+  it('increments a valid link, responds {ok:true} + no-store, and counts again on re-post', async () => {
+    const ids = freshIds()
+    await uploadAndSeedCar(ids)
+    const link = await createLink(ids.carId)
+    expect(await viewCountFor(link.token)).toBe(0) // additive column defaults to 0
+
+    const res = await SELF.fetch(`${BASE}${shareViewPath(link.token)}`, { method: 'POST' })
+    expect(res.status).toBe(200)
+    // UNCACHED on purpose (the snapshot GET is edge-cached, so counting there
+    // would undercount) — every ping must reach the origin.
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(await res.json()).toEqual({ ok: true })
+    expect(await viewCountFor(link.token)).toBe(1)
+
+    // The server itself has no per-session guard (that lives in the browser
+    // client) — a second POST increments again.
+    const again = await SELF.fetch(`${BASE}${shareViewPath(link.token)}`, { method: 'POST' })
+    expect(again.status).toBe(200)
+    expect(await viewCountFor(link.token)).toBe(2)
+  })
+
+  it('does NOT increment a revoked link (still 200 + no-store, count frozen)', async () => {
+    const ids = freshIds()
+    await uploadAndSeedCar(ids)
+    const link = await createLink(ids.carId)
+    // One real view, then revoke.
+    await SELF.fetch(`${BASE}${shareViewPath(link.token)}`, { method: 'POST' })
+    expect(await viewCountFor(link.token)).toBe(1)
+    const list = (await (
+      await SELF.fetch(`${BASE}${createShareLinkPath(ids.carId)}`, { headers: { cookie: session.cookie } })
+    ).json()) as ShareLinkListResponse
+    const revoke = await SELF.fetch(`${BASE}${shareRevokePath(ids.carId, list.links[0].id)}`, {
+      method: 'DELETE',
+      headers: { cookie: session.cookie },
+    })
+    expect(revoke.status).toBe(200)
+
+    const res = await SELF.fetch(`${BASE}${shareViewPath(link.token)}`, { method: 'POST' })
+    expect(res.status).toBe(200) // never leaks that the link is gone
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(await viewCountFor(link.token)).toBe(1) // frozen — no bump for an invalid link
+  })
+
+  it('does NOT increment an expired link', async () => {
+    // Insert a directly-expired link (no snapshot needed — validity is checked
+    // before anything else) and confirm POST view leaves it at 0.
+    const rawToken = `view-expired-${crypto.randomUUID()}`
+    const now = nowSeconds()
+    await env.DB.prepare(
+      'INSERT INTO share_links (token_hash, user_id, car_id, created_at, expires_at, revoked_at, view_count) VALUES (?,?,?,?,?,?,?)',
+    )
+      .bind(await sha256Hex(rawToken), session.userId, crypto.randomUUID(), now - 100, now - 10, null, 0)
+      .run()
+    const res = await SELF.fetch(`${BASE}${shareViewPath(rawToken)}`, { method: 'POST' })
+    expect(res.status).toBe(200)
+    expect(await viewCountFor(rawToken)).toBe(0)
+  })
+
+  it('does NOT create or increment anything for a garbage/unknown token (still 200)', async () => {
+    const res = await SELF.fetch(`${BASE}${shareViewPath('totally-unknown-token')}`, { method: 'POST' })
+    expect(res.status).toBe(200)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(await res.json()).toEqual({ ok: true })
+    // No row was conjured for an unknown token.
+    expect(await viewCountFor('totally-unknown-token')).toBeUndefined()
+  })
+
+  it('surfaces the running viewCount in the owner list', async () => {
+    const ids = freshIds()
+    await uploadAndSeedCar(ids)
+    const link = await createLink(ids.carId)
+    await SELF.fetch(`${BASE}${shareViewPath(link.token)}`, { method: 'POST' })
+    await SELF.fetch(`${BASE}${shareViewPath(link.token)}`, { method: 'POST' })
+    await SELF.fetch(`${BASE}${shareViewPath(link.token)}`, { method: 'POST' })
+
+    const listRes = await SELF.fetch(`${BASE}${createShareLinkPath(ids.carId)}`, {
+      headers: { cookie: session.cookie },
+    })
+    expect(listRes.status).toBe(200)
+    const list = (await listRes.json()) as ShareLinkListResponse
+    expect(list.links.length).toBe(1)
+    expect(list.links[0].viewCount).toBe(3)
+    // The list still leaks no raw token / full hash.
+    expect(JSON.stringify(list)).not.toContain(link.token)
   })
 })

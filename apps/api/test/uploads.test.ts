@@ -74,7 +74,7 @@ beforeAll(async () => {
   })
   expect(signIn.ok).toBe(true)
   const cookie = (signIn.headers.get('set-cookie') ?? '').match(
-    /better-auth\.session_token=[^;]+/,
+    /(?:__Secure-)?better-auth\.session_token=[^;]+/,
   )?.[0]
   if (!cookie) throw new Error('no session cookie after sign-in')
   session = { cookie, userId: user.id }

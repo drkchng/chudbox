@@ -3,7 +3,7 @@
 // no-rewrite settings semantics, delete cascades, and read-model caching.
 import { describe, expect, it, vi } from 'vitest'
 import { createStore } from 'tinybase'
-import { createGarageStore, KM_PER_MILE } from '@chudbox/shared'
+import { createGarageStore, KM_PER_MILE, mileagePrefill } from '@chudbox/shared'
 import { PHOTO_PAYLOADS_TABLE, createGarageAdapter } from './adapter'
 import type { GarageAdapter, PhotoHooks } from './adapter'
 
@@ -335,5 +335,57 @@ describe('read model caching', () => {
     const carId = addOneCar(adapter)
     expect(adapter.getState().getCar(carId)?.id).toBe(carId)
     expect(adapter.getState().getCar('nope')).toBeUndefined()
+  })
+})
+
+describe('mileage edit round-trip survives a units toggle', () => {
+  it('the read model re-attaches the canonical miles joinCar drops', () => {
+    const adapter = makeAdapter()
+    const carId = addOneCar(adapter)
+    adapter.getState().updateCar(carId, { mileage: '12,000' }) // default unit mi
+    expect(adapter.getState().cars[0].mileageMiles).toBe(12_000)
+    // Non-numeric raw → no canonical; display falls back to verbatim raw.
+    adapter.getState().updateCar(carId, { mileage: 'unknown' })
+    expect(adapter.getState().cars[0].mileageMiles).toBeUndefined()
+    expect(adapter.getState().cars[0].mileage).toBe('unknown')
+  })
+
+  it('editing a km-entered car while the app shows mi does NOT 1.6×-corrupt mileageMiles', () => {
+    const adapter = makeAdapter()
+    const carId = addOneCar(adapter)
+
+    // Entered as 120000 under km → canonical ≈ 74565 mi.
+    adapter.getState().setDistanceUnit('km')
+    adapter.getState().updateCar(carId, { mileage: '120000' })
+    const entered = adapter.store.getCell('cars', carId, 'mileageMiles') as number
+    expect(entered).toBeCloseTo(120_000 / KM_PER_MILE, 6)
+
+    // Toggle to mi — the adapter never rewrites; raw + canonical stay put.
+    adapter.getState().setDistanceUnit('mi')
+    expect(adapter.store.getCell('cars', carId, 'mileageRaw')).toBe('120000')
+    expect(adapter.store.getCell('cars', carId, 'mileageMiles')).toBe(entered)
+
+    // The edit form prefills from the canonical converted to the ACTIVE unit…
+    const car = adapter.getState().cars[0]
+    const prefill = mileagePrefill(car.mileage, car.mileageMiles, 'mi')
+    expect(prefill).toBe('74565')
+
+    // …and a no-op save re-canonicalizes under mi. BEFORE the fix the form
+    // prefilled raw '120000' and saved 120000 MILES (the 1.6× corruption);
+    // now it stays ≈74565, never 120000.
+    adapter.getState().updateCar(carId, { mileage: prefill })
+    expect(adapter.store.getCell('cars', carId, 'mileageMiles')).toBe(74_565)
+    expect(adapter.store.getCell('cars', carId, 'mileageMiles')).not.toBe(120_000)
+  })
+
+  it('a no-op edit in the SAME unit preserves the canonical exactly', () => {
+    const adapter = makeAdapter()
+    const carId = addOneCar(adapter)
+    adapter.getState().updateCar(carId, { mileage: '50000' }) // default unit mi
+    const car = adapter.getState().cars[0]
+    const prefill = mileagePrefill(car.mileage, car.mileageMiles, 'mi')
+    expect(prefill).toBe('50000')
+    adapter.getState().updateCar(carId, { mileage: prefill })
+    expect(adapter.store.getCell('cars', carId, 'mileageMiles')).toBe(50_000)
   })
 })
