@@ -1,11 +1,16 @@
 import { useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import useGarageStore from '../store/useGarageStore'
-import { DISTANCE_UNITS, mileagePrefill } from '../utils/units'
 import DateInput from './DateInput'
 import Modal from './ui/Modal'
 import Button from './ui/Button'
 import type { CarDetails, CarStoredStatus, StoredCar, FieldChangeEvent } from '../types'
+
+// DEC-16: mileage is NOT a fixed car attribute — it is a time series of dated
+// check-ins, edited via the "Log mileage" action / Mileage tab, never here. So
+// the edit form drops the mileage field entirely (and never writes `mileage`,
+// leaving the dual-written scalar mirror untouched).
+type EditCarForm = Omit<CarDetails, 'mileage'>
 
 const today = new Date().toISOString().slice(0, 10)
 
@@ -22,24 +27,18 @@ interface EditCarModalProps {
 
 export default function EditCarModal({ car, onClose }: EditCarModalProps) {
   const updateCar = useGarageStore((s) => s.updateCar)
-  const distanceUnit = useGarageStore((s) => s.distanceUnit)
-  const distShort = DISTANCE_UNITS[distanceUnit]?.short ?? 'mi'
-  const [form, setForm] = useState<CarDetails>({
-    // Mileage prefills from the canonical miles converted to the ACTIVE unit
-    // (not the raw string) so editing under a different unit shows the right
-    // number and saving re-canonicalizes correctly — never 1.6×-corrupting it.
+  const [form, setForm] = useState<EditCarForm>({
     year: car.year || '', make: car.make || '', model: car.model || '',
-    trim: car.trim || '', color: car.color || '',
-    mileage: mileagePrefill(car.mileage, car.mileageMiles, distanceUnit), nickname: car.nickname || '',
+    trim: car.trim || '', color: car.color || '', nickname: car.nickname || '',
     purchaseDate: car.purchaseDate || '', saleDate: car.saleDate || '',
     status: car.status || 'current', salePrice: car.salePrice || '', tradeFor: car.tradeFor || '',
   })
 
   const set =
-    <K extends keyof CarDetails>(key: K) =>
+    <K extends keyof EditCarForm>(key: K) =>
     (eOrVal: string | FieldChangeEvent): void => {
       const value = typeof eOrVal === 'string' ? eOrVal : eOrVal.target.value
-      setForm((f) => ({ ...f, [key]: value as CarDetails[K] }))
+      setForm((f) => ({ ...f, [key]: value as EditCarForm[K] }))
     }
 
   const setStatus = (e: ChangeEvent<HTMLSelectElement>) => {
@@ -96,15 +95,9 @@ export default function EditCarModal({ car, onClose }: EditCarModalProps) {
             <input id="edit-car-color" className="input" value={form.color} onChange={set('color')} />
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label htmlFor="edit-car-mileage" className="label">Mileage ({distShort})</label>
-            <input id="edit-car-mileage" className="input" type="number" value={form.mileage} onChange={set('mileage')} />
-          </div>
-          <div>
-            <label htmlFor="edit-car-nickname" className="label">Nickname</label>
-            <input id="edit-car-nickname" className="input" value={form.nickname} onChange={set('nickname')} />
-          </div>
+        <div>
+          <label htmlFor="edit-car-nickname" className="label">Nickname</label>
+          <input id="edit-car-nickname" className="input" value={form.nickname} onChange={set('nickname')} />
         </div>
 
         {/* Ownership */}

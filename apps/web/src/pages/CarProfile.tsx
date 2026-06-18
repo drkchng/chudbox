@@ -2,17 +2,19 @@ import { useState, useEffect, useRef } from 'react'
 import type { KeyboardEvent } from 'react'
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
 import type { LucideIcon } from 'lucide-react'
-import { ArrowLeft, Pencil, Trash2, Camera, ShoppingCart, Wrench, ClipboardList, CheckSquare, AlertTriangle, Settings, FileDown, DollarSign, Share2 } from 'lucide-react'
+import { ArrowLeft, Pencil, Trash2, Camera, ShoppingCart, Wrench, ClipboardList, CheckSquare, AlertTriangle, Settings, FileDown, DollarSign, Share2, Gauge } from 'lucide-react'
 import useGarageStore from '../store/useGarageStore'
 import { authClient } from '../auth/client'
 import { getCarStatus, STATUS_CONFIG } from '../utils/carStatus'
 import { resolvePhotoSrc } from '../utils/image'
-import { formatMileage, formatMoney } from '../utils/units'
+import { formatCurrentMileage, formatMoney } from '../utils/units'
+import { carDueMaintenance } from '../utils/maintenanceDue'
 import { downloadMarkdown } from '../utils/exportMarkdown'
 import PhotosTab from '../components/tabs/PhotosTab'
 import WishlistTab from '../components/tabs/WishlistTab'
 import ModsTab from '../components/tabs/ModsTab'
 import MaintenanceTab from '../components/tabs/MaintenanceTab'
+import MileageTab from '../components/tabs/MileageTab'
 import TodoTab from '../components/tabs/TodoTab'
 import IssuesTab from '../components/tabs/IssuesTab'
 import EditCarModal from '../components/EditCarModal'
@@ -24,9 +26,10 @@ import ShareDialog from '../components/ShareDialog'
 import Badge from '../components/ui/Badge'
 import Button from '../components/ui/Button'
 import IconButton from '../components/ui/IconButton'
+import DueBadge from '../components/DueBadge'
 import type { CarStatus, StatusRole } from '../types'
 
-type TabId = 'photos' | 'wishlist' | 'mods' | 'maintenance' | 'todos' | 'issues'
+type TabId = 'photos' | 'wishlist' | 'mods' | 'maintenance' | 'mileage' | 'todos' | 'issues'
 
 interface TabDef {
   id: TabId
@@ -39,6 +42,7 @@ const TABS: TabDef[] = [
   { id: 'wishlist',    label: 'Wishlist',      icon: ShoppingCart },
   { id: 'mods',        label: 'Mods',          icon: Wrench },
   { id: 'maintenance', label: 'Maintenance',   icon: ClipboardList },
+  { id: 'mileage',     label: 'Mileage',       icon: Gauge },
   { id: 'todos',       label: 'To-Do',         icon: CheckSquare },
   { id: 'issues',      label: 'Issues',        icon: AlertTriangle },
 ]
@@ -77,6 +81,10 @@ export default function CarProfile() {
   const { data: session } = authClient.useSession()
   const signedIn = Boolean(session?.user)
   const [tab, setTab] = useState<TabId>('mods')
+  // DEC-16: the toolbar "Log mileage" action jumps to the Mileage tab and opens
+  // its log form (cleared whenever the user picks any tab themselves).
+  const [autoLog, setAutoLog] = useState(false)
+  const changeTab = (next: TabId) => { setAutoLog(false); setTab(next) }
   const [editing, setEditing]             = useState(false)
   const [showSettings, setShowSettings]   = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -118,7 +126,7 @@ export default function CarProfile() {
       default: return
     }
     e.preventDefault()
-    setTab(TABS[next].id)
+    changeTab(TABS[next].id)
     tabRefs.current[next]?.focus()
   }
 
@@ -141,7 +149,9 @@ export default function CarProfile() {
   const pendingTodos = car.todos.filter((t) => !t.done).length
   const status       = getCarStatus(car)
   const statusCfg    = STATUS_CONFIG[status]
-  const mileageText  = formatMileage(car.mileage, car.mileageMiles, distanceUnit)
+  // DEC-16: current mileage = the latest check-in (scalar mirror as fallback).
+  const mileageText  = formatCurrentMileage(car, car.mileageMiles, distanceUnit)
+  const due          = carDueMaintenance(car)
   const carLabel     = `${car.year} ${car.make} ${car.model}`
   const askingPrice  =
     status === 'for-sale' && car.salePrice ? formatMoney(Number(car.salePrice), currency) : ''
@@ -199,8 +209,10 @@ export default function CarProfile() {
             ) : undefined
           }
           bottomRight={
-            openIssues > 0 || pendingTodos > 0 ? (
+            due.count > 0 || openIssues > 0 || pendingTodos > 0 ? (
               <>
+                {/* U2: surface overdue/due maintenance in the hero cluster too. */}
+                <DueBadge due={due} />
                 {openIssues > 0 && (
                   <Badge status="danger">{openIssues} issue{openIssues > 1 ? 's' : ''}</Badge>
                 )}
@@ -219,6 +231,10 @@ export default function CarProfile() {
         <div className="max-w-7xl mx-auto px-6 py-2.5 flex items-center gap-2 overflow-x-auto no-scrollbar justify-start md:justify-end">
           <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
             <Pencil size={16} aria-hidden /> Edit
+          </Button>
+          {/* DEC-16: mileage is a quick action, not a fixed edit field. */}
+          <Button variant="secondary" size="sm" onClick={() => { setAutoLog(true); setTab('mileage') }}>
+            <Gauge size={16} aria-hidden /> Log mileage
           </Button>
           {signedIn && (
             <Button variant="secondary" size="sm" onClick={() => setShowShare(true)} title="Share this build">
@@ -286,7 +302,7 @@ export default function CarProfile() {
                     aria-selected={selected}
                     aria-controls={`panel-${tid}`}
                     tabIndex={selected ? 0 : -1}
-                    onClick={() => setTab(tid)}
+                    onClick={() => changeTab(tid)}
                     onKeyDown={(e) => onTabKeyDown(e, i)}
                     className={`tab-btn flex items-center gap-1.5 ${selected ? 'tab-active' : 'tab-inactive'}`}
                   >
@@ -321,6 +337,7 @@ export default function CarProfile() {
           {tab === 'wishlist'    && <WishlistTab car={car} />}
           {tab === 'mods'        && <ModsTab car={car} autoFocusAdd={autoFocusAdd} />}
           {tab === 'maintenance' && <MaintenanceTab car={car} />}
+          {tab === 'mileage'     && <MileageTab car={car} autoLog={autoLog} />}
           {tab === 'todos'       && <TodoTab car={car} />}
           {tab === 'issues'      && <IssuesTab car={car} />}
         </div>

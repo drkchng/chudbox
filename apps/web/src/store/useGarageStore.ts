@@ -24,7 +24,12 @@ import { createIndexedDbPersister } from 'tinybase/persisters/persister-indexed-
 import { createGarageAdapter } from './adapter'
 import type { GarageState } from './adapter'
 import { createIdbMergeablePersister } from './idbMergeablePersister'
-import { LEGACY_BLOB_KEY, runFirstRunImport, runUnitsBackfill } from './migrate'
+import {
+  LEGACY_BLOB_KEY,
+  runFirstRunImport,
+  runMileageBackfill,
+  runUnitsBackfill,
+} from './migrate'
 import { applyBackupImport, buildBackupV2, parseBackup } from './backup'
 import type { BackupV2, ParsedBackup } from './backup'
 import { createSyncController } from './sync'
@@ -81,6 +86,11 @@ export function initGarageStore(): Promise<void> {
       readLegacyBlob: () => localforage.getItem<string>(LEGACY_BLOB_KEY),
     })
     runUnitsBackfill({ store, localStore })
+    // DEC-16 (§15.8 Phase 2): seed the first mileage check-in per car. Runs in
+    // the same pre-attach window as the import/units backfills (before the WS
+    // synchronizer attaches) — and AFTER runUnitsBackfill so a freshly-tagged
+    // cars.mileageMiles is preserved verbatim into the seeded check-in.
+    runMileageBackfill({ store, localStore })
   })()
   return initPromise
 }

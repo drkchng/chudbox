@@ -3,8 +3,10 @@ import { Car as CarIcon, CheckSquare, Wrench } from 'lucide-react'
 import { getCarStatus, STATUS_CONFIG } from '../utils/carStatus'
 import useGarageStore from '../store/useGarageStore'
 import { resolvePhotoSrc } from '../utils/image'
-import { CURRENCIES, formatMileage } from '../utils/units'
+import { CURRENCIES, formatCurrentMileage } from '../utils/units'
+import { carDueMaintenance } from '../utils/maintenanceDue'
 import Badge from './ui/Badge'
+import DueBadge from './DueBadge'
 import type { CarStatus, StatusRole, StoredCar } from '../types'
 
 interface CarCardProps {
@@ -27,11 +29,13 @@ export default function CarCard({ car }: CarCardProps) {
   const currency     = useGarageStore((s) => s.currency)
   const distanceUnit = useGarageStore((s) => s.distanceUnit)
   const sym          = CURRENCIES[currency]?.symbol ?? '$'
-  const mileageText  = formatMileage(car.mileage, car.mileageMiles, distanceUnit)
+  // DEC-16: current mileage = the latest check-in (falls back to the scalar mirror).
+  const mileageText  = formatCurrentMileage(car, car.mileageMiles, distanceUnit)
   const coverPhoto   = car.photos.find((p) => p.id === car.coverPhoto) || car.photos[0]
   const coverSrc     = coverPhoto ? resolvePhotoSrc(coverPhoto) : ''
   const openIssues   = car.issues.filter((i) => i.status !== 'resolved').length
   const pendingTodos = car.todos.filter((t) => !t.done).length
+  const due          = carDueMaintenance(car)
   const status       = getCarStatus(car)
   const statusCfg    = STATUS_CONFIG[status]
   const askingPrice  =
@@ -66,14 +70,18 @@ export default function CarCard({ car }: CarCardProps) {
           </div>
         )}
 
-        {/* Status (neutral/role-coloured) + the one alert: open issues (danger). */}
+        {/* Status (neutral/role-coloured) + the alerts: overdue maintenance
+            (U2 — the product's reason to exist) beside open issues, both danger. */}
         <div className="absolute inset-x-2.5 top-2.5 flex items-center justify-between gap-2">
           <Badge status={STATUS_ROLE[status]}>{statusCfg.label}</Badge>
-          {openIssues > 0 && (
-            <Badge status="danger" title={`${openIssues} open issue${openIssues > 1 ? 's' : ''}`}>
-              {openIssues}
-            </Badge>
-          )}
+          <div className="flex items-center gap-1.5">
+            <DueBadge due={due} />
+            {openIssues > 0 && (
+              <Badge status="danger" title={`${openIssues} open issue${openIssues > 1 ? 's' : ''}`}>
+                {openIssues}
+              </Badge>
+            )}
+          </div>
         </div>
       </div>
 

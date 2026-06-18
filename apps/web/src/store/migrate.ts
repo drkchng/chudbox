@@ -16,11 +16,18 @@
  * Everything here is a pure function over injected stores so it can be unit
  * tested without IndexedDB.
  */
-import { flattenCar, parseMileageMiles } from '@chudbox/shared'
-import type { Car, DistanceUnitCode, FlattenSettings, FlattenedCar } from '@chudbox/shared'
+import { flattenCar, isValidDateString, parseMileageMiles } from '@chudbox/shared'
+import type {
+  Car,
+  DistanceUnitCode,
+  FlattenSettings,
+  FlattenedCar,
+  MileageRow,
+} from '@chudbox/shared'
 import type { MergeableStore, Row, Store } from 'tinybase'
 import {
   IDB_MIGRATED_VALUE,
+  MILEAGE_BACKFILL_VERSION_VALUE,
   PHOTO_PAYLOADS_TABLE,
   UNITS_SCHEMA_VERSION_VALUE,
 } from './adapter'
@@ -30,6 +37,9 @@ export const LEGACY_BLOB_KEY = 'garage-store'
 
 /** Current units schema version (guards the backfill; see runUnitsBackfill). */
 export const UNITS_SCHEMA_VERSION = 1
+
+/** Current DEC-16 mileage-backfill version (guards runMileageBackfill). */
+export const MILEAGE_BACKFILL_VERSION = 1
 
 export interface LegacyState {
   cars: Car[]
@@ -216,5 +226,92 @@ export function runUnitsBackfill(options: {
     }
   })
   localStore.setValue(UNITS_SCHEMA_VERSION_VALUE, UNITS_SCHEMA_VERSION)
+  return 'applied'
+}
+
+export type MileageBackfillResult = 'noop' | 'applied'
+
+/**
+ * The set of `mileage` rowIds carrying ANY mergeable stamp — LIVE or TOMBSTONED.
+ * The delete-safety gate (§13.5 step 2) inspects THIS, not just live rows: after
+ * a user deletes the seeded `${carId}::initial` check-in (tombstone at HLC T1)
+ * and the local sentinel is later cleared (restore / needsReseed-style path), a
+ * naive re-run would re-write that rowId at T2 > T1, out-stamping the tombstone
+ * and RESURRECTING the deleted reading. A tombstoned row keeps its rowId in the
+ * mergeable content (its cells become undefined-valued stamps), so it is visible
+ * here even though getRowIds() no longer lists it.
+ */
+function mileageStampRowIds(store: MergeableStore): Set<string> {
+  const [[tableStamps]] = store.getMergeableContent()
+  const mileageTable = tableStamps['mileage']
+  // mileageTable = [rowStamps, tableHlc, tableHash]; [0] is the rowId→stamp map,
+  // which retains a tombstoned row's id (its cells become undefined-valued stamps).
+  return new Set(mileageTable ? Object.keys(mileageTable[0]) : [])
+}
+
+/**
+ * DEC-16 BACKFILL (§15.8 Phase 2 / §13.5) — the ONLY backfill in the merge.
+ * Sentinel-gated (mileageBackfillVersion, local-only), idempotent, chunked
+ * one-car-per-transaction (one bounded fragmented save each). Runs in the
+ * pre-attach window (the golden rule) so it never triggers the un-chunkable
+ * full-store reconcile (#268). For each car with a non-blank mileageRaw it seeds
+ * a deterministic `${carId}::initial` check-in (so two devices that each backfill
+ * offline collapse per-cell LWW instead of duplicating — belt; the sentinel is
+ * suspenders), preserving the entry-time canonical miles VERBATIM.
+ */
+export function runMileageBackfill(options: {
+  store: MergeableStore
+  localStore: Store
+}): MileageBackfillResult {
+  const { store, localStore } = options
+  const version = localStore.getValue(MILEAGE_BACKFILL_VERSION_VALUE)
+  if (typeof version === 'number' && version >= MILEAGE_BACKFILL_VERSION) return 'noop'
+
+  const distanceUnit = ((store.getValue('distanceUnit') as string | undefined) ??
+    'mi') as DistanceUnitCode
+  const stampedRowIds = mileageStampRowIds(store)
+  // Cars that already hold a live check-in (a real timeline exists) → never seed.
+  const carsWithCheckIns = new Set<string>()
+  for (const rowId of store.getRowIds('mileage')) {
+    const carId = store.getCell('mileage', rowId, 'carId') as string | undefined
+    if (carId != null) carsWithCheckIns.add(carId)
+  }
+  const createdAt = new Date().toISOString()
+
+  for (const carId of store.getRowIds('cars')) {
+    const raw = (store.getCell('cars', carId, 'mileageRaw') as string | undefined) ?? ''
+    if (raw.trim() === '') continue // blank → empty timeline (no check-in)
+
+    const seedId = `${carId}::initial`
+    // Delete-safety: the deterministic seed already has a stamp (live OR a delete
+    // tombstone), OR the car already has a live check-in → never (re-)seed.
+    if (stampedRowIds.has(seedId) || carsWithCheckIns.has(carId)) continue
+
+    // valueMiles: preserve the entry-time canonical VERBATIM when present (the
+    // entry unit may differ from the current distanceUnit; recomputing would be
+    // wrong) — else derive from the raw under the current unit.
+    const existingMiles = store.getCell('cars', carId, 'mileageMiles') as number | undefined
+    const purchaseDate = store.getCell('cars', carId, 'purchaseDate') as string | undefined
+    const carCreatedAt =
+      (store.getCell('cars', carId, 'createdAt') as string | undefined) ?? createdAt
+    const row: MileageRow = {
+      carId,
+      valueRaw: raw,
+      unit: distanceUnit,
+      // The legacy scalar carries no date → purchaseDate if valid, else createdAt
+      // (flagged approximate via source='initial').
+      date: isValidDateString(purchaseDate) ? purchaseDate : carCreatedAt,
+      source: 'initial',
+      createdAt,
+    }
+    const miles = existingMiles != null ? existingMiles : parseMileageMiles(raw, distanceUnit)
+    if (miles != null) row.valueMiles = miles // non-parsing text → no canonical
+
+    store.transaction(() => {
+      store.setRow('mileage', seedId, row as Row)
+    })
+  }
+
+  localStore.setValue(MILEAGE_BACKFILL_VERSION_VALUE, MILEAGE_BACKFILL_VERSION)
   return 'applied'
 }

@@ -36,6 +36,7 @@ import {
   carIdIndexId,
   createGarageIndexes,
   flattenCar,
+  isValidDateString,
   joinCar,
   newId,
   parseMileageMiles,
@@ -53,6 +54,7 @@ import type {
   IssuesRow,
   MaintenanceRecord,
   MaintenanceRow,
+  MileageCheckIn,
   Mod,
   ModsRow,
   Photo,
@@ -84,9 +86,19 @@ export const NEEDS_RESEED_VALUE = 'needsReseed'
  * offline/failed photo creates a backlog so the next online sweep retries.
  */
 export const PHOTOS_MIGRATED_VALUE = 'photosMigratedToR2'
+/**
+ * Per-device DEC-16 mileage-backfill sentinel (§15.8 Phase 2). Local-only —
+ * never synced — for the same reason as unitsSchemaVersion: a cloud-wins Values
+ * merge could clear a synced sentinel and re-fire the backfill. (Belt: the
+ * deterministic `${carId}::initial` rowId + the live-OR-tombstoned stamp gate in
+ * migrate.ts make a re-fire idempotent and resurrection-safe anyway.)
+ */
+export const MILEAGE_BACKFILL_VERSION_VALUE = 'mileageBackfillVersion'
 
 // ── Input shapes for create actions (identical to the old store) ──
 type PhotoInput = Pick<Photo, 'dataUrl' | 'caption'>
+/** DEC-16: a logged odometer reading. unit is the CURRENT distanceUnit (frozen at entry). */
+type LogMileageInput = { value: string; date?: string }
 type WishlistInput = Omit<WishlistItem, 'id' | 'status' | 'addedAt'>
 type ModInput = Omit<Mod, 'id' | 'addedAt'>
 type MaintenanceInput = Omit<MaintenanceRecord, 'id' | 'createdAt'>
@@ -132,6 +144,10 @@ export interface GarageState {
   addMaintenance: (carId: string, data: MaintenanceInput) => void
   updateMaintenance: (carId: string, recId: string, data: Partial<MaintenanceRecord>) => void
   deleteMaintenance: (carId: string, recId: string) => void
+
+  // Mileage check-ins (DEC-16)
+  logMileage: (carId: string, data: LogMileageInput) => void
+  deleteMileage: (carId: string, checkInId: string) => void
 
   // Todos
   addTodo: (carId: string, text: string, priority?: TodoPriority) => void
@@ -380,7 +396,12 @@ export function createGarageAdapter(
    */
   const flattenOne = (
     carId: string,
-    children: Partial<Pick<Car, ChildTableId>>,
+    // The nested-Car field names (photos/…/mileageLog), NOT the table ids — the
+    // mileage child lives under `Car.mileageLog`, distinct from the legacy scalar
+    // `Car.mileage` string.
+    children: Partial<
+      Pick<Car, 'photos' | 'wishlist' | 'mods' | 'maintenance' | 'todos' | 'issues' | 'mileageLog'>
+    >,
   ): FlattenedCar =>
     flattenCar(
       {
@@ -476,6 +497,39 @@ export function createGarageAdapter(
     else store.delCell(tableId, rowId, milesCell)
   }
 
+  /**
+   * DEC-16 dual-write (§15.8 Phase 3): mirror the car's CURRENT odometer — the
+   * latest live check-in by (date, createdAt) — into the legacy scalar
+   * cars.mileageRaw/mileageMiles, so un-upgraded readers AND the still-scalar
+   * snapshot builder stay correct. valueMiles is copied VERBATIM from the
+   * winning check-in's canonical cell (never re-parsed under a maybe-different
+   * current unit). No live check-ins (all deleted) → clear the scalar to '' so
+   * the timeline-empty state shows no mileage. MUST run inside the caller's
+   * transaction. Additive-forever: the scalar is never dropped.
+   */
+  const mirrorLatestMileage = (carId: string): void => {
+    let best: { date: string; createdAt: string; raw: string; miles: number | undefined } | null = null
+    // Scan the live rows directly (NOT the carId index): this runs inside the
+    // caller's transaction, where index slices are not yet recomputed but the
+    // store's own rows already reflect the just-applied setRow/delRow.
+    for (const rowId of store.getRowIds('mileage')) {
+      if (store.getCell('mileage', rowId, 'carId') !== carId) continue
+      const date = (store.getCell('mileage', rowId, 'date') as string | undefined) ?? ''
+      const createdAt = (store.getCell('mileage', rowId, 'createdAt') as string | undefined) ?? ''
+      if (best == null || date > best.date || (date === best.date && createdAt > best.createdAt)) {
+        best = {
+          date,
+          createdAt,
+          raw: (store.getCell('mileage', rowId, 'valueRaw') as string | undefined) ?? '',
+          miles: store.getCell('mileage', rowId, 'valueMiles') as number | undefined,
+        }
+      }
+    }
+    store.setCell('cars', carId, 'mileageRaw', best?.raw ?? '')
+    if (best?.miles != null) store.setCell('cars', carId, 'mileageMiles', best.miles)
+    else store.delCell('cars', carId, 'mileageMiles')
+  }
+
   // ── Actions (identical signatures to the legacy store) ─────
   const setTheme = (themeId: string): void => {
     store.transaction(() => {
@@ -508,11 +562,12 @@ export function createGarageAdapter(
   // DEC-4 (log-first): returns the freshly-minted id so the caller can navigate
   // straight to the new car's profile (`navigate('/car/' + id)`).
   const addCar = (data: CarDetails): string => {
+    const createdAt = now()
     const car: Car = {
       ...data,
       id: newId(),
       coverPhoto: null,
-      createdAt: now(),
+      createdAt,
       photos: [],
       wishlist: [],
       mods: [],
@@ -521,7 +576,28 @@ export function createGarageAdapter(
       issues: [],
     }
     const flat = flattenCar(car, settings())
-    store.setRow('cars', flat.carId, flat.car as Row)
+    store.transaction(() => {
+      // The car row keeps the scalar mileageRaw/mileageMiles as the latest-check-in
+      // MIRROR (dual-write, §15.8 Phase 3) — flattenCar already wrote them.
+      store.setRow('cars', flat.carId, flat.car as Row)
+      // DEC-16: an entered odometer becomes the FIRST check-in so "current = latest
+      // check-in" holds for brand-new cars too (the backfill is sentinel-gated and
+      // won't revisit cars added after it ran). A user-authored reading → random id
+      // (the deterministic `${carId}::initial` is reserved for the migration seed).
+      if (data.mileage != null && data.mileage.trim() !== '') {
+        const cs = settings()
+        const checkIn: MileageCheckIn = {
+          id: newId(),
+          value: data.mileage,
+          unit: cs.distanceUnit,
+          date: isValidDateString(data.purchaseDate) ? data.purchaseDate : createdAt,
+          source: 'initial',
+          createdAt,
+        }
+        const childFlat = flattenOne(flat.carId, { mileageLog: [checkIn] })
+        store.setRow('mileage', checkIn.id, childFlat.mileage[checkIn.id] as Row)
+      }
+    })
     return flat.carId
   }
 
@@ -702,6 +778,40 @@ export function createGarageAdapter(
     deleteItemWithReparent('maintenance', carId, recId)
   }
 
+  // ── Mileage check-ins (DEC-16) ─────────────────────────────
+  /**
+   * Log a dated odometer check-in. The reading freezes the CURRENT distanceUnit
+   * at entry (the distance analogue of the per-amount *Currency tag); valueMiles
+   * canonicalizes from THAT unit (via flattenCar). date defaults to today. The
+   * write also dual-writes the latest reading into the legacy scalar so old
+   * readers + the still-scalar snapshot stay correct (§15.8 Phase 3).
+   */
+  const logMileage = (carId: string, { value, date }: LogMileageInput): void => {
+    if (!hasCar(carId)) return
+    const checkIn: MileageCheckIn = {
+      id: newId(),
+      value,
+      unit: settings().distanceUnit,
+      date: date != null && date !== '' ? date : now().slice(0, 10),
+      source: 'manual',
+      createdAt: now(),
+    }
+    const flat = flattenOne(carId, { mileageLog: [checkIn] })
+    store.transaction(() => {
+      store.setRow('mileage', checkIn.id, flat.mileage[checkIn.id] as Row)
+      mirrorLatestMileage(carId)
+    })
+  }
+
+  /** Delete one check-in, then re-mirror the (new) latest into the scalar. */
+  const deleteMileage = (carId: string, checkInId: string): void => {
+    if (!childBelongs('mileage', checkInId, carId)) return
+    store.transaction(() => {
+      store.delRow('mileage', checkInId)
+      mirrorLatestMileage(carId)
+    })
+  }
+
   const addTodo = (carId: string, text: string, priority: TodoPriority = 'medium'): void => {
     if (!hasCar(carId)) return
     const todo: Todo = { id: newId(), text, priority, done: false, createdAt: now() }
@@ -774,6 +884,8 @@ export function createGarageAdapter(
     addMaintenance,
     updateMaintenance,
     deleteMaintenance,
+    logMileage,
+    deleteMileage,
     addTodo,
     toggleTodo,
     deleteTodo,

@@ -7,7 +7,9 @@
 // unit. Pure + RN-safe (no DOM/React) — toLocaleString is plain ECMAScript.
 import { DISTANCE_UNITS } from './units'
 import type { DistanceUnitCode } from './units'
-import { milesToUnit } from './flatten'
+import { milesToUnit, parseMileageMiles } from './flatten'
+import { currentCheckIn } from './odometer'
+import type { MileageCheckIn } from './types'
 
 /**
  * Format a stored mileage for display in `unit`. Returns:
@@ -41,4 +43,20 @@ export function mileagePrefill(
   if (raw == null || raw === '') return ''
   if (miles == null) return raw
   return String(Math.round(milesToUnit(miles, unit)))
+}
+
+/**
+ * DEC-16: the car's CURRENT mileage for display — the latest check-in (§13.3),
+ * formatted in `unit`. Falls back to the legacy scalar (`car.mileage` + its
+ * canonical `scalarMiles`) when the timeline is empty, so an un-backfilled or
+ * un-upgraded read still renders correctly. null ⇔ no mileage at all.
+ */
+export function formatCurrentMileage(
+  car: { mileage: string; mileageLog?: readonly MileageCheckIn[] | null },
+  scalarMiles: number | null | undefined,
+  unit: DistanceUnitCode,
+): string | null {
+  const cur = currentCheckIn(car.mileageLog)
+  if (cur) return formatMileage(cur.value, parseMileageMiles(cur.value, cur.unit), unit)
+  return formatMileage(car.mileage, scalarMiles, unit)
 }

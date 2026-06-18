@@ -3,7 +3,7 @@
 // no-rewrite settings semantics, delete cascades, and read-model caching.
 import { describe, expect, it, vi } from 'vitest'
 import { createMergeableStore, createStore } from 'tinybase'
-import { createGarageStore, KM_PER_MILE, mileagePrefill } from '@chudbox/shared'
+import { createGarageStore, currentCheckIn, KM_PER_MILE, mileagePrefill } from '@chudbox/shared'
 import { PHOTO_PAYLOADS_TABLE, createGarageAdapter } from './adapter'
 import type { GarageAdapter, PhotoHooks } from './adapter'
 
@@ -453,6 +453,108 @@ describe('mileage edit round-trip survives a units toggle', () => {
     expect(prefill).toBe('50000')
     adapter.getState().updateCar(carId, { mileage: prefill })
     expect(adapter.store.getCell('cars', carId, 'mileageMiles')).toBe(50_000)
+  })
+})
+
+describe('DEC-16 mileage check-ins (logMileage / current = latest / dual-write)', () => {
+  it('logMileage adds a dated check-in and dual-writes the latest into the scalar', () => {
+    const adapter = makeAdapter()
+    const carId = addOneCar(adapter)
+    adapter.getState().logMileage(carId, { value: '50000', date: '2026-01-01' })
+
+    const ckId = adapter.store.getRowIds('mileage')[0]
+    expect(adapter.store.getCell('mileage', ckId, 'valueRaw')).toBe('50000')
+    expect(adapter.store.getCell('mileage', ckId, 'valueMiles')).toBe(50_000)
+    expect(adapter.store.getCell('mileage', ckId, 'unit')).toBe('mi')
+    expect(adapter.store.getCell('mileage', ckId, 'source')).toBe('manual')
+    expect(adapter.store.getCell('mileage', ckId, 'date')).toBe('2026-01-01')
+    // DUAL-WRITE: the scalar mirror tracks the latest check-in (§15.8 Phase 3).
+    expect(adapter.store.getCell('cars', carId, 'mileageRaw')).toBe('50000')
+    expect(adapter.store.getCell('cars', carId, 'mileageMiles')).toBe(50_000)
+
+    const car = adapter.getState().cars[0]
+    expect(car.mileageLog).toHaveLength(1)
+    expect(currentCheckIn(car.mileageLog)?.value).toBe('50000')
+  })
+
+  it('the dual-write mirrors the latest BY DATE, not the last entered', () => {
+    const adapter = makeAdapter()
+    const carId = addOneCar(adapter)
+    adapter.getState().logMileage(carId, { value: '50000', date: '2026-01-01' })
+    adapter.getState().logMileage(carId, { value: '52000', date: '2026-03-01' })
+    adapter.getState().logMileage(carId, { value: '48000', date: '2025-12-01' }) // historical, entered last
+
+    // Current odometer = greatest-date check-in (52000), not the just-entered 48000.
+    expect(adapter.store.getCell('cars', carId, 'mileageRaw')).toBe('52000')
+    expect(adapter.store.getCell('cars', carId, 'mileageMiles')).toBe(52_000)
+    expect(currentCheckIn(adapter.getState().cars[0].mileageLog)?.value).toBe('52000')
+  })
+
+  it('freezes the entry unit; canonical derives from THAT unit and survives a toggle', () => {
+    const adapter = makeAdapter()
+    const carId = addOneCar(adapter)
+    adapter.getState().setDistanceUnit('km')
+    adapter.getState().logMileage(carId, { value: '120000', date: '2026-01-01' })
+    const ckId = adapter.store.getRowIds('mileage')[0]
+    expect(adapter.store.getCell('mileage', ckId, 'unit')).toBe('km')
+    expect(adapter.store.getCell('mileage', ckId, 'valueMiles')).toBeCloseTo(120_000 / KM_PER_MILE, 6)
+
+    adapter.getState().setDistanceUnit('mi') // never rewrites
+    expect(adapter.store.getCell('mileage', ckId, 'valueRaw')).toBe('120000')
+    expect(adapter.store.getCell('mileage', ckId, 'unit')).toBe('km')
+  })
+
+  it('a non-numeric reading is kept for display but has no canonical', () => {
+    const adapter = makeAdapter()
+    const carId = addOneCar(adapter)
+    adapter.getState().logMileage(carId, { value: 'unknown', date: '2026-01-01' })
+    const ckId = adapter.store.getRowIds('mileage')[0]
+    expect(adapter.store.getCell('mileage', ckId, 'valueRaw')).toBe('unknown')
+    expect(adapter.store.hasCell('mileage', ckId, 'valueMiles')).toBe(false)
+    expect(adapter.store.getCell('cars', carId, 'mileageRaw')).toBe('unknown')
+    expect(adapter.store.hasCell('cars', carId, 'mileageMiles')).toBe(false)
+  })
+
+  it('deleteMileage re-mirrors the new latest, and clears the scalar when none remain', () => {
+    const adapter = makeAdapter()
+    const carId = addOneCar(adapter)
+    adapter.getState().logMileage(carId, { value: '50000', date: '2026-01-01' })
+    adapter.getState().logMileage(carId, { value: '52000', date: '2026-03-01' })
+    const byDate = (raw: string) =>
+      adapter.store.getRowIds('mileage').find((id) => adapter.store.getCell('mileage', id, 'valueRaw') === raw) as string
+
+    // Delete the latest → scalar falls back to the remaining (earlier) reading.
+    adapter.getState().deleteMileage(carId, byDate('52000'))
+    expect(adapter.store.getCell('cars', carId, 'mileageRaw')).toBe('50000')
+    expect(adapter.store.getCell('cars', carId, 'mileageMiles')).toBe(50_000)
+
+    // Delete the last one → timeline empty → scalar cleared to '' (no mileage).
+    adapter.getState().deleteMileage(carId, byDate('50000'))
+    expect(adapter.store.getRowIds('mileage')).toHaveLength(0)
+    expect(adapter.store.getCell('cars', carId, 'mileageRaw')).toBe('')
+    expect(adapter.store.hasCell('cars', carId, 'mileageMiles')).toBe(false)
+  })
+
+  it('addCar seeds the FIRST check-in (source initial) from an entered odometer', () => {
+    const adapter = makeAdapter()
+    adapter.getState().addCar({ ...CAR_DETAILS, mileage: '45000', purchaseDate: '2020-05-01' })
+    const carId = adapter.store.getRowIds('cars')[0]
+    const ckId = adapter.store.getRowIds('mileage')[0]
+    expect(adapter.store.getCell('mileage', ckId, 'carId')).toBe(carId)
+    expect(adapter.store.getCell('mileage', ckId, 'source')).toBe('initial')
+    expect(adapter.store.getCell('mileage', ckId, 'valueRaw')).toBe('45000')
+    expect(adapter.store.getCell('mileage', ckId, 'valueMiles')).toBe(45_000)
+    // date = purchaseDate when valid (else the car's createdAt).
+    expect(adapter.store.getCell('mileage', ckId, 'date')).toBe('2020-05-01')
+    // The scalar mirror stays correct from creation.
+    expect(adapter.store.getCell('cars', carId, 'mileageRaw')).toBe('45000')
+  })
+
+  it('addCar with a blank odometer seeds NO check-in (empty timeline)', () => {
+    const adapter = makeAdapter()
+    addOneCar(adapter) // CAR_DETAILS.mileage === ''
+    expect(adapter.store.getRowIds('mileage')).toHaveLength(0)
+    expect(adapter.getState().cars[0].mileageLog).toBeUndefined()
   })
 })
 

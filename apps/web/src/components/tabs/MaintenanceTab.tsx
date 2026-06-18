@@ -4,6 +4,7 @@ import { Plus, Trash2, ClipboardList, Pencil, Check, X, Calendar } from 'lucide-
 import { tokens } from '@chudbox/shared'
 import useGarageStore from '../../store/useGarageStore'
 import { CURRENCIES, DISTANCE_UNITS, formatMileage, formatMoney, mileagePrefill } from '../../utils/units'
+import { carDueMaintenance } from '../../utils/maintenanceDue'
 import DateInput from '../DateInput'
 import ConfirmModal from '../ConfirmModal'
 import MileageText from '../MileageText'
@@ -148,7 +149,10 @@ export default function MaintenanceTab({ car }: MaintenanceTabProps) {
 
   const sorted    = [...car.maintenance].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
   const totalCost = car.maintenance.reduce((s, r) => s + (r.cost || 0), 0)
-  const isOverdue = (rec: MaintenanceRecord): boolean => Boolean(rec.nextDueDate) && new Date(rec.nextDueDate) < new Date()
+  // DEC-16 / U2: due/overdue computed by date AND by current mileage (latest
+  // check-in) vs each record's next-due mileage — maintenance feeds the timeline
+  // by COMPUTATION (§13.4), never a copy. `byId` flags individual rows.
+  const due       = carDueMaintenance(car)
 
   return (
     <div>
@@ -198,7 +202,7 @@ export default function MaintenanceTab({ car }: MaintenanceTabProps) {
               </div>
             </div>
           ) : (
-            <div key={rec.id} className={`card-row flex gap-4 items-start ${isOverdue(rec) ? 'border-danger-border' : ''}`}>
+            <div key={rec.id} className={`card-row flex gap-4 items-start ${due.byId[rec.id] === 'overdue' ? 'border-danger-border' : due.byId[rec.id] === 'due-soon' ? 'border-warning-border' : ''}`}>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-medium text-text-primary">{rec.service}</span>
@@ -206,7 +210,9 @@ export default function MaintenanceTab({ car }: MaintenanceTabProps) {
                   {rec.cost ? (
                     <span className="text-meta font-semibold text-text-primary">{formatMoney(Number(rec.cost), currency)}</span>
                   ) : null}
-                  {isOverdue(rec) && <Badge status="danger">Overdue</Badge>}
+                  {/* U2: overdue (danger) / due-soon (warning) by date OR mileage. */}
+                  {due.byId[rec.id] === 'overdue' && <Badge status="danger">Overdue</Badge>}
+                  {due.byId[rec.id] === 'due-soon' && <Badge status="warning">Due soon</Badge>}
                 </div>
                 {rec.notes && <p className="mt-1 text-meta text-text-secondary">{rec.notes}</p>}
                 <div className="mt-1.5 flex flex-wrap gap-3 text-meta text-text-secondary">
