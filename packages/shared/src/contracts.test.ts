@@ -14,6 +14,7 @@ import {
   createShareLinkPath,
   imgPath,
   parsePhotoKey,
+  fullCarSnapshotSchema,
   publicCarSnapshotSchema,
   shareImgPath,
   shareRevokePath,
@@ -22,7 +23,7 @@ import {
 } from './contracts'
 import type { ShareSnapshotResponse } from './contracts'
 import type { PhotoExt } from './imagePolicy'
-import { buildPublicSnapshot } from './publicSnapshot'
+import { buildFullSnapshot, buildPublicSnapshot } from './publicSnapshot'
 import type { SnapshotCarInput } from './publicSnapshot'
 import type { GarageValues } from './schema'
 
@@ -215,12 +216,13 @@ describe('shareSnapshotResponseSchema', () => {
   // Validate against the REAL curator output — if buildPublicSnapshot ever emits
   // a field the validator rejects (or vice versa) this test catches the drift.
   const car = buildPublicSnapshot(sampleSnapshotInput(), snapshotSettings)
-  const validBody = { car, expiresAt: null } satisfies ShareSnapshotResponse
+  const validBody = { scope: 'curated', car, expiresAt: null } satisfies ShareSnapshotResponse
 
   it('accepts exactly what buildPublicSnapshot produces (no expiry)', () => {
     const parsed = shareSnapshotResponseSchema.parse(validBody)
     // assignment doubles as a compile-time check that z.infer matches the contract
     const typed: ShareSnapshotResponse = parsed
+    expect(typed.scope).toBe('curated')
     expect(typed.car.make).toBe('Nissan')
     expect(typed.car.mileageMiles).toBe(50000)
     expect(typed.car.coverPhotoId).toBe('photo-1')
@@ -230,9 +232,10 @@ describe('shareSnapshotResponseSchema', () => {
   })
 
   it('accepts a numeric epoch-seconds expiry', () => {
-    expect(shareSnapshotResponseSchema.parse({ car, expiresAt: 1_900_000_000 }).expiresAt).toBe(
-      1_900_000_000,
-    )
+    expect(
+      shareSnapshotResponseSchema.parse({ scope: 'curated', car, expiresAt: 1_900_000_000 })
+        .expiresAt,
+    ).toBe(1_900_000_000)
   })
 
   it('rejects a leaked secret field anywhere in the tree (strict, deny-by-default)', () => {
@@ -240,8 +243,11 @@ describe('shareSnapshotResponseSchema', () => {
     // change starts leaking one, the strict schema must reject the body rather
     // than let the viewer render it.
     expect(
-      shareSnapshotResponseSchema.safeParse({ car: { ...car, salePrice: '9000' }, expiresAt: null })
-        .success,
+      shareSnapshotResponseSchema.safeParse({
+        scope: 'curated',
+        car: { ...car, salePrice: '9000' },
+        expiresAt: null,
+      }).success,
     ).toBe(false)
     expect(
       publicCarSnapshotSchema.safeParse({
@@ -258,14 +264,50 @@ describe('shareSnapshotResponseSchema', () => {
   })
 
   it('rejects wrong types and unknown statuses', () => {
-    expect(shareSnapshotResponseSchema.safeParse({ car, expiresAt: '1900000000' }).success).toBe(
-      false,
-    )
-    expect(shareSnapshotResponseSchema.safeParse({ car }).success).toBe(false) // missing expiresAt
+    expect(
+      shareSnapshotResponseSchema.safeParse({ scope: 'curated', car, expiresAt: '1900000000' })
+        .success,
+    ).toBe(false)
+    expect(shareSnapshotResponseSchema.safeParse({ scope: 'curated', car }).success).toBe(false) // missing expiresAt
+    expect(shareSnapshotResponseSchema.safeParse({ car, expiresAt: null }).success).toBe(false) // missing scope discriminant
     expect(publicCarSnapshotSchema.safeParse({ ...car, status: 'crashed' }).success).toBe(false)
     expect(publicCarSnapshotSchema.safeParse({ ...car, distanceUnit: 'leagues' }).success).toBe(
       false,
     )
+  })
+})
+
+describe('shareSnapshotResponseSchema — full scope', () => {
+  // Validate against the REAL full curator output — drift between
+  // buildFullSnapshot and fullCarSnapshotSchema fails here.
+  const fullCar = buildFullSnapshot(sampleSnapshotInput(), snapshotSettings)
+  const validFull = { scope: 'full', car: fullCar, expiresAt: null } satisfies ShareSnapshotResponse
+
+  it('accepts exactly what buildFullSnapshot produces, exposing the owner-only fields', () => {
+    const parsed = shareSnapshotResponseSchema.parse(validFull)
+    const typed: ShareSnapshotResponse = parsed
+    expect(typed.scope).toBe('full')
+    if (typed.scope !== 'full') throw new Error('expected full scope') // narrows the union
+    // Curated fields survive…
+    expect(typed.car.make).toBe('Nissan')
+    // …plus the owner-only fields the full curator adds.
+    expect(typed.car.settings.currency).toBe('USD')
+    expect(typed.car.wishlist.length).toBe(1)
+    expect(typed.car.todos.length).toBe(1)
+    expect(typed.car.issues.length).toBe(1)
+  })
+
+  it('a full car body is REJECTED under a curated discriminant (shape must match scope)', () => {
+    // The exact escalation the discriminated union prevents: a full car wearing
+    // a 'curated' label fails (the curated schema is strict / has no wishlist).
+    expect(
+      shareSnapshotResponseSchema.safeParse({ scope: 'curated', car: fullCar, expiresAt: null })
+        .success,
+    ).toBe(false)
+    // And the standalone full schema rejects a leaked field beyond its allowlist.
+    expect(
+      fullCarSnapshotSchema.safeParse({ ...fullCar, secretFutureField: 'x' }).success,
+    ).toBe(false)
   })
 })
 

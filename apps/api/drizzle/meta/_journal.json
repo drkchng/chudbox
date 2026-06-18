@@ -15,6 +15,13 @@
       "when": 1781751777358,
       "tag": "0001_bright_wong",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1781754044147,
+      "tag": "0002_regular_solo",
+      "breakpoints": true
     }
   ]
 }

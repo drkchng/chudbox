@@ -5,6 +5,7 @@ import { fetchShareSnapshot, recordShareView } from '../share/shareClient'
 import type { SnapshotResult } from '../share/shareClient'
 import { applyThemeFromSettings, captureThemeVars, restoreThemeVars } from '../utils/themes'
 import ShareCarView from '../components/share/ShareCarView'
+import ShareCarViewFull from '../components/share/ShareCarViewFull'
 
 /**
  * Public route for `#/share/:token`. Fetches the curated snapshot and renders a
@@ -86,7 +87,15 @@ export default function SharePage() {
   const { result } = state
 
   if (result.kind === 'ok') {
-    return <ShareCarView car={result.data.car} token={token} />
+    // The server tells us, via the validated body's discriminant, which view
+    // this link grants — it is read SERVER-SIDE from the stored link, never
+    // chosen by this client. 'full' renders the owner-equivalent read-only
+    // page; everything else stays the curated showcase.
+    return result.data.scope === 'full' ? (
+      <ShareCarViewFull car={result.data.car} token={token} />
+    ) : (
+      <ShareCarView car={result.data.car} token={token} />
+    )
   }
 
   if (result.kind === 'not-found') {

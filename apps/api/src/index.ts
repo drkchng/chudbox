@@ -21,6 +21,54 @@ import { uploadsApi } from './routes/uploads'
 
 const app = new Hono<{ Bindings: Env }>()
 
+// Security response headers. CSP is tuned for the same-origin Vite/React +
+// Tailwind SPA: `style-src 'unsafe-inline'` covers Tailwind/inline styles,
+// `connect-src wss:` covers the /sync WebSocket, and img/font allow the
+// same-origin /img pipeline plus data:/blob: previews. Kept deliberately
+// permissive on connect-src/img-src so it can't break the live app.
+const SECURITY_HEADERS: ReadonlyArray<readonly [string, string]> = [
+  ['Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload'],
+  ['X-Content-Type-Options', 'nosniff'],
+  ['X-Frame-Options', 'DENY'],
+  ['Referrer-Policy', 'strict-origin-when-cross-origin'],
+  [
+    'Permissions-Policy',
+    'geolocation=(), camera=(), microphone=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()',
+  ],
+  [
+    'Content-Security-Policy',
+    [
+      "default-src 'self'",
+      "script-src 'self'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob:",
+      "font-src 'self' data:",
+      "connect-src 'self' wss: https:",
+      "base-uri 'self'",
+      "frame-ancestors 'none'",
+      "object-src 'none'",
+    ].join('; '),
+  ],
+]
+
+// Apply security headers to every Worker-handled response (additive — only
+// these named headers are touched, so per-route Cache-Control/no-store,
+// Set-Cookie, Content-Type, etc. are preserved). `c.header()` transparently
+// reconstructs immutable upstream responses (e.g. the notFound SPA fallback
+// served via ASSETS.fetch). NOTE: the assets binding's `run_worker_first` only
+// routes /api/*, /sync and /img/* through the Worker, so the SPA's HTML
+// document and hashed /assets/* files are served directly by the binding and
+// bypass this middleware — covering those needs an assets-side header config
+// (out of scope here). WebSocket (101) upgrade responses can't be rebuilt and
+// need no document headers, so they're skipped.
+app.use('*', async (c, next) => {
+  await next()
+  if (c.res.status === 101) return
+  for (const [name, value] of SECURITY_HEADERS) {
+    c.header(name, value)
+  }
+})
+
 app.get('/api/health', (c) => c.json({ ok: true }))
 
 // Chunked stamped seeding / clearing / meta for the user's GarageDO (M2).

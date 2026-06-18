@@ -55,6 +55,7 @@ const META: ShareLinkMeta = {
   expiresAt: null,
   revokedAt: null,
   viewCount: 0,
+  scope: 'curated',
 }
 
 /** Map-backed sessionStorage stub so the once-per-session guard is observable. */
@@ -79,13 +80,20 @@ describe('createShareLink', () => {
     expect(calls[0].url).toBe(createShareLinkPath('car 1')) // path-encodes the id
     expect(calls[0].init?.method).toBe('POST')
     expect(calls[0].init?.credentials).toBe('same-origin')
-    expect(JSON.parse(calls[0].init?.body as string)).toEqual({ expiresAt: null })
+    // scope defaults to the safe curated showcase when the caller omits it.
+    expect(JSON.parse(calls[0].init?.body as string)).toEqual({ expiresAt: null, scope: 'curated' })
   })
 
   it('passes a future expiresAt through verbatim', async () => {
     const { fetchImpl, calls } = makeFetch(() => json({ ...CREATE_RES, expiresAt: 2_000_000_000 }))
     await createShareLink({ carId: 'car-1', expiresAt: 2_000_000_000, fetchImpl })
-    expect(JSON.parse(calls[0].init?.body as string)).toEqual({ expiresAt: 2_000_000_000 })
+    expect(JSON.parse(calls[0].init?.body as string)).toEqual({ expiresAt: 2_000_000_000, scope: 'curated' })
+  })
+
+  it('sends the chosen full scope in the create body', async () => {
+    const { fetchImpl, calls } = makeFetch(() => json(CREATE_RES))
+    await createShareLink({ carId: 'car-1', expiresAt: null, scope: 'full', fetchImpl })
+    expect(JSON.parse(calls[0].init?.body as string)).toEqual({ expiresAt: null, scope: 'full' })
   })
 
   it('throws the server error message on a non-2xx response', async () => {
@@ -153,6 +161,7 @@ describe('revokeShareLink', () => {
 
 describe('fetchShareSnapshot — public, no auth, status mapping', () => {
   const SNAPSHOT: ShareSnapshotResponse = {
+    scope: 'curated',
     expiresAt: null,
     car: {
       year: '2014', make: 'Subaru', model: 'WRX', trim: 'STI', color: 'Blue',

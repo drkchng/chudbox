@@ -77,6 +77,18 @@ export function createAuth(env: AuthEnv) {
       window: 10,
       max: 100,
     },
+    // On Workers the client IP arrives in Cloudflare's `cf-connecting-ip`
+    // header; Better Auth's `getIp` only reads `x-forwarded-for` by default, so
+    // it found no IP and keyed EVERY rate_limit row on the constant
+    // `no-trusted-ip` — one shared per-path bucket that a single client could
+    // saturate to lock out all users. Pointing it at `cf-connecting-ip` makes
+    // the limiter per-IP again. Option path verified against
+    // @better-auth/core 1.6.18 init-options.d.mts: advanced.ipAddress.ipAddressHeaders.
+    advanced: {
+      ipAddress: {
+        ipAddressHeaders: ['cf-connecting-ip'],
+      },
+    },
     telemetry: { enabled: false },
   })
 }

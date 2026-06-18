@@ -19,9 +19,32 @@
 //
 // RN-safe: pure data mapping, no DOM/Node imports. Reuses parseMileageMiles
 // (flatten.ts) rather than reimplementing the distance parse.
-import type { Car, CarStatus, Photo } from './types'
+import type {
+  Car,
+  CarStatus,
+  IssueSeverity,
+  IssueStatus,
+  Photo,
+  TodoPriority,
+  WishlistStatus,
+} from './types'
 import type { GarageValues } from './schema'
 import { parseMileageMiles } from './flatten'
+
+/**
+ * Which view a share link grants, chosen by the AUTHENTICATED owner at create
+ * time and STORED on the share_links row. The public route builds the snapshot
+ * strictly from the stored scope — never from any client-supplied value.
+ *
+ *  • 'curated' — the default build showcase (this module's strict allowlist:
+ *    no money/shop/notes, no wishlist/todos/issues, no salePrice/tradeFor).
+ *  • 'full'    — everything the owner sees for THAT ONE car, READ-ONLY: the
+ *    extra tables (wishlist/todos/issues) and the previously-withheld
+ *    cost/shop/notes/salePrice/tradeFor. Still NO raw r2Key (photos use
+ *    token-scoped urls), NO userId/email, NO other cars, NO internal row ids
+ *    beyond the photoIds curated already exposes.
+ */
+export type ShareScope = 'curated' | 'full'
 
 // ── Builder input ───────────────────────────────────────────
 // The nested `Car` aggregate (flatten.ts: joinCar) drops the per-photo
@@ -198,5 +221,169 @@ export function buildPublicSnapshot(
   if (car.purchaseDate !== '') snapshot.purchaseDate = car.purchaseDate
   if (car.saleDate !== '') snapshot.saleDate = car.saleDate
   if (coverPhotoId !== undefined) snapshot.coverPhotoId = coverPhotoId
+  return snapshot
+}
+
+// ── Full (owner-equivalent, READ-ONLY) snapshot shape ───────
+// The 'full' scope is STILL a strict, key-by-key allowlist — it just allows
+// MORE than curated. The deny-by-default discipline is unchanged: every output
+// object below is built field-by-field, never spread-and-delete, so a field
+// added to the domain model later stays private until it is named here. What
+// 'full' adds over curated: the previously-withheld money/shop/notes on
+// mods+maintenance, the wishlist/todos/issues tables, salePrice/tradeFor, and
+// the display currency. What it STILL withholds (same as curated): raw r2Key /
+// dataUrl on photos, userId/email, and every internal row id beyond photoId.
+
+/** A full mod — curated fields PLUS the owner-only cost/shop (omitted when blank). */
+export interface FullMod extends PublicMod {
+  /** Present iff the source cost was a finite number. */
+  cost?: number
+  /** Present iff non-empty. */
+  shop?: string
+}
+
+/** A full maintenance record — curated fields PLUS cost/shop/notes (omitted when blank). */
+export interface FullMaintenance extends PublicMaintenance {
+  cost?: number
+  shop?: string
+  notes?: string
+}
+
+/** A full wishlist item — NO internal id; price omitted when null. */
+export interface FullWishlistItem {
+  name: string
+  link: string
+  /** Present iff the source price was a finite number. */
+  price?: number
+  category: string
+  notes: string
+  status: WishlistStatus
+  addedAt: string
+}
+
+/** A full todo — NO internal id. */
+export interface FullTodo {
+  text: string
+  priority: TodoPriority
+  done: boolean
+  createdAt: string
+}
+
+/** A full issue — NO internal id; resolvedAt omitted when absent/blank. */
+export interface FullIssue {
+  title: string
+  description: string
+  severity: IssueSeverity
+  status: IssueStatus
+  createdAt: string
+  resolvedAt?: string
+}
+
+/** Full display settings: curated settings PLUS the display currency (money IS shown here). */
+export interface FullSettings extends PublicSettings {
+  /** ISO-4217 code the owner enters amounts in (used to format the now-visible money). */
+  currency: string
+}
+
+/**
+ * The read-only FULL view of one car: everything the owner sees for THAT car.
+ * Extends the curated showcase (same car header / photos / cover / mileage) and
+ * widens mods/maintenance/settings, adding the extra tables + salePrice/tradeFor.
+ */
+export interface FullCarSnapshot
+  extends Omit<PublicCarSnapshot, 'mods' | 'maintenance' | 'settings'> {
+  /** Present iff non-empty. */
+  salePrice?: string
+  /** Present iff non-empty. */
+  tradeFor?: string
+  mods: FullMod[]
+  maintenance: FullMaintenance[]
+  wishlist: FullWishlistItem[]
+  todos: FullTodo[]
+  issues: FullIssue[]
+  settings: FullSettings
+}
+
+/**
+ * Build the FULL read-only snapshot of one car (the 'full' scope). Reuses
+ * buildPublicSnapshot for everything curated already emits (car header, photos,
+ * cover/mileage derivation, the curated mod/maintenance fields) so the shared
+ * fields stay byte-identical to the curated path, then layers the owner-only
+ * fields on top — each added key-by-key under the same strict allowlist.
+ *
+ * The curated base's mods/maintenance arrays are built by mapping car.mods /
+ * car.maintenance in order, so base.mods[i] / base.maintenance[i] line up with
+ * car.mods[i] / car.maintenance[i] — we reuse that derived shape and only
+ * append the extra cells, never re-deriving (and never regressing) the curated
+ * fields. Raw r2Key / dataUrl / userId / row ids are never read here.
+ */
+export function buildFullSnapshot(
+  car: SnapshotCarInput,
+  settings: GarageValues,
+): FullCarSnapshot {
+  const base = buildPublicSnapshot(car, settings)
+
+  const mods: FullMod[] = base.mods.map((mod, i) => {
+    const out: FullMod = { ...mod }
+    const source = car.mods[i]
+    if (isFiniteNumber(source.cost)) out.cost = source.cost
+    if (source.shop !== '') out.shop = source.shop
+    return out
+  })
+
+  const maintenance: FullMaintenance[] = base.maintenance.map((rec, i) => {
+    const out: FullMaintenance = { ...rec }
+    const source = car.maintenance[i]
+    if (isFiniteNumber(source.cost)) out.cost = source.cost
+    if (source.shop !== '') out.shop = source.shop
+    if (source.notes !== '') out.notes = source.notes
+    return out
+  })
+
+  const wishlist: FullWishlistItem[] = car.wishlist.map((item) => {
+    const out: FullWishlistItem = {
+      name: item.name,
+      link: item.link,
+      category: item.category,
+      notes: item.notes,
+      status: item.status,
+      addedAt: item.addedAt,
+    }
+    if (isFiniteNumber(item.price)) out.price = item.price
+    return out
+  })
+
+  const todos: FullTodo[] = car.todos.map((todo) => ({
+    text: todo.text,
+    priority: todo.priority,
+    done: todo.done,
+    createdAt: todo.createdAt,
+  }))
+
+  const issues: FullIssue[] = car.issues.map((issue) => {
+    const out: FullIssue = {
+      title: issue.title,
+      description: issue.description,
+      severity: issue.severity,
+      status: issue.status,
+      createdAt: issue.createdAt,
+    }
+    if (issue.resolvedAt != null && issue.resolvedAt !== '') out.resolvedAt = issue.resolvedAt
+    return out
+  })
+
+  const fullSettings: FullSettings = { ...base.settings, currency: settings.currency }
+
+  const snapshot: FullCarSnapshot = {
+    ...base,
+    mods,
+    maintenance,
+    wishlist,
+    todos,
+    issues,
+    settings: fullSettings,
+  }
+  if (car.salePrice !== '') snapshot.salePrice = car.salePrice
+  if (car.tradeFor !== '') snapshot.tradeFor = car.tradeFor
   return snapshot
 }

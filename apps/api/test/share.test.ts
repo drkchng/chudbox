@@ -492,6 +492,165 @@ describe('GET public snapshot', () => {
   })
 })
 
+// ── Visibility scope: curated (default) vs full (read-only) ──
+// The security crux of the scope feature: the link's scope is chosen by the
+// authenticated owner at create time and STORED; the public GET builds the
+// snapshot strictly from the stored scope, NEVER from any client-supplied
+// parameter/header/body. A 'curated' holder cannot escalate to 'full'.
+describe('GET public snapshot — visibility scope', () => {
+  async function createScopedLink(
+    carId: string,
+    scope: 'curated' | 'full',
+  ): Promise<CreateShareResponse> {
+    const res = await SELF.fetch(`${BASE}${createShareLinkPath(carId)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', cookie: session.cookie },
+      body: JSON.stringify({ scope }),
+    })
+    expect(res.status).toBe(200)
+    return (await res.json()) as CreateShareResponse
+  }
+
+  it('(a) a FULL link returns the owner-only fields (money/shop/notes, wishlist/todos/issues, salePrice/tradeFor)', async () => {
+    const ids = freshIds()
+    const { r2Key } = await uploadAndSeedCar(ids)
+    const link = await createScopedLink(ids.carId, 'full')
+
+    const res = await SELF.fetch(`${BASE}${shareSnapshotPath(link.token)}`)
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as ShareSnapshotResponse
+    expect(body.scope).toBe('full')
+    if (body.scope !== 'full') throw new Error('expected full scope') // narrows the union
+    const { car } = body
+
+    // Curated fields still present…
+    expect(car.make).toBe('KEEP_make')
+    expect(car.coverPhotoId).toBe(ids.photoId)
+    // …and the previously-withheld owner fields are now exposed (read-only).
+    expect(car.salePrice).toBe('SECRET_salePrice')
+    expect(car.tradeFor).toBe('SECRET_tradeFor')
+    expect(car.mods[0].cost).toBe(92929292)
+    expect(car.mods[0].shop).toBe('SECRET_mod_shop')
+    expect(car.maintenance[0].cost).toBe(93939393)
+    expect(car.maintenance[0].shop).toBe('SECRET_maint_shop')
+    expect(car.maintenance[0].notes).toBe('SECRET_maint_notes')
+    expect(car.wishlist[0].name).toBe('SECRET_wish_name')
+    expect(car.wishlist[0].price).toBe(91919191)
+    expect(car.wishlist[0].notes).toBe('SECRET_wish_notes')
+    expect(car.todos[0].text).toBe('SECRET_todo_text')
+    expect(car.issues[0].title).toBe('SECRET_issue_title')
+    expect(car.issues[0].description).toBe('SECRET_issue_description')
+    expect(car.settings.currency).toBe('USD')
+
+    // (d) Even 'full' NEVER exposes the raw r2Key, the userId/email, the raw
+    // photo dataUrl/uploadedAt, or any internal row id.
+    const serialized = JSON.stringify(body)
+    expect(serialized).not.toContain(r2Key)
+    expect(serialized).not.toContain(session.userId)
+    expect(serialized).not.toContain('share-user@example.com')
+    expect(serialized).not.toContain('SECRET_photo_uploadedAt')
+    const photo = car.photos[0] as unknown as Record<string, unknown>
+    expect(photo.r2Key).toBeUndefined()
+    expect(photo.dataUrl).toBeUndefined()
+    expect(photo.uploadedAt).toBeUndefined()
+    expect((car.wishlist[0] as unknown as Record<string, unknown>).id).toBeUndefined()
+    expect((car.mods[0] as unknown as Record<string, unknown>).id).toBeUndefined()
+    expect((car.issues[0] as unknown as Record<string, unknown>).id).toBeUndefined()
+  })
+
+  it('(b) a CURATED link IGNORES a client scope override (?scope=full + headers) — never serves full data', async () => {
+    const ids = freshIds()
+    const { r2Key } = await uploadAndSeedCar(ids)
+    const link = await createScopedLink(ids.carId, 'curated')
+
+    // Attacker holding a curated link tries every request-side lever to escalate:
+    // a query param AND spoofed scope headers. The server reads ONLY the stored
+    // scope, so the body must come back curated with no secret anywhere.
+    const res = await SELF.fetch(`${BASE}${shareSnapshotPath(link.token)}?scope=full&full=1`, {
+      headers: { 'x-share-scope': 'full', 'x-scope': 'full', scope: 'full' },
+    })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as ShareSnapshotResponse
+    expect(body.scope).toBe('curated')
+    const loose = body.car as unknown as Record<string, unknown>
+    expect(loose.wishlist).toBeUndefined()
+    expect(loose.todos).toBeUndefined()
+    expect(loose.issues).toBeUndefined()
+    expect(loose.salePrice).toBeUndefined()
+    expect(loose.tradeFor).toBeUndefined()
+
+    const serialized = JSON.stringify(body)
+    for (const secret of SECRET_STRINGS) {
+      expect(serialized, `escalation leaked: ${secret}`).not.toContain(secret)
+    }
+    for (const amount of SECRET_NUMBERS) {
+      expect(serialized, `escalation leaked amount: ${amount}`).not.toContain(String(amount))
+    }
+    expect(serialized).not.toContain(r2Key)
+  })
+
+  it('(c) a row with NO scope set (pre-0002 / DB default) serves the curated showcase unchanged', async () => {
+    const ids = freshIds()
+    await uploadAndSeedCar(ids)
+    // Insert a link row WITHOUT the scope column — exactly what an existing row
+    // created before the additive 0002 migration looks like. The NOT NULL
+    // DEFAULT 'curated' must apply, so it serves the showcase.
+    const rawToken = `legacy-${crypto.randomUUID()}`
+    const now = nowSeconds()
+    await env.DB.prepare(
+      'INSERT INTO share_links (token_hash, user_id, car_id, created_at, expires_at, revoked_at) VALUES (?,?,?,?,?,?)',
+    )
+      .bind(await sha256Hex(rawToken), session.userId, ids.carId, now - 10, null, null)
+      .run()
+
+    const res = await SELF.fetch(`${BASE}${shareSnapshotPath(rawToken)}`)
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as ShareSnapshotResponse
+    expect(body.scope).toBe('curated')
+    const loose = body.car as unknown as Record<string, unknown>
+    expect(loose.wishlist).toBeUndefined()
+    expect(loose.salePrice).toBeUndefined()
+  })
+
+  it('stores the chosen scope and surfaces it in the owner list', async () => {
+    const ids = freshIds()
+    await uploadAndSeedCar(ids)
+    await createScopedLink(ids.carId, 'full')
+    const listRes = await SELF.fetch(`${BASE}${createShareLinkPath(ids.carId)}`, {
+      headers: { cookie: session.cookie },
+    })
+    expect(listRes.status).toBe(200)
+    const list = (await listRes.json()) as ShareLinkListResponse
+    expect(list.links.length).toBe(1)
+    expect(list.links[0].scope).toBe('full')
+  })
+
+  it('defaults to curated when the create body omits scope', async () => {
+    const ids = freshIds()
+    await uploadAndSeedCar(ids)
+    const link = await createLink(ids.carId) // body is `{}` — no scope
+    const stored = await env.DB.prepare('SELECT scope FROM share_links WHERE token_hash = ?')
+      .bind(await sha256Hex(link.token))
+      .first<{ scope: string }>()
+    expect(stored?.scope).toBe('curated')
+  })
+
+  it('rejects an unknown scope value (400, no row inserted)', async () => {
+    const ids = freshIds()
+    await uploadAndSeedCar(ids)
+    const res = await SELF.fetch(`${BASE}${createShareLinkPath(ids.carId)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', cookie: session.cookie },
+      body: JSON.stringify({ scope: 'everything' }),
+    })
+    expect(res.status).toBe(400)
+    const count = await env.DB.prepare('SELECT COUNT(*) AS n FROM share_links WHERE car_id = ?')
+      .bind(ids.carId)
+      .first<{ n: number }>()
+    expect(count?.n).toBe(0)
+  })
+})
+
 // ── Token-scoped image ──────────────────────────────────────
 describe('GET token-scoped image', () => {
   it("serves the link's photo bytes (no session) and 404s a foreign photoId", async () => {

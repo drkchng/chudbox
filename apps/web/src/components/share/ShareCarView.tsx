@@ -38,7 +38,7 @@ interface TabDef {
 
 const fmtDay = (d: string): string => new Date(`${d}T12:00:00`).toLocaleDateString()
 
-function PhotoGrid({ photos, token }: { photos: PublicPhoto[]; token: string }) {
+export function PhotoGrid({ photos, token }: { photos: PublicPhoto[]; token: string }) {
   const [lightbox, setLightbox] = useState<PublicPhoto | null>(null)
   if (photos.length === 0) {
     return <p className="text-center text-gray-600 py-10">No photos shared.</p>

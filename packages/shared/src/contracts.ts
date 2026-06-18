@@ -5,7 +5,7 @@
 // untrusted network body (the request-side validators live in zod.ts).
 import { z } from 'zod'
 import type { ImageContentType, PhotoExt } from './imagePolicy'
-import type { PublicCarSnapshot } from './publicSnapshot'
+import type { FullCarSnapshot, PublicCarSnapshot, ShareScope } from './publicSnapshot'
 
 // ── Routes ──────────────────────────────────────────────────
 /** WebSocket sync endpoint — same-origin so the session cookie rides the upgrade. */
@@ -275,6 +275,12 @@ export interface CreateShareRequest {
    * be a positive integer strictly in the future (see createShareRequestSchema).
    */
   expiresAt?: number | null
+  /**
+   * Which view the link grants. Chosen by the AUTHENTICATED owner and STORED on
+   * the row; the public route reads it from storage, never from the viewer.
+   * Absent = 'curated' (the safe default). See ShareScope.
+   */
+  scope?: ShareScope
 }
 
 export interface CreateShareResponse {
@@ -323,6 +329,8 @@ export interface ShareLinkMeta {
    * "views", not "visitors".
    */
   viewCount: number
+  /** Which view this link grants ('curated' showcase or 'full' read-only). */
+  scope: ShareScope
 }
 
 export interface ShareLinkListResponse {
@@ -330,15 +338,32 @@ export interface ShareLinkListResponse {
 }
 
 /**
- * Public GET response. `car` is the allowlisted PublicCarSnapshot (the showcase
- * — never a full Car); the viewer turns each photo's photoId into an image via
- * shareImgPath(token, photoId). `expiresAt` lets the viewer show a countdown.
+ * Public GET response — a DISCRIMINATED UNION on the server-authoritative
+ * `scope`. The viewer turns each photo's photoId into an image via
+ * shareImgPath(token, photoId); `expiresAt` lets it show a countdown.
+ *
+ *  • scope: 'curated' → `car` is the allowlisted PublicCarSnapshot (the showcase
+ *    — never a full Car).
+ *  • scope: 'full'    → `car` is the FullCarSnapshot (the owner-equivalent
+ *    read-only view, still r2Key/userId/email-free).
+ *
+ * `scope` comes from the STORED share_links row, NEVER from the request, so a
+ * viewer holding a 'curated' link can never receive 'full' data. The strict
+ * response schema below rejects a body whose `car` shape disagrees with `scope`.
  */
-export interface ShareSnapshotResponse {
-  car: PublicCarSnapshot
-  /** Epoch seconds; null = no expiry. */
-  expiresAt: number | null
-}
+export type ShareSnapshotResponse =
+  | {
+      scope: 'curated'
+      car: PublicCarSnapshot
+      /** Epoch seconds; null = no expiry. */
+      expiresAt: number | null
+    }
+  | {
+      scope: 'full'
+      car: FullCarSnapshot
+      /** Epoch seconds; null = no expiry. */
+      expiresAt: number | null
+    }
 
 // ── Public snapshot RESPONSE validator (M4 polish) ──────────
 // The public viewer fetches this body over the network with NO session and
@@ -426,9 +451,114 @@ export const publicCarSnapshotSchema = z.strictObject({
   settings: publicSettingsSchema,
 })
 
-/** Validates the public GET /api/share/:token body (ShareSnapshotResponse). */
-export const shareSnapshotResponseSchema = z.strictObject({
-  car: publicCarSnapshotSchema,
-  /** Epoch seconds; null = no expiry. */
-  expiresAt: z.number().nullable(),
+// ── Full-scope snapshot validators ──────────────────────────
+// The 'full' link's body is validated just as strictly (deny-by-default): each
+// schema is a strictObject, so a field the FULL curator started leaking that is
+// not named here fails validation rather than reaching the viewer. These extend
+// the curated shapes with exactly the owner-only fields buildFullSnapshot emits.
+
+const fullModSchema = z.strictObject({
+  name: z.string(),
+  category: z.string(),
+  description: z.string(),
+  installedDate: z.string(),
+  link: z.string(),
+  addedAt: z.string(),
+  cost: z.number().optional(),
+  shop: z.string().optional(),
 })
+
+const fullMaintenanceSchema = z.strictObject({
+  service: z.string(),
+  date: z.string(),
+  mileageRaw: z.string().optional(),
+  mileageMiles: z.number().optional(),
+  nextDueDate: z.string().optional(),
+  nextDueMileageRaw: z.string().optional(),
+  nextDueMileageMiles: z.number().optional(),
+  createdAt: z.string(),
+  cost: z.number().optional(),
+  shop: z.string().optional(),
+  notes: z.string().optional(),
+})
+
+const fullWishlistSchema = z.strictObject({
+  name: z.string(),
+  link: z.string(),
+  price: z.number().optional(),
+  category: z.string(),
+  notes: z.string(),
+  status: z.enum(['wanted', 'ordered', 'installed']),
+  addedAt: z.string(),
+})
+
+const fullTodoSchema = z.strictObject({
+  text: z.string(),
+  priority: z.enum(['low', 'medium', 'high']),
+  done: z.boolean(),
+  createdAt: z.string(),
+})
+
+const fullIssueSchema = z.strictObject({
+  title: z.string(),
+  description: z.string(),
+  severity: z.enum(['minor', 'moderate', 'critical']),
+  status: z.enum(['open', 'in-progress', 'resolved']),
+  createdAt: z.string(),
+  resolvedAt: z.string().optional(),
+})
+
+const fullSettingsSchema = z.strictObject({
+  themeId: z.string(),
+  customAccent: z.string().optional(),
+  distanceUnit: z.enum(['mi', 'km']),
+  currency: z.string(),
+})
+
+/** Validates a FullCarSnapshot — strict, so any non-allowlisted key is rejected. */
+export const fullCarSnapshotSchema = z.strictObject({
+  year: z.string(),
+  make: z.string(),
+  model: z.string(),
+  trim: z.string(),
+  color: z.string(),
+  nickname: z.string(),
+  mileageRaw: z.string(),
+  mileageMiles: z.number().optional(),
+  status: z.enum(PUBLIC_CAR_STATUSES),
+  purchaseDate: z.string().optional(),
+  saleDate: z.string().optional(),
+  createdAt: z.string(),
+  coverPhotoId: z.string().optional(),
+  salePrice: z.string().optional(),
+  tradeFor: z.string().optional(),
+  photos: z.array(publicPhotoSchema),
+  mods: z.array(fullModSchema),
+  maintenance: z.array(fullMaintenanceSchema),
+  wishlist: z.array(fullWishlistSchema),
+  todos: z.array(fullTodoSchema),
+  issues: z.array(fullIssueSchema),
+  settings: fullSettingsSchema,
+})
+
+/**
+ * Validates the public GET /api/share/:token body (ShareSnapshotResponse).
+ * DISCRIMINATED on `scope`: a 'curated' body is held to the curated allowlist,
+ * a 'full' body to the full allowlist — so the viewer can never be tricked into
+ * rendering a 'full' car under a 'curated' link (or vice versa), and an extra
+ * key under either shape is rejected before it reaches the page.
+ */
+export const shareSnapshotResponseSchema = z.discriminatedUnion('scope', [
+  z.strictObject({
+    scope: z.literal('curated'),
+    car: publicCarSnapshotSchema,
+    /** Epoch seconds; null = no expiry. */
+    expiresAt: z.number().nullable(),
+  }),
+  z.strictObject({
+    scope: z.literal('full'),
+    car: fullCarSnapshotSchema,
+    /** Epoch seconds; null = no expiry. */
+    expiresAt: z.number().nullable(),
+  }),
+])

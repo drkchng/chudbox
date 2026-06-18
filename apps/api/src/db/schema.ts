@@ -119,6 +119,13 @@ export const rateLimit = sqliteTable('rate_limit', {
  * - view_count is a soft, public hit counter: POST /api/share/:token/view bumps
  *   it for VALID links only. Additive column (added in drizzle/0001), NOT NULL
  *   DEFAULT 0 so every pre-existing row reads as 0.
+ * - scope is the owner's per-link visibility choice ('curated' | 'full'), chosen
+ *   at create time by the AUTHENTICATED owner and read back SERVER-SIDE when
+ *   building the public snapshot (never from the request). Additive column
+ *   (added in drizzle/0002), NOT NULL DEFAULT 'curated' so every pre-existing
+ *   row stays the safe build-showcase. The enum is a TS-level refinement only
+ *   (SQLite has no enum / added CHECK), so the migration stays a plain ADD
+ *   COLUMN; the route re-narrows the stored value to the two known scopes.
  */
 export const shareLinks = sqliteTable(
   'share_links',
@@ -132,6 +139,9 @@ export const shareLinks = sqliteTable(
     expiresAt: integer('expires_at'),
     revokedAt: integer('revoked_at'),
     viewCount: integer('view_count').notNull().default(0),
+    scope: text('scope', { enum: ['curated', 'full'] })
+      .notNull()
+      .default('curated'),
   },
   (t) => [
     index('share_links_user_car').on(t.userId, t.carId),

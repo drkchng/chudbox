@@ -23,6 +23,7 @@ import type {
   CreateShareResponse,
   ShareLinkListResponse,
   ShareLinkMeta,
+  ShareScope,
   ShareSnapshotResponse,
 } from '@chudbox/shared'
 
@@ -47,6 +48,12 @@ export interface CreateShareLinkArgs {
   carId: string
   /** Epoch SECONDS, or null for no expiry (the default). */
   expiresAt: number | null
+  /**
+   * Which view the link grants — 'curated' (build showcase, the default) or
+   * 'full' (the owner-equivalent read-only view). The server validates + stores
+   * it; this is the owner's choice at create time.
+   */
+  scope?: ShareScope
   fetchImpl?: FetchLike
 }
 
@@ -58,9 +65,10 @@ export interface CreateShareLinkArgs {
 export async function createShareLink({
   carId,
   expiresAt,
+  scope = 'curated',
   fetchImpl = fetch,
 }: CreateShareLinkArgs): Promise<CreateShareResponse> {
-  const body: CreateShareRequest = { expiresAt }
+  const body: CreateShareRequest = { expiresAt, scope }
   const res = await fetchImpl(createShareLinkPath(carId), {
     method: 'POST',
     credentials: 'same-origin',

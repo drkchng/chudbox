@@ -97,7 +97,7 @@ export default function CarProfile() {
         }
         actions={
           <div className="absolute top-4 right-4 flex gap-2">
-            <button onClick={() => downloadMarkdown(car)} className="btn-outline bg-dark/90 border-white/10 text-white hover:text-accent" title="Export to Markdown">
+            <button onClick={() => downloadMarkdown(car, distanceUnit)} className="btn-outline bg-dark/90 border-white/10 text-white hover:text-accent" title="Export to Markdown">
               <FileDown size={14} />
             </button>
             <button onClick={() => setShowSettings(true)} className="btn-outline bg-dark/90 border-white/10 text-white hover:text-accent" title="Settings">

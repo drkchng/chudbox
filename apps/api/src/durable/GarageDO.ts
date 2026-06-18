@@ -46,6 +46,7 @@ import {
   DEFAULT_SEED_CHUNK_CELLS,
   GARAGE_TABLE_IDS,
   MAX_SEED_CHUNK_CELLS,
+  buildFullSnapshot,
   buildPublicSnapshot,
   countSeedChunkCells,
   decodeSeedChunk,
@@ -57,12 +58,14 @@ import type {
   ClearGarageRequest,
   ClearGarageResponse,
   FlattenedCar,
+  FullCarSnapshot,
   GarageValues,
   IssuesRow,
   MaintenanceRow,
   ModsRow,
   PhotosRow,
   PublicCarSnapshot,
+  ShareScope,
   SnapshotPhotoInput,
   SyncMetaResponse,
   TodosRow,
@@ -232,11 +235,20 @@ export class GarageDO extends WsServerDurableObject<Env> {
   }
 
   /**
-   * M4: read-only, curated public snapshot of one car for the share-link
-   * route. The curation (the EXPLICIT allowlist) happens DO-side via
-   * buildPublicSnapshot, so raw private cells (money, shop, notes, tradeFor,
-   * salePrice, r2Key, the whole wishlist/issues/todos tables) NEVER leave the
-   * DO — only the showcase fields cross the RPC boundary.
+   * M4: read-only public snapshot of one car for the share-link route, built
+   * DO-side AT THE LINK'S STORED SCOPE. The curation (the EXPLICIT allowlist)
+   * happens HERE, inside the DO, so raw private cells only ever leave when the
+   * link itself is 'full' — and even then only that car's own owner-visible
+   * fields. A 'curated' snapshot is byte-identical to before: money, shop,
+   * notes, tradeFor, salePrice, r2Key and the whole wishlist/issues/todos tables
+   * never cross the RPC boundary. `scope` is supplied by the route FROM THE
+   * STORED ROW, never from any client input; it defaults to 'curated' so any
+   * caller that omits it gets the safe showcase.
+   *
+   * Either way the snapshot withholds the raw r2Key / dataUrl (photos carry only
+   * photoId+caption+dims; the viewer derives a token-scoped image URL), the
+   * userId/email, and every internal row id beyond the photoId — for THIS car
+   * only (one DO = one user; one carId = one car).
    *
    * Returns null when the car does not exist (row absent, or fully tombstoned:
    * a DO restart resurrects tombstoned cells as live `null`s — see getMeta —
@@ -249,7 +261,10 @@ export class GarageDO extends WsServerDurableObject<Env> {
    * reassembles the nested Car, then the per-photo downscaled dimensions
    * (which joinCar drops) are re-attached from the rows for the snapshot.
    */
-  getCarSnapshot(carId: string): PublicCarSnapshot | null {
+  getCarSnapshot(
+    carId: string,
+    scope: ShareScope = 'curated',
+  ): PublicCarSnapshot | FullCarSnapshot | null {
     const store = this.getStore()
     const carRow = store.getRow('cars', carId)
     if (!Object.values(carRow).some((cell) => cell !== null)) {
@@ -272,7 +287,11 @@ export class GarageDO extends WsServerDurableObject<Env> {
       width: flat.photos[photo.id]?.width,
       height: flat.photos[photo.id]?.height,
     }))
-    return buildPublicSnapshot({ ...car, photos }, this.readSettings())
+    const input = { ...car, photos }
+    const settings = this.readSettings()
+    return scope === 'full'
+      ? buildFullSnapshot(input, settings)
+      : buildPublicSnapshot(input, settings)
   }
 
   /**

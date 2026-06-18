@@ -1,5 +1,7 @@
 import { getCarStatus, STATUS_CONFIG } from './carStatus'
-import type { Car, Issue } from '../types'
+import { formatMileage } from './units'
+import type { DistanceUnitCode } from './units'
+import type { StoredCar, Issue } from '../types'
 
 const fmt = (dateStr?: string | null): string => {
   if (!dateStr) return '—'
@@ -25,10 +27,11 @@ function table(headers: string[], rows: string[][]): string {
   return ['| ' + header + ' |', '| ' + divider + ' |', ...body.map((r) => '| ' + r + ' |')].join('\n') + '\n'
 }
 
-export function generateMarkdown(car: Car): string {
+export function generateMarkdown(car: StoredCar, distanceUnit: DistanceUnitCode): string {
   const status      = getCarStatus(car)
   const statusLabel = STATUS_CONFIG[status]?.label ?? status
   const title       = `${car.year} ${car.make} ${car.model}${car.trim ? ' ' + car.trim : ''}`
+  const mileageText = formatMileage(car.mileage, car.mileageMiles, distanceUnit)
   const totalMods   = car.mods.reduce((s, m) => s + (m.cost || 0), 0)
   const totalMaint  = car.maintenance.reduce((s, r) => s + (r.cost || 0), 0)
   const openIssues     = car.issues.filter((i) => i.status !== 'resolved')
@@ -59,7 +62,7 @@ export function generateMarkdown(car: Car): string {
     '',
     `> [!info] Overview`,
     `> **Status:** ${statusLabel}${status === 'for-sale' && car.salePrice ? `  ·  Asking $${Number(car.salePrice).toLocaleString()}` : ''}`,
-    car.mileage  ? `> **Mileage:** ${Number(car.mileage).toLocaleString()} mi` : null,
+    mileageText  ? `> **Mileage:** ${mileageText}` : null,
     car.color    ? `> **Color:** ${car.color}` : null,
     car.nickname ? `> **Nickname:** "${car.nickname}"` : null,
     car.purchaseDate ? `> **Purchased:** ${fmt(car.purchaseDate)}` : null,
@@ -96,11 +99,11 @@ export function generateMarkdown(car: Car): string {
     .map((r) => [
       dash(r.service),
       fmt(r.date),
-      r.mileage ? `${Number(r.mileage).toLocaleString()} mi` : '—',
+      formatMileage(r.mileage, r.mileageMiles, distanceUnit) ?? '—',
       money(r.cost),
       dash(r.shop),
       r.nextDueDate || r.nextDueMileage
-        ? [r.nextDueDate ? fmt(r.nextDueDate) : null, r.nextDueMileage ? `${Number(r.nextDueMileage).toLocaleString()} mi` : null].filter(Boolean).join(' / ')
+        ? [r.nextDueDate ? fmt(r.nextDueDate) : null, formatMileage(r.nextDueMileage, r.nextDueMileageMiles, distanceUnit)].filter(Boolean).join(' / ')
         : '—',
     ])
 
@@ -144,8 +147,8 @@ export function generateMarkdown(car: Car): string {
   return [frontmatter, header, modsSection, maintSection, issuesSection].join('\n\n') + '\n'
 }
 
-export function downloadMarkdown(car: Car): void {
-  const content  = generateMarkdown(car)
+export function downloadMarkdown(car: StoredCar, distanceUnit: DistanceUnitCode): void {
+  const content  = generateMarkdown(car, distanceUnit)
   const filename = `${car.year}-${car.make}-${car.model}${car.trim ? '-' + car.trim : ''}`
     .replace(/\s+/g, '-')
     .replace(/[^a-zA-Z0-9-]/g, '') + '.md'

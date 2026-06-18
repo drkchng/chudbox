@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { X, Share2, Copy, Check, Link2, Trash2, Plus, AlertTriangle, Clock, Eye } from 'lucide-react'
+import { X, Share2, Copy, Check, Link2, Trash2, Plus, AlertTriangle, Clock, Eye, Images, Layers } from 'lucide-react'
 import DateInput from './DateInput'
 import ConfirmModal from './ConfirmModal'
 import {
@@ -10,7 +10,7 @@ import {
   listShareLinks,
   revokeShareLink,
 } from '../share/shareClient'
-import type { CreateShareResponse, ShareLinkMeta } from '@chudbox/shared'
+import type { CreateShareResponse, ShareLinkMeta, ShareScope } from '@chudbox/shared'
 
 interface ShareDialogProps {
   carId: string
@@ -38,6 +38,10 @@ export default function ShareDialog({ carId, carLabel, onClose }: ShareDialogPro
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [expiryDate, setExpiryDate] = useState('')
+  // The owner's per-link visibility choice. Defaults to the curated showcase;
+  // 'full' shares the owner-equivalent read-only view (wishlist/to-dos/issues,
+  // costs/shops/notes). Sent to the server, which validates + stores it.
+  const [scope, setScope] = useState<ShareScope>('curated')
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState('')
   const [created, setCreated] = useState<CreateShareResponse | null>(null)
@@ -82,7 +86,7 @@ export default function ShareDialog({ carId, carLabel, onClose }: ShareDialogPro
     }
     setCreating(true)
     try {
-      const res = await createShareLink({ carId, expiresAt: expiry.value })
+      const res = await createShareLink({ carId, expiresAt: expiry.value, scope })
       setCreated(res)
       setCopied(false)
       setExpiryDate('')
@@ -127,12 +131,56 @@ export default function ShareDialog({ carId, carLabel, onClose }: ShareDialogPro
 
         <div className="overflow-y-auto px-5 py-4 space-y-5">
           <p className="text-sm text-gray-400">
-            Create a public, read-only page for <span className="text-gray-200">{carLabel}</span>. Anyone with the
-            link can view the build (photos, mods, maintenance) — never prices, shops, notes, or your private lists.
+            Create a public, read-only page for <span className="text-gray-200">{carLabel}</span>. Choose what it
+            shows — the curated build showcase, or everything you see (read-only).
           </p>
 
           {/* Create */}
           <div className="card space-y-3 border-accent/30">
+            <div>
+              <span className="label">What can viewers see?</span>
+              <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Share visibility">
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={scope === 'curated'}
+                  onClick={() => setScope('curated')}
+                  className={`flex items-start gap-2 rounded-xl border px-3 py-2.5 text-left transition-colors ${
+                    scope === 'curated'
+                      ? 'border-accent bg-accent/10'
+                      : 'border-border hover:border-gray-600'
+                  }`}
+                >
+                  <Images size={16} className={scope === 'curated' ? 'text-accent mt-0.5' : 'text-gray-500 mt-0.5'} />
+                  <span>
+                    <span className="block text-sm font-medium text-white">Build showcase</span>
+                    <span className="block text-xs text-gray-500">Photos, mods, maintenance. No prices, shops, notes, or lists.</span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={scope === 'full'}
+                  onClick={() => setScope('full')}
+                  className={`flex items-start gap-2 rounded-xl border px-3 py-2.5 text-left transition-colors ${
+                    scope === 'full'
+                      ? 'border-accent bg-accent/10'
+                      : 'border-border hover:border-gray-600'
+                  }`}
+                >
+                  <Layers size={16} className={scope === 'full' ? 'text-accent mt-0.5' : 'text-gray-500 mt-0.5'} />
+                  <span>
+                    <span className="block text-sm font-medium text-white">Everything (read-only)</span>
+                    <span className="block text-xs text-gray-500">Adds your wishlist, to-dos, issues, costs, shops &amp; notes.</span>
+                  </span>
+                </button>
+              </div>
+            </div>
+            {scope === 'full' && (
+              <p className="text-xs text-amber-300/90 flex items-center gap-1.5">
+                <AlertTriangle size={12} /> Anyone with this link sees your prices, shops, notes and private lists for this car.
+              </p>
+            )}
             <div>
               <label className="label" htmlFor="share-expiry">Expiry date <span className="text-gray-600">(optional — default never)</span></label>
               <DateInput value={expiryDate} onChange={setExpiryDate} />
@@ -198,6 +246,15 @@ export default function ShareDialog({ carId, carLabel, onClose }: ShareDialogPro
                           {state === 'revoked' && <span className="badge bg-red-900/40 text-red-400 border border-red-800/50">Revoked</span>}
                           {state === 'expired' && <span className="badge bg-gray-800 text-gray-400 border border-gray-700">Expired</span>}
                           {state === 'active' && <span className="badge bg-green-900/50 text-green-300 border border-green-700/50">Active</span>}
+                          {link.scope === 'full' ? (
+                            <span className="badge bg-amber-900/40 text-amber-300 border border-amber-700/50 inline-flex items-center gap-1" title="Shares everything (read-only)">
+                              <Layers size={10} /> Everything
+                            </span>
+                          ) : (
+                            <span className="badge bg-gray-800 text-gray-400 border border-gray-700 inline-flex items-center gap-1" title="Curated build showcase">
+                              <Images size={10} /> Showcase
+                            </span>
+                          )}
                         </div>
                         <p className="text-xs text-gray-500 mt-0.5">
                           Created {fmtDate(link.createdAt)}

@@ -44,9 +44,12 @@ import {
 } from '@chudbox/shared'
 import type {
   CreateShareResponse,
+  FullCarSnapshot,
+  PublicCarSnapshot,
   RecordShareViewResponse,
   ShareLinkListResponse,
   ShareLinkMeta,
+  ShareScope,
   ShareSnapshotResponse,
 } from '@chudbox/shared'
 import { createAuth } from '../auth'
@@ -71,6 +74,18 @@ const SHARE_BROWSER_MAX_AGE = 5
 type ShareLinkRow = typeof shareLinks.$inferSelect
 
 const nowSeconds = (): number => Math.floor(Date.now() / 1000)
+
+/**
+ * Re-narrow the STORED scope to one of the two known values, defaulting to the
+ * safe 'curated' for anything unexpected. The column is typed + written from a
+ * validated enum, but we never trust a stored value blindly (an out-of-band
+ * write or a future column change must degrade to the showcase, never silently
+ * expose 'full'). This is the ONLY thing that decides what the public route
+ * serves — it reads the row, never the request.
+ */
+function normalizeScope(stored: string): ShareScope {
+  return stored === 'full' ? 'full' : 'curated'
+}
 
 /**
  * Classify the Content-Length for a MEMORY-BOUNDED body read (mirrors the M3
@@ -144,6 +159,7 @@ function toMeta(row: ShareLinkRow): ShareLinkMeta {
     expiresAt: row.expiresAt,
     revokedAt: row.revokedAt,
     viewCount: row.viewCount,
+    scope: normalizeScope(row.scope),
   }
 }
 
@@ -191,11 +207,16 @@ shareApi.post(SHARE_CREATE_PATH, async (c) => {
     return c.json({ error: parsed.error.issues[0]?.message ?? 'Invalid body' }, 400)
   }
   const expiresAt = parsed.data.expiresAt ?? null
+  // The owner's chosen scope (validated closed enum; defaults to 'curated').
+  // This is the ONE point where scope is decided — by the AUTHENTICATED owner,
+  // then persisted; the public route never re-derives it from a request.
+  const scope: ShareScope = parsed.data.scope
 
   // DO-CHECK FIRST (D1↔DO not atomic): confirm the car exists in the caller's
   // own DO before inserting any link row. getCarSnapshot returns null when the
-  // car is absent/tombstoned.
-  const snapshot = await garageStub(c.env, userId).getCarSnapshot(carId)
+  // car is absent/tombstoned. The existence probe only needs the cheap curated
+  // snapshot regardless of the link's scope.
+  const snapshot = await garageStub(c.env, userId).getCarSnapshot(carId, 'curated')
   if (!snapshot) return c.json({ error: 'Car not found' }, 404)
 
   const now = nowSeconds()
@@ -210,7 +231,7 @@ shareApi.post(SHARE_CREATE_PATH, async (c) => {
   const tokenHash = await sha256Hex(token)
   await db(c.env)
     .insert(shareLinks)
-    .values({ tokenHash, userId, carId, createdAt: now, expiresAt, revokedAt: null })
+    .values({ tokenHash, userId, carId, createdAt: now, expiresAt, revokedAt: null, scope })
 
   const response: CreateShareResponse = {
     url: `${new URL(c.req.url).origin}/#/share/${token}`,
@@ -274,8 +295,12 @@ shareApi.get(SHARE_PUBLIC_PATH, async (c) => {
     return c.json({ error: 'This share link is no longer available' }, 410)
   }
 
-  // Owner + car derived SERVER-SIDE from the row (never the request).
-  const snapshot = await garageStub(c.env, row.userId).getCarSnapshot(row.carId)
+  // Owner + car + SCOPE all derived SERVER-SIDE from the stored row (never the
+  // request): no query param, body, or header can change which view is served.
+  // The DO builds the curated showcase or the full read-only view accordingly;
+  // raw private cells only leave the DO when the row itself says 'full'.
+  const scope = normalizeScope(row.scope)
+  const snapshot = await garageStub(c.env, row.userId).getCarSnapshot(row.carId, scope)
   if (!snapshot) {
     // Lazy-revoke: the car is gone from the owner's DO. Tombstone the link so
     // future hits short-circuit, then 410.
@@ -287,8 +312,13 @@ shareApi.get(SHARE_PUBLIC_PATH, async (c) => {
   }
 
   // The snapshot carries photoIds (no URLs); the viewer composes the
-  // token-scoped image URL via shareImgPath(token, photoId), served below.
-  const body: ShareSnapshotResponse = { car: snapshot, expiresAt: row.expiresAt }
+  // token-scoped image URL via shareImgPath(token, photoId), served below. The
+  // DO built `snapshot` at exactly `scope`, so the discriminant and the car
+  // shape always agree (the viewer re-validates this strictly).
+  const body: ShareSnapshotResponse =
+    scope === 'full'
+      ? { scope, car: snapshot as FullCarSnapshot, expiresAt: row.expiresAt }
+      : { scope, car: snapshot as PublicCarSnapshot, expiresAt: row.expiresAt }
   c.header('Cache-Control', shareCacheControl(row.expiresAt, now))
   return c.json(body)
 })
