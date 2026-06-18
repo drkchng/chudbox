@@ -31,6 +31,89 @@ Counts after dedup: **6 Critical · 22 High · 22 Medium · 23 Low** (73 finding
 - **DEC-2 — Primary buttons move to DARK text on the orange fill.** White-on-orange (~2.80:1) is an
   AA failure; near-black `#0f0f0f` on `#f97316` = 6.84:1. This is the chosen fix everywhere an accent
   fill carries a label.
+- **DEC-3 — Themes are accent-only on ONE fixed dark ramp** (owner decision, 2026-06-18). Drop the
+  full-ramp per-theme recolors and the blue "Midnight" anti-reference; a theme changes only the accent
+  hue, and every accent is AA-floored via the derived `--on-accent` token. Resolves V13/A6 + open Q1.
+- **DEC-4 — Core loop is log-first** (open Q2). `addCar` returns the id → navigate to `/car/:id`;
+  default the car profile tab to **Mods**; auto-focus the first add-form field. Applies to the OWNER
+  profile only (see DEC-8 for share).
+- **DEC-5 — Destructive deletes: optimistic + undo for low-stakes rows** (open Q3). Mods, maintenance,
+  issues, todos delete instantly with an Undo toast; deleting a whole car keeps a hard confirm.
+- **DEC-6 — Photo model is a UNIFIED GALLERY, two ways in** (owner decision, new feature). A photo
+  attaches to the car (general) OR to a specific loggable item — **mods, maintenance, issues, todos**.
+  The Photos tab is the filterable gallery of ALL photos (by source: General · Mods · Maintenance ·
+  Issues · Todos); photos are also added/viewed inline on each item and surface in the gallery tagged
+  with their source. The cover/banner is EXPLICITLY pickable from any photo (today's hover-only
+  set-cover is finding A3). Built as its own focused pass; Wave 1/2 components must be shaped to fit it.
+- **DEC-7 — Mixed-currency totals show a per-currency breakdown** (open Q4). No blended total —
+  conversion is banned by DEC-1, so a single-currency total would be meaningless.
+- **DEC-8 — The public share view leads with PHOTOS** (showcase), even though the owner profile is
+  log-first (DEC-4). Different surfaces, different defaults.
+- **DEC-9 — Share page gets real nav** (owner + friend feedback, 2026-06-18): logo-as-home (→ the
+  visitor's garage if logged in, the landing if not) + a soft "make your own garage" CTA. Doubles as a
+  discovery/growth hook off public shares.
+- **DEC-10 — Owner display name on shares.** We have a display NAME (the account `name`, editable in
+  Settings anytime, NEVER the email) — there is no username/handle concept. Shown on shares by DEFAULT
+  with an opt-out toggle. This deliberately reverses today's anonymous-by-default posture (worthwhile
+  for the for-sale case).
+- **DEC-11 — Follow/save shared builds** (new feature). A visitor can save a shared build; because the
+  share page re-fetches the curated snapshot live, a saved link auto-follows the build. LOCAL-FIRST
+  (works logged-out, in the local store like the garage), syncs once there's an account; personal
+  nicknames per saved build; a "Watching" surface. Grows the product from "my garage" to "my garage +
+  builds I watch" (also the buyer/for-sale angle).
+- **DEC-12 — Export/import relocates to Settings → Backup & data.** Account sync is the primary backup
+  now, so the local export/import becomes a power-user / no-account fallback. Stays available
+  logged-out (it is the only backup without an account).
+- **DEC-13 — VIN field on the car** (owner). Optional, light 17-char validation. PRIVATE by default in
+  shares (VIN enables cloning/fraud); exposed only on a For-Sale listing (buyers run history checks).
+  Future nicety: VIN-decode to prefill year/make/model — not now.
+- **DEC-14 — Shares have a PURPOSE** (presets, not à-la-carte): **Showcase** (default — nickname, mods
+  count, status, mileage; anonymous unless DEC-10 is on) vs **For-Sale Listing** (adds price + seller
+  name + VIN, emphasizes status/mileage). The purpose drives the OG embed AND the page content, and
+  gates which currently-private fields (price, VIN, seller) get exposed. A listing is a deliberate,
+  per-share opt-in to reveal those; Showcase preserves the leak-audit's curated/anonymous posture by
+  default. Relates to the curated/full scope (DEC/#14): a listing = curated + the listing fields.
+- **DEC-15 — Component/stack direction** (2026-06-18): behavioral primitives use **Base UI** (headless —
+  the modern Radix successor the MUI/ex-Radix folks build; shadcn is moving toward it), styled 100% with
+  our tokens — NOT Radix, NOT shadcn's default skin (the generic-SaaS anti-reference). Hand-roll the
+  trivial visual primitives (Button/Badge/Card). Migrate to **Tailwind v4 NOW** (its CSS-first `@theme`
+  IS our token layer; cheapest at the foundation, greenfield). Keep **react-router v7** (just shipped —
+  no TanStack Router). **TanStack Query** comes LATER, scoped to the share/follow READ surfaces only
+  (DEC-11) — never the garage (TinyBase owns that local+sync state). NOTE Base UI is WEB-ONLY; a future
+  native app gets its own primitives (see DEC-17).
+- **DEC-16 — Mileage is a TIME SERIES, not a static field** (owner/friend insight). Replace the single
+  `mileage` field with dated **mileage check-ins** ({ value, date — default today }); the car's current
+  odometer = the latest check-in. Removes mileage from the edit modal (it isn't a fixed attribute) — it
+  becomes a quick "log mileage" action. Unlocks a **mileage-over-time** view AND real mileage-based
+  maintenance-due: pairs with maintenance.mileage (at-service) + nextDueMileage to compute "due/overdue
+  by mileage" and surface it (finding U2). Maintenance entries feed the same timeline. Migration: the
+  existing single mileage value becomes the first check-in; per-unit handling follows the existing
+  distanceUnit/mileageRaw approach (DEC-1-style store-as-entered).
+- **DEC-17 — Future React Native (Expo) app; design tokens are a platform-agnostic source of truth**
+  (owner, 2026-06-18). A native mobile app is a goal. Web and RN share the LOGIC layer (packages/shared:
+  types, TinyBase store+sync, helpers) and the design-TOKEN VALUES — NOT the UI layer (Base UI is
+  web-only; RN gets its own primitives). So tokens live as a plain TS module in packages/shared that web
+  feeds into Tailwind v4 `@theme` (GENERATED from the TS tokens via a small ~50-line codegen — no turnkey
+  Style-Dictionary→`@theme` tool exists yet) and RN imports the SAME TS object directly (RN has no CSS-var
+  runtime, so tokens must be plain JS values anyway). RESEARCH CONCLUSION (2026-06-18, cited): TW4-on-web
+  is confirmed fine for a future RN app — the NativeWind/TW4 lag (stable NativeWind 4.x = Tailwind 3.4;
+  TW4 only in NativeWind v5 PREVIEW, not production) only bites teams sharing one Tailwind config + the UI
+  layer, which we explicitly don't. RN styling when we build it: **Unistyles 3** (recommended — dense/
+  custom/dark fit, native JSI perf, consumes the TS token object directly; needs New Arch, now default in
+  Expo SDK 55; single-maintainer caveat); **Uniwind** (stable 1.x, TW4, Expo-endorsed) as the alt for
+  Tailwind class-name parity on native; skip NativeWind (v5 preview-only). The RN choice is DEFERRABLE
+  with zero impact on the web stack.
+- **DEC-18 — Proactive maintenance reminders + push notifications** (owner). Recurring maintenance
+  SCHEDULES per car/type: time-interval (every N months / annually / seasonal), mileage-interval (every
+  N km), or one-off. Compute next-due and surface in-app — the proactive version of finding U2. KEY
+  SYNERGY with DEC-16: mileage-interval reminders are feasible by deriving a USAGE RATE from the mileage
+  check-ins → predict the calendar date the threshold is crossed → schedule a time-based nudge, refined
+  as new check-ins arrive ("based on your usage, X km ≈ Y date"). Seasonal/templated presets (motorcycle:
+  winterize / run-in-winter / spring oil; car: oil every N months). DELIVERY: native push (Expo →
+  APNs/FCM) is the real experience (reinforces DEC-17); web gets in-app due-surfacing + optional Web Push
+  (weaker, esp. iOS Safari). INFRA fits the stack: a Cloudflare **Cron Trigger** on the Worker computes
+  due reminders + sends pushes; needs stored schedules + synced device push tokens. Downstream of DEC-16
+  + accounts/sync.
 
 ## Constrained (a real limit, design around it)
 
