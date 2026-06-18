@@ -12,10 +12,9 @@
   // set via `wrangler secret put`, never committed here.
   "vars": {
     "BETTER_AUTH_URL": "https://chudbox.com",
-    // Until chudbox.com is verified as a Resend sending domain, this only
-    // delivers to the Resend account owner's address. Swap to noreply@chudbox.com
-    // after domain verification.
-    "AUTH_EMAIL_FROM": "onboarding@resend.dev"
+    // chudbox.com verified as a Resend sending domain (2026-06-18), so real
+    // users now receive verification/reset email (not just the Resend owner).
+    "AUTH_EMAIL_FROM": "Chudbox <noreply@chudbox.com>"
   },
 
   // Serve the SPA + API on the apex domain (zone already active on Cloudflare).
