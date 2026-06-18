@@ -1,5 +1,7 @@
-import { AlertTriangle, Download, GitMerge, Upload } from 'lucide-react'
+import { Download, GitMerge, Upload } from 'lucide-react'
+import { tokens } from '@chudbox/shared'
 import { syncController } from '../store/useGarageStore'
+import Modal from './ui/Modal'
 import type { MergeChoice } from '../store/sync'
 
 interface ChoiceDef {
@@ -37,44 +39,48 @@ const CHOICES: ChoiceDef[] = [
  * Shown when sign-in finds car data BOTH locally and in the cloud (plan:
  * never blind-merge — a CRDT cannot un-merge). The chosen resolution runs
  * fully BEFORE the synchronizer attaches.
+ *
+ * This is a FORCED choice: there is no cancel/dismiss path (no close button,
+ * and Esc / outside-press are ignored via the no-op onOpenChange) — the user
+ * must pick one resolution before sync can start.
  */
 export default function SyncMergeModal() {
   return (
-    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80">
-      <div className="modal-content bg-surface border border-border rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4">
-        <div className="flex items-start gap-3">
-          <AlertTriangle size={20} className="text-yellow-400 mt-0.5 shrink-0" />
-          <div>
-            <h3 className="font-semibold text-white">Two garages found</h3>
-            <p className="text-sm text-gray-400 mt-1">
-              This device and your cloud account both contain cars. Choose how to combine them
-              before sync starts — this cannot be undone.
-            </p>
-          </div>
-        </div>
-        <div className="space-y-2">
-          {CHOICES.map(({ choice, label, description, icon: Icon, primary }) => (
-            <button
-              key={choice}
-              onClick={() => syncController.choose(choice)}
-              className={`w-full flex items-start gap-3 px-4 py-3 rounded-xl border text-left transition-[border-color,background-color] ${
-                primary
-                  ? 'border-accent/60 bg-accent/10 hover:bg-accent/20'
-                  : 'border-border hover:border-accent/30 hover:bg-surface-2'
-              }`}
-            >
-              <Icon size={16} className={`mt-0.5 shrink-0 ${primary ? 'text-accent' : 'text-gray-400'}`} />
-              <span>
-                <span className={`block text-sm font-medium ${primary ? 'text-accent' : 'text-gray-200'}`}>
-                  {label}
-                  {primary ? ' (recommended)' : ''}
-                </span>
-                <span className="block text-xs text-gray-500 mt-0.5 leading-relaxed">{description}</span>
+    <Modal
+      open
+      onOpenChange={() => {}}
+      hideCloseButton
+      title="Two garages found"
+      description="This device and your cloud account both contain cars. Choose how to combine them before sync starts — this cannot be undone."
+      size="md"
+    >
+      <div className="space-y-2" role="group" aria-label="Resolve the two garages">
+        {CHOICES.map(({ choice, label, description, icon: Icon, primary }) => (
+          <button
+            key={choice}
+            type="button"
+            onClick={() => syncController.choose(choice)}
+            className={`flex w-full items-start gap-3 rounded-lg border px-4 py-3 text-left outline-hidden transition-[border-color,background-color] focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface ${
+              primary
+                ? 'border-accent/60 bg-accent/10 hover:bg-accent/20'
+                : 'border-border hover:border-accent/30 hover:bg-surface-2'
+            }`}
+          >
+            <Icon
+              size={tokens.iconSize.sm}
+              aria-hidden
+              className={`mt-0.5 shrink-0 ${primary ? 'text-accent' : 'text-text-tertiary'}`}
+            />
+            <span>
+              <span className="block text-body font-medium text-text-primary">
+                {label}
+                {primary && <span className="font-normal text-accent"> (recommended)</span>}
               </span>
-            </button>
-          ))}
-        </div>
+              <span className="mt-0.5 block text-meta leading-relaxed text-text-secondary">{description}</span>
+            </span>
+          </button>
+        ))}
       </div>
-    </div>
+    </Modal>
   )
 }

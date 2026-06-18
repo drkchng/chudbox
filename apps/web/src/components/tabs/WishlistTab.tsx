@@ -1,17 +1,25 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { Plus, ExternalLink, Trash2, ShoppingCart, CheckCircle2, Package, Wrench, X } from 'lucide-react'
+import { Plus, ExternalLink, Trash2, ShoppingCart, CheckCircle2, Package, Wrench } from 'lucide-react'
+import { tokens } from '@chudbox/shared'
 import useGarageStore from '../../store/useGarageStore'
-import { CURRENCIES } from '../../utils/units'
+import { CURRENCIES, formatMoney } from '../../utils/units'
 import DateInput from '../DateInput'
 import ConfirmModal from '../ConfirmModal'
+import Modal from '../ui/Modal'
+import Button from '../ui/Button'
+import IconButton from '../ui/IconButton'
+import Badge from '../ui/Badge'
 import { CATEGORIES } from '../../utils/categories'
-import type { Car, WishlistItem, WishlistStatus, FieldChangeEvent } from '../../types'
+import type { Car, WishlistItem, WishlistStatus, StatusRole, FieldChangeEvent } from '../../types'
 
-const STATUS_STYLES: Record<WishlistStatus, { label: string; class: string }> = {
-  wanted:    { label: 'Wanted',    class: 'bg-blue-900/50 text-blue-300 border-blue-700/40' },
-  ordered:   { label: 'Ordered',   class: 'bg-yellow-900/50 text-yellow-300 border-yellow-700/40' },
-  installed: { label: 'Installed', class: 'bg-green-900/50 text-green-300 border-green-700/40' },
+// Wishlist status → status role: wanted = info (on the list), ordered = warning
+// (in flight), installed = success (done). Color is always paired with the
+// Badge's icon + text.
+const STATUS: Record<WishlistStatus, { label: string; role: StatusRole }> = {
+  wanted:    { label: 'Wanted',    role: 'info' },
+  ordered:   { label: 'Ordered',   role: 'warning' },
+  installed: { label: 'Installed', role: 'success' },
 }
 
 interface WishlistForm {
@@ -23,6 +31,8 @@ interface WishlistForm {
 }
 
 const emptyForm: WishlistForm = { name: '', link: '', price: '', category: '', notes: '' }
+
+const MOVE_FORM_ID = 'move-to-mods-form'
 
 interface MoveModForm {
   name: string
@@ -40,7 +50,8 @@ interface MoveToModsModalProps {
   onClose: () => void
 }
 
-// Modal shown when moving an installed wishlist item to mods
+// Modal shown when moving an installed wishlist item to mods. Migrated to the
+// Modal primitive (focus trap / Esc / outside-press / dialog ARIA come free).
 function MoveToModsModal({ item, carId, onClose }: MoveToModsModalProps) {
   const addMod             = useGarageStore((s) => s.addMod)
   const deleteWishlistItem = useGarageStore((s) => s.deleteWishlistItem)
@@ -63,79 +74,75 @@ function MoveToModsModal({ item, carId, onClose }: MoveToModsModalProps) {
     (eOrVal: string | FieldChangeEvent): void =>
       setMod((m) => ({ ...m, [key]: typeof eOrVal === 'string' ? eOrVal : eOrVal.target.value }))
 
-  const handleConfirm = () => {
+  const handleConfirm = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
     addMod(carId, { ...mod, cost: mod.cost ? parseFloat(mod.cost) : null })
     if (removeFromWishlist) deleteWishlistItem(carId, item.id)
     onClose()
   }
 
   return (
-    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80">
-      <div className="modal-content bg-surface border border-border rounded-2xl w-full max-w-md shadow-2xl flex flex-col max-h-[90vh]">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
+    <Modal
+      open
+      onOpenChange={(o) => { if (!o) onClose() }}
+      title="Move to mods"
+      size="md"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button type="submit" form={MOVE_FORM_ID}><Wrench size={tokens.iconSize.sm} /> Add to mods</Button>
+        </>
+      }
+    >
+      <p className="text-meta text-text-secondary mb-4">Confirm details before adding to your mods list.</p>
+      <form id={MOVE_FORM_ID} onSubmit={handleConfirm} className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
           <div>
-            <h2 className="text-base font-semibold text-white">Move to Mods</h2>
-            <p className="text-xs text-gray-500 mt-0.5">Confirm details before adding to your mods list</p>
+            <label htmlFor="move-name" className="label">Part name</label>
+            <input id="move-name" className="input" value={mod.name} onChange={set('name')} />
           </div>
-          <button onClick={onClose} className="btn-ghost"><X size={18} /></button>
+          <div>
+            <label htmlFor="move-category" className="label">Category</label>
+            <select id="move-category" className="input" value={mod.category} onChange={set('category')}>
+              <option value="">Select…</option>
+              {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+            </select>
+          </div>
+        </div>
+        <div>
+          <label htmlFor="move-description" className="label">Description</label>
+          <textarea id="move-description" className="input resize-none" rows={2} value={mod.description} onChange={set('description')} />
+        </div>
+        <div>
+          <label htmlFor="move-link" className="label">Link</label>
+          <input id="move-link" className="input" type="url" placeholder="https://…" value={mod.link} onChange={set('link')} />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label htmlFor="move-cost" className="label">Cost ({sym})</label>
+            <input id="move-cost" className="input" type="number" step="0.01" value={mod.cost} onChange={set('cost')} />
+          </div>
+          <div role="group" aria-labelledby="move-date-label">
+            <span id="move-date-label" className="label">Date installed</span>
+            <DateInput value={mod.installedDate} onChange={set('installedDate')} />
+          </div>
+        </div>
+        <div>
+          <label htmlFor="move-shop" className="label">Shop / installer</label>
+          <input id="move-shop" className="input" placeholder="Self / Shop name" value={mod.shop} onChange={set('shop')} />
         </div>
 
-        <div className="overflow-y-auto px-5 py-4 space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="label">Part Name</label>
-              <input className="input" value={mod.name} onChange={set('name')} />
-            </div>
-            <div>
-              <label className="label">Category</label>
-              <select className="input" value={mod.category} onChange={set('category')}>
-                <option value="">Select…</option>
-                {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
-              </select>
-            </div>
-          </div>
-          <div>
-            <label className="label">Description</label>
-            <textarea className="input resize-none" rows={2} value={mod.description} onChange={set('description')} />
-          </div>
-          <div>
-            <label className="label">Link</label>
-            <input className="input" type="url" placeholder="https://…" value={mod.link} onChange={set('link')} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="label">Cost ({sym})</label>
-              <input className="input" type="number" step="0.01" value={mod.cost} onChange={set('cost')} />
-            </div>
-            <div>
-              <label className="label">Date Installed</label>
-              <DateInput value={mod.installedDate} onChange={set('installedDate')} />
-            </div>
-          </div>
-          <div>
-            <label className="label">Shop / Installer</label>
-            <input className="input" placeholder="Self / Shop name" value={mod.shop} onChange={set('shop')} />
-          </div>
-
-          <label className="flex items-center gap-2.5 mt-1 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={removeFromWishlist}
-              onChange={(e) => setRemoveFromWishlist(e.target.checked)}
-              className="w-4 h-4 rounded-sm accent-accent"
-            />
-            <span className="text-sm text-gray-300">Remove from wishlist after moving</span>
-          </label>
-        </div>
-
-        <div className="flex gap-3 px-5 py-4 border-t border-border shrink-0">
-          <button onClick={onClose} className="btn-outline flex-1 justify-center">Cancel</button>
-          <button onClick={handleConfirm} className="btn-primary flex-1 justify-center">
-            <Wrench size={14} /> Add to Mods
-          </button>
-        </div>
-      </div>
-    </div>
+        <label className="flex items-center gap-2.5 mt-1 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={removeFromWishlist}
+            onChange={(e) => setRemoveFromWishlist(e.target.checked)}
+            className="size-[18px] rounded-sm accent-accent"
+          />
+          <span className="text-body text-text-primary">Remove from wishlist after moving</span>
+        </label>
+      </form>
+    </Modal>
   )
 }
 
@@ -148,7 +155,7 @@ export default function WishlistTab({ car }: WishlistTabProps) {
   const updateWishlistItem = useGarageStore((s) => s.updateWishlistItem)
   const deleteWishlistItem = useGarageStore((s) => s.deleteWishlistItem)
   const currency = useGarageStore((s) => s.currency)
-  const sym      = CURRENCIES[currency]?.symbol ?? '$'
+  const money    = (amount: number): string => formatMoney(amount, currency)
   const [showForm, setShowForm]       = useState(false)
   const [form, setForm]               = useState<WishlistForm>(emptyForm)
   const [movingItem, setMovingItem]   = useState<WishlistItem | null>(null)
@@ -179,28 +186,28 @@ export default function WishlistTab({ car }: WishlistTabProps) {
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h3 className="text-white font-semibold">Parts Wishlist</h3>
+          <h3 className="text-subhead font-semibold text-text-primary">Parts Wishlist</h3>
           {car.wishlist.length > 0 && (
-            <p className="text-xs text-gray-500 mt-0.5">
-              {car.wishlist.length} items · Est. remaining: {sym}{totalWanted.toFixed(2)}
+            <p className="text-meta text-text-secondary mt-0.5">
+              {car.wishlist.length} items · Est. remaining: {money(totalWanted)}
             </p>
           )}
         </div>
-        <button onClick={() => setShowForm((v) => !v)} className="btn-primary"><Plus size={14} /> Add Part</button>
+        <Button size="sm" onClick={() => setShowForm((v) => !v)}><Plus size={tokens.iconSize.sm} /> Add part</Button>
       </div>
 
       {/* Add form */}
       {showForm && (
-        <form onSubmit={handleAdd} className="card mb-5 space-y-3 border-accent/30">
-          <h4 className="text-sm font-semibold text-white">New Part</h4>
+        <form onSubmit={handleAdd} className="card mb-5 space-y-3">
+          <h4 className="text-body font-semibold text-text-primary">New part</h4>
           <div className="grid sm:grid-cols-2 gap-3">
             <div>
-              <label className="label">Part Name *</label>
-              <input className="input" placeholder="Coilover Kit" value={form.name} onChange={set('name')} required />
+              <label htmlFor="wishlist-name" className="label">Part name *</label>
+              <input id="wishlist-name" className="input" placeholder="Coilover Kit" value={form.name} onChange={set('name')} required />
             </div>
             <div>
-              <label className="label">Category</label>
-              <select className="input" value={form.category} onChange={set('category')}>
+              <label htmlFor="wishlist-category" className="label">Category</label>
+              <select id="wishlist-category" className="input" value={form.category} onChange={set('category')}>
                 <option value="">Select…</option>
                 {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
               </select>
@@ -208,86 +215,83 @@ export default function WishlistTab({ car }: WishlistTabProps) {
           </div>
           <div className="grid sm:grid-cols-2 gap-3">
             <div>
-              <label className="label">Link (optional)</label>
-              <input className="input" placeholder="https://..." value={form.link} onChange={set('link')} type="url" />
+              <label htmlFor="wishlist-link" className="label">Link <span className="text-text-disabled">(optional)</span></label>
+              <input id="wishlist-link" className="input" placeholder="https://..." value={form.link} onChange={set('link')} type="url" />
             </div>
             <div>
-              <label className="label">Price</label>
-              <input className="input" placeholder="499.99" type="number" step="0.01" value={form.price} onChange={set('price')} />
+              <label htmlFor="wishlist-price" className="label">Price</label>
+              <input id="wishlist-price" className="input" placeholder="499.99" type="number" step="0.01" value={form.price} onChange={set('price')} />
             </div>
           </div>
           <div>
-            <label className="label">Notes</label>
-            <textarea className="input resize-none" rows={2} placeholder="Any notes…" value={form.notes} onChange={set('notes')} />
+            <label htmlFor="wishlist-notes" className="label">Notes</label>
+            <textarea id="wishlist-notes" className="input resize-none" rows={2} placeholder="Any notes…" value={form.notes} onChange={set('notes')} />
           </div>
           <div className="flex gap-2">
-            <button type="button" onClick={() => setShowForm(false)} className="btn-outline">Cancel</button>
-            <button type="submit" className="btn-primary">Add Part</button>
+            <Button type="button" variant="secondary" size="sm" onClick={() => setShowForm(false)}>Cancel</Button>
+            <Button type="submit" size="sm">Add part</Button>
           </div>
         </form>
       )}
 
       {/* List */}
       {car.wishlist.length === 0 ? (
-        <div className="text-center py-16 text-gray-600">
-          <ShoppingCart size={36} className="mx-auto mb-3 opacity-40" />
+        <div className="text-center py-16 text-text-secondary">
+          <ShoppingCart size={tokens.iconSize.xl} className="mx-auto mb-3 opacity-40" aria-hidden />
           <p>No parts on your wishlist yet.</p>
         </div>
       ) : (
         <div className="space-y-3">
           {car.wishlist.map((item) => (
-            <div key={item.id} className="card hover:border-accent/20 flex gap-4 items-start">
+            <div key={item.id} className="card flex gap-4 items-start">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-medium text-white">{item.name}</span>
-                  {item.category && <span className="text-xs text-gray-500 border border-border rounded-sm px-1.5 py-0.5">{item.category}</span>}
-                  <span className={`badge border ${STATUS_STYLES[item.status].class}`}>{STATUS_STYLES[item.status].label}</span>
+                  <span className="font-medium text-text-primary">{item.name}</span>
+                  {item.category && <span className="text-meta text-text-secondary border border-border rounded-sm px-1.5 py-0.5">{item.category}</span>}
+                  <Badge status={STATUS[item.status].role}>{STATUS[item.status].label}</Badge>
                 </div>
-                {item.notes && <p className="text-xs text-gray-500 mt-1">{item.notes}</p>}
+                {item.notes && <p className="text-meta text-text-secondary mt-1">{item.notes}</p>}
                 <div className="flex items-center gap-3 mt-2 flex-wrap">
-                  {item.price && (
-                    <span className="text-sm font-semibold text-accent">
-                      {sym}{item.price.toFixed(2)}
-                    </span>
+                  {/* V5: price = passive data → text-primary weight (not orange). */}
+                  {item.price != null && (
+                    <span className="text-body font-semibold text-text-primary">{money(item.price)}</span>
                   )}
                   {item.link && (
                     <a href={item.link} target="_blank" rel="noreferrer"
-                      className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300">
-                      <ExternalLink size={11} /> View Link
+                      className="inline-flex items-center gap-1 text-meta text-text-secondary hover:text-accent transition-colors">
+                      <ExternalLink size={tokens.iconSize.xs} /> View link
                     </a>
                   )}
                   {item.status === 'installed' && (
                     <button
+                      type="button"
                       onClick={() => setMovingItem(item)}
-                      className="flex items-center gap-1 text-xs text-accent hover:text-accent-dim font-medium transition-colors"
+                      className="inline-flex items-center gap-1 text-meta font-medium text-accent hover:text-accent-dim transition-colors rounded-sm"
                     >
-                      <Wrench size={11} /> Move to Mods
+                      <Wrench size={tokens.iconSize.xs} /> Move to mods
                     </button>
                   )}
                 </div>
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 {item.status === 'wanted' && (
-                  <button onClick={() => updateWishlistItem(car.id, item.id, { status: 'ordered' })}
-                    title="Mark as Ordered" className="btn-ghost text-yellow-500 hover:text-yellow-400">
-                    <Package size={15} />
-                  </button>
+                  <IconButton aria-label={`Mark "${item.name}" as ordered`} onClick={() => updateWishlistItem(car.id, item.id, { status: 'ordered' })}>
+                    <Package size={tokens.iconSize.sm} />
+                  </IconButton>
                 )}
                 {item.status === 'ordered' && (
-                  <button onClick={() => markInstalled(item)}
-                    title="Mark as Installed" className="btn-ghost text-green-500 hover:text-green-400">
-                    <CheckCircle2 size={15} />
-                  </button>
+                  <IconButton aria-label={`Mark "${item.name}" as installed`} onClick={() => markInstalled(item)}>
+                    <CheckCircle2 size={tokens.iconSize.sm} />
+                  </IconButton>
                 )}
                 {item.status === 'installed' && (
-                  <button onClick={() => updateWishlistItem(car.id, item.id, { status: 'wanted' })}
-                    title="Move back to Wanted" className="btn-ghost text-gray-500">
-                    <CheckCircle2 size={15} />
-                  </button>
+                  <IconButton aria-label={`Move "${item.name}" back to wanted`} onClick={() => updateWishlistItem(car.id, item.id, { status: 'wanted' })}>
+                    <CheckCircle2 size={tokens.iconSize.sm} />
+                  </IconButton>
                 )}
-                <button onClick={() => setConfirmItem(item)} className="btn-ghost text-red-500 hover:text-red-400">
-                  <Trash2 size={15} />
-                </button>
+                <IconButton aria-label={`Delete part: ${item.name}`} onClick={() => setConfirmItem(item)}>
+                  <Trash2 size={tokens.iconSize.sm} />
+                </IconButton>
               </div>
             </div>
           ))}

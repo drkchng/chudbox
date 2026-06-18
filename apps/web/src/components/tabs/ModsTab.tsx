@@ -1,10 +1,14 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Plus, Trash2, Wrench, Pencil, Check, X, ExternalLink, ClipboardList } from 'lucide-react'
+import { tokens } from '@chudbox/shared'
 import useGarageStore from '../../store/useGarageStore'
-import { CURRENCIES, DISTANCE_UNITS } from '../../utils/units'
+import { CURRENCIES, DISTANCE_UNITS, formatMoney } from '../../utils/units'
 import DateInput from '../DateInput'
 import ConfirmModal from '../ConfirmModal'
+import Modal from '../ui/Modal'
+import Button from '../ui/Button'
+import IconButton from '../ui/IconButton'
 import { CATEGORIES } from '../../utils/categories'
 import type { Car, Mod, FieldChangeEvent } from '../../types'
 
@@ -22,6 +26,8 @@ const emptyForm: ModForm = { name: '', category: '', description: '', cost: '', 
 
 const today = (): string => new Date().toISOString().slice(0, 10)
 
+const fmtDate = (iso: string): string => new Date(iso + 'T12:00:00').toLocaleDateString()
+
 interface LogMaintenanceForm {
   service: string
   date: string
@@ -38,6 +44,8 @@ interface LogToMaintenanceModalProps {
   carId: string
   onClose: () => void
 }
+
+const LOG_FORM_ID = 'log-to-maintenance-form'
 
 // Defined outside ModsTab so React never unmounts it on re-render
 function LogToMaintenanceModal({ mod, carId, onClose }: LogToMaintenanceModalProps) {
@@ -62,87 +70,86 @@ function LogToMaintenanceModal({ mod, carId, onClose }: LogToMaintenanceModalPro
     (eOrVal: string | FieldChangeEvent): void =>
       setForm((f) => ({ ...f, [key]: typeof eOrVal === 'string' ? eOrVal : eOrVal.target.value }))
 
-  const handleConfirm = () => {
+  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
     addMaintenance(carId, { ...form, cost: form.cost ? parseFloat(form.cost) : null, mileage: form.mileage || null })
     onClose()
   }
 
   return (
-    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80">
-      <div className="modal-content bg-surface border border-border rounded-2xl w-full max-w-md shadow-2xl flex flex-col max-h-[90vh]">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
-          <div>
-            <h2 className="text-base font-semibold text-white">Log to Maintenance</h2>
-            <p className="text-xs text-gray-500 mt-0.5">Creates a maintenance record for this mod</p>
-          </div>
-          <button onClick={onClose} className="btn-ghost"><X size={18} /></button>
+    <Modal
+      open
+      onOpenChange={(o) => { if (!o) onClose() }}
+      title="Log to maintenance"
+      description="Creates a maintenance record for this mod"
+      size="md"
+      footer={
+        <>
+          <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
+          <Button type="submit" form={LOG_FORM_ID} size="sm">
+            <ClipboardList size={tokens.iconSize.sm} /> Add to maintenance
+          </Button>
+        </>
+      }
+    >
+      <form id={LOG_FORM_ID} onSubmit={handleSubmit} className="space-y-3">
+        <div>
+          <label htmlFor="log-service" className="label">Service</label>
+          <input id="log-service" className="input" value={form.service} onChange={set('service')} placeholder="e.g. Oil Filter Replacement" />
         </div>
-
-        <div className="overflow-y-auto px-5 py-4 space-y-3">
-          <div>
-            <label className="label">Service</label>
-            <input className="input" value={form.service} onChange={set('service')} placeholder="e.g. Oil Filter Replacement" />
+        <div className="grid grid-cols-2 gap-3">
+          <div role="group" aria-labelledby="log-date-label">
+            <span id="log-date-label" className="label">Date</span>
+            <DateInput value={form.date} onChange={set('date')} />
           </div>
+          <div>
+            <label htmlFor="log-mileage" className="label">Mileage ({distShort})</label>
+            <input id="log-mileage" className="input" type="number" placeholder="45000" value={form.mileage} onChange={set('mileage')} />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label htmlFor="log-cost" className="label">Cost ({sym})</label>
+            <input id="log-cost" className="input" type="number" step="0.01" value={form.cost} onChange={set('cost')} />
+          </div>
+          <div>
+            <label htmlFor="log-shop" className="label">Shop / Installer</label>
+            <input id="log-shop" className="input" value={form.shop} onChange={set('shop')} placeholder="Self / Shop name" />
+          </div>
+        </div>
+        <div>
+          <label htmlFor="log-notes" className="label">Notes</label>
+          <textarea id="log-notes" className="input resize-none" rows={2} value={form.notes} onChange={set('notes')} />
+        </div>
+        <div className="border-t border-border pt-3">
+          <p className="text-meta text-text-secondary mb-2">Next service due (optional)</p>
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="label">Date</label>
-              <DateInput value={form.date} onChange={set('date')} />
+            <div role="group" aria-labelledby="log-nextdate-label">
+              <span id="log-nextdate-label" className="label">Next due date</span>
+              <DateInput value={form.nextDueDate} onChange={set('nextDueDate')} />
             </div>
             <div>
-              <label className="label">Mileage ({distShort})</label>
-              <input className="input" type="number" placeholder="45000" value={form.mileage} onChange={set('mileage')} />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="label">Cost ({sym})</label>
-              <input className="input" type="number" step="0.01" value={form.cost} onChange={set('cost')} />
-            </div>
-            <div>
-              <label className="label">Shop / Installer</label>
-              <input className="input" value={form.shop} onChange={set('shop')} placeholder="Self / Shop name" />
-            </div>
-          </div>
-          <div>
-            <label className="label">Notes</label>
-            <textarea className="input resize-none" rows={2} value={form.notes} onChange={set('notes')} />
-          </div>
-          <div className="border-t border-border pt-3">
-            <p className="text-xs text-gray-500 mb-2">Next service due (optional)</p>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="label">Next Due Date</label>
-                <DateInput value={form.nextDueDate} onChange={set('nextDueDate')} />
-              </div>
-              <div>
-                <label className="label">Next Due Mileage ({distShort})</label>
-                <input className="input" type="number" placeholder="50000" value={form.nextDueMileage} onChange={set('nextDueMileage')} />
-              </div>
+              <label htmlFor="log-nextmileage" className="label">Next due mileage ({distShort})</label>
+              <input id="log-nextmileage" className="input" type="number" placeholder="50000" value={form.nextDueMileage} onChange={set('nextDueMileage')} />
             </div>
           </div>
         </div>
-
-        <div className="flex gap-3 px-5 py-4 border-t border-border shrink-0">
-          <button onClick={onClose} className="btn-outline flex-1 justify-center">Cancel</button>
-          <button onClick={handleConfirm} className="btn-primary flex-1 justify-center">
-            <ClipboardList size={14} /> Add to Maintenance
-          </button>
-        </div>
-      </div>
-    </div>
+      </form>
+    </Modal>
   )
 }
 
 interface LinkFieldProps {
+  id: string
   value: string
   onChange: (eOrVal: string | FieldChangeEvent) => void
 }
 
-function LinkField({ value, onChange }: LinkFieldProps) {
+function LinkField({ id, value, onChange }: LinkFieldProps) {
   return (
     <div>
-      <label className="label">Link (optional)</label>
-      <input className="input" type="url" placeholder="https://…" value={value} onChange={onChange} />
+      <label htmlFor={id} className="label">Link (optional)</label>
+      <input id={id} className="input" type="url" placeholder="https://…" value={value} onChange={onChange} />
     </div>
   )
 }
@@ -212,126 +219,154 @@ export default function ModsTab({ car, autoFocusAdd = false }: ModsTabProps) {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-5">
-        <div>
-          <h3 className="text-white font-semibold">Modifications</h3>
+      <div className="flex items-center justify-between gap-3 mb-5">
+        <div className="min-w-0">
+          <h3 className="text-subhead font-semibold text-text-primary">Modifications</h3>
           {car.mods.length > 0 && (
-            <p className="text-xs text-gray-500 mt-0.5">{car.mods.length} mods · Total invested: {sym}{totalCost.toFixed(2)}</p>
+            <p className="mt-0.5 text-meta text-text-secondary">
+              {car.mods.length} mods · Total invested:{' '}
+              <span className="text-text-primary font-semibold">{formatMoney(totalCost, currency)}</span>
+            </p>
           )}
         </div>
-        <button onClick={() => setShowForm((v) => !v)} className="btn-primary"><Plus size={14} /> Add Mod</button>
+        <Button size="sm" onClick={() => setShowForm((v) => !v)}>
+          <Plus size={tokens.iconSize.sm} /> Add Mod
+        </Button>
       </div>
 
       {showForm && (
         <form onSubmit={handleAdd} className="card mb-5 space-y-3 border-accent/30">
-          <h4 className="text-sm font-semibold text-white">New Modification</h4>
+          <h4 className="text-body font-semibold text-text-primary">New modification</h4>
           <div className="grid sm:grid-cols-2 gap-3">
             <div>
-              <label className="label">Name *</label>
+              <label htmlFor="mod-add-name" className="label">Name *</label>
               {/* autoFocus fires on mount — the log-first focus target (U1). */}
-              <input className="input" placeholder="Coilover Kit" value={form.name} onChange={set('name')} required autoFocus={autoFocusAdd} />
+              <input id="mod-add-name" className="input" placeholder="Coilover Kit" value={form.name} onChange={set('name')} required autoFocus={autoFocusAdd} />
             </div>
             <div>
-              <label className="label">Category</label>
-              <select className="input" value={form.category} onChange={set('category')}>
+              <label htmlFor="mod-add-category" className="label">Category</label>
+              <select id="mod-add-category" className="input" value={form.category} onChange={set('category')}>
                 <option value="">Select…</option>
                 {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
               </select>
             </div>
           </div>
           <div>
-            <label className="label">Description</label>
-            <textarea className="input resize-none" rows={2} value={form.description} onChange={set('description')} placeholder="Details about the mod…" />
+            <label htmlFor="mod-add-description" className="label">Description</label>
+            <textarea id="mod-add-description" className="input resize-none" rows={2} value={form.description} onChange={set('description')} placeholder="Details about the mod…" />
           </div>
-          <LinkField value={form.link} onChange={set('link')} />
+          <LinkField id="mod-add-link" value={form.link} onChange={set('link')} />
           <div className="grid sm:grid-cols-3 gap-3">
             <div>
-              <label className="label">Cost ({sym})</label>
-              <input className="input" type="number" step="0.01" placeholder="0.00" value={form.cost} onChange={set('cost')} />
+              <label htmlFor="mod-add-cost" className="label">Cost ({sym})</label>
+              <input id="mod-add-cost" className="input" type="number" step="0.01" placeholder="0.00" value={form.cost} onChange={set('cost')} />
             </div>
-            <div>
-              <label className="label">Date Installed</label>
+            <div role="group" aria-labelledby="mod-add-date-label">
+              <span id="mod-add-date-label" className="label">Date installed</span>
               <DateInput value={form.installedDate} onChange={set('installedDate')} />
             </div>
             <div>
-              <label className="label">Shop / Installer</label>
-              <input className="input" placeholder="Self / Shop name" value={form.shop} onChange={set('shop')} />
+              <label htmlFor="mod-add-shop" className="label">Shop / Installer</label>
+              <input id="mod-add-shop" className="input" placeholder="Self / Shop name" value={form.shop} onChange={set('shop')} />
             </div>
           </div>
           <div className="flex gap-2">
-            <button type="button" onClick={() => setShowForm(false)} className="btn-outline">Cancel</button>
-            <button type="submit" className="btn-primary">Add Mod</button>
+            <Button type="button" variant="secondary" size="sm" onClick={() => setShowForm(false)}>Cancel</Button>
+            <Button type="submit" size="sm">Add Mod</Button>
           </div>
         </form>
       )}
 
       {car.mods.length === 0 ? (
-        <div className="text-center py-16 text-gray-600">
-          <Wrench size={36} className="mx-auto mb-3 opacity-40" />
-          <p>No modifications logged yet.</p>
+        <div className="text-center py-16">
+          <Wrench size={tokens.iconSize.xl} className="mx-auto mb-3 text-text-disabled" />
+          <p className="text-text-secondary">No modifications logged yet.</p>
         </div>
       ) : (
         <div className="space-y-6">
           {Object.entries(grouped).map(([category, mods]) => (
             <div key={category}>
-              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-2">{category}</h4>
+              <h4 className="mb-2 text-meta font-semibold uppercase tracking-widest text-text-tertiary">{category}</h4>
               <div className="space-y-2">
                 {mods.map((mod) => editId === mod.id ? (
                   <div key={mod.id} className="card border-accent/30 space-y-3">
                     <div className="grid sm:grid-cols-2 gap-3">
-                      <div><label className="label">Name</label><input className="input" value={editForm.name} onChange={setEdit('name')} /></div>
                       <div>
-                        <label className="label">Category</label>
-                        <select className="input" value={editForm.category} onChange={setEdit('category')}>
+                        <label htmlFor="mod-edit-name" className="label">Name</label>
+                        <input id="mod-edit-name" className="input" value={editForm.name} onChange={setEdit('name')} />
+                      </div>
+                      <div>
+                        <label htmlFor="mod-edit-category" className="label">Category</label>
+                        <select id="mod-edit-category" className="input" value={editForm.category} onChange={setEdit('category')}>
                           <option value="">Select…</option>
                           {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
                         </select>
                       </div>
                     </div>
-                    <div><label className="label">Description</label><textarea className="input resize-none" rows={2} value={editForm.description} onChange={setEdit('description')} /></div>
-                    <LinkField value={editForm.link} onChange={setEdit('link')} />
+                    <div>
+                      <label htmlFor="mod-edit-description" className="label">Description</label>
+                      <textarea id="mod-edit-description" className="input resize-none" rows={2} value={editForm.description} onChange={setEdit('description')} />
+                    </div>
+                    <LinkField id="mod-edit-link" value={editForm.link} onChange={setEdit('link')} />
                     <div className="grid sm:grid-cols-3 gap-3">
-                      <div><label className="label">Cost ({sym})</label><input className="input" type="number" step="0.01" value={editForm.cost} onChange={setEdit('cost')} /></div>
                       <div>
-                        <label className="label">Date Installed</label>
+                        <label htmlFor="mod-edit-cost" className="label">Cost ({sym})</label>
+                        <input id="mod-edit-cost" className="input" type="number" step="0.01" value={editForm.cost} onChange={setEdit('cost')} />
+                      </div>
+                      <div role="group" aria-labelledby="mod-edit-date-label">
+                        <span id="mod-edit-date-label" className="label">Date installed</span>
                         <DateInput value={editForm.installedDate} onChange={setEdit('installedDate')} />
                       </div>
-                      <div><label className="label">Shop</label><input className="input" value={editForm.shop} onChange={setEdit('shop')} /></div>
+                      <div>
+                        <label htmlFor="mod-edit-shop" className="label">Shop</label>
+                        <input id="mod-edit-shop" className="input" value={editForm.shop} onChange={setEdit('shop')} />
+                      </div>
                     </div>
                     <div className="flex gap-2">
-                      <button onClick={() => setEditId(null)} className="btn-ghost"><X size={14} /> Cancel</button>
-                      <button onClick={saveEdit} className="btn-primary"><Check size={14} /> Save</button>
+                      <Button variant="secondary" size="sm" onClick={() => setEditId(null)}>
+                        <X size={tokens.iconSize.sm} /> Cancel
+                      </Button>
+                      <Button size="sm" onClick={saveEdit}>
+                        <Check size={tokens.iconSize.sm} /> Save
+                      </Button>
                     </div>
                   </div>
                 ) : (
-                  <div key={mod.id} className="card flex gap-4 items-start hover:border-accent/20">
+                  <div key={mod.id} className="card-row flex gap-4 items-start">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium text-white">{mod.name}</span>
-                        {mod.cost && <span className="text-xs text-accent font-semibold">{sym}{Number(mod.cost).toFixed(2)}</span>}
+                        <span className="font-medium text-text-primary">{mod.name}</span>
+                        {/* V5: price = data → text-primary weight, not orange. */}
+                        {mod.cost ? (
+                          <span className="text-meta font-semibold text-text-primary">{formatMoney(Number(mod.cost), currency)}</span>
+                        ) : null}
                       </div>
-                      {mod.description && <p className="text-xs text-gray-400 mt-1">{mod.description}</p>}
-                      <div className="flex gap-3 mt-1.5 text-xs text-gray-600 flex-wrap items-center">
-                        {mod.installedDate && <span>{new Date(mod.installedDate + 'T12:00:00').toLocaleDateString()}</span>}
+                      {mod.description && <p className="mt-1 text-meta text-text-secondary">{mod.description}</p>}
+                      <div className="mt-1.5 flex flex-wrap items-center gap-3 text-meta text-text-secondary">
+                        {mod.installedDate && <span>{fmtDate(mod.installedDate)}</span>}
                         {mod.shop && <span>by {mod.shop}</span>}
                         {mod.link && (
-                          <a href={mod.link} target="_blank" rel="noreferrer"
-                            className="flex items-center gap-1 text-blue-400 hover:text-blue-300 transition-colors">
-                            <ExternalLink size={11} /> View Link
+                          <a
+                            href={mod.link}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 underline decoration-border underline-offset-2 transition-colors hover:text-accent focus-visible:text-accent rounded-sm"
+                          >
+                            <ExternalLink size={tokens.iconSize.xs} /> View link
                           </a>
                         )}
-                        <button
-                          onClick={() => setLogMod(mod)}
-                          className="flex items-center gap-1 text-accent hover:text-accent-dim font-medium transition-colors ml-auto"
-                          title="Log to Maintenance"
-                        >
-                          <ClipboardList size={11} /> Log to Maintenance
-                        </button>
                       </div>
                     </div>
                     <div className="flex gap-1 shrink-0">
-                      <button onClick={() => startEdit(mod)} className="btn-ghost"><Pencil size={14} /></button>
-                      <button onClick={() => setConfirmMod(mod)} className="btn-ghost text-red-500 hover:text-red-400"><Trash2 size={14} /></button>
+                      <IconButton aria-label={`Log "${mod.name}" to maintenance`} title="Log to maintenance" onClick={() => setLogMod(mod)}>
+                        <ClipboardList size={tokens.iconSize.sm} />
+                      </IconButton>
+                      <IconButton aria-label={`Edit "${mod.name}"`} title="Edit" onClick={() => startEdit(mod)}>
+                        <Pencil size={tokens.iconSize.sm} />
+                      </IconButton>
+                      <IconButton aria-label={`Delete "${mod.name}"`} title="Delete" onClick={() => setConfirmMod(mod)}>
+                        <Trash2 size={tokens.iconSize.sm} />
+                      </IconButton>
                     </div>
                   </div>
                 ))}

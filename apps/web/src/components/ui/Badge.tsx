@@ -63,7 +63,7 @@ export default function Badge({
           type="button"
           onClick={onRemove}
           aria-label={removeLabel}
-          className="-mr-0.5 ml-0.5 inline-flex shrink-0 items-center justify-center rounded-sm outline-hidden transition-colors hover:text-accent focus-visible:ring-2 focus-visible:ring-accent"
+          className="-mr-0.5 ml-0.5 inline-flex shrink-0 items-center justify-center rounded-sm outline-hidden transition-colors hover:text-accent focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
         >
           <X size={tokens.iconSize.xs} aria-hidden className="shrink-0" />
         </button>

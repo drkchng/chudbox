@@ -2,6 +2,9 @@ import { useCallback, useEffect, useState } from 'react'
 import { X, Share2, Copy, Check, Link2, Trash2, Plus, AlertTriangle, Clock, Eye, Images, Layers } from 'lucide-react'
 import DateInput from './DateInput'
 import ConfirmModal from './ConfirmModal'
+import Button from './ui/Button'
+import IconButton from './ui/IconButton'
+import Badge from './ui/Badge'
 import {
   copyToClipboard,
   createShareLink,
@@ -114,24 +117,24 @@ export default function ShareDialog({ carId, carLabel, onClose }: ShareDialogPro
   }
 
   return (
-    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80">
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 bg-dark/80">
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="share-dialog-title"
-        className="modal-content bg-surface border border-border rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]"
+        className="modal-content bg-surface border border-border rounded-xl w-full max-w-lg shadow-elevation flex flex-col max-h-[90vh]"
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
           <div className="flex items-center gap-2">
-            <Share2 size={18} className="text-accent" />
-            <h2 id="share-dialog-title" className="text-lg font-semibold text-white">Share build</h2>
+            <Share2 size={18} className="text-text-tertiary" aria-hidden />
+            <h2 id="share-dialog-title" className="text-title font-semibold text-text-primary">Share build</h2>
           </div>
-          <button onClick={onClose} className="btn-ghost" aria-label="Close"><X size={18} /></button>
+          <IconButton aria-label="Close" variant="ghost" onClick={onClose} className="-mr-1"><X size={18} /></IconButton>
         </div>
 
         <div className="overflow-y-auto px-5 py-4 space-y-5">
-          <p className="text-sm text-gray-400">
-            Create a public, read-only page for <span className="text-gray-200">{carLabel}</span>. Choose what it
+          <p className="text-body text-text-secondary">
+            Create a public, read-only page for <span className="text-text-primary">{carLabel}</span>. Choose what it
             shows — the curated build showcase, or everything you see (read-only).
           </p>
 
@@ -148,13 +151,13 @@ export default function ShareDialog({ carId, carLabel, onClose }: ShareDialogPro
                   className={`flex items-start gap-2 rounded-xl border px-3 py-2.5 text-left transition-colors ${
                     scope === 'curated'
                       ? 'border-accent bg-accent/10'
-                      : 'border-border hover:border-gray-600'
+                      : 'border-border hover:border-accent/40'
                   }`}
                 >
-                  <Images size={16} className={scope === 'curated' ? 'text-accent mt-0.5' : 'text-gray-500 mt-0.5'} />
+                  <Images size={16} aria-hidden className={`mt-0.5 ${scope === 'curated' ? 'text-accent' : 'text-text-tertiary'}`} />
                   <span>
-                    <span className="block text-sm font-medium text-white">Build showcase</span>
-                    <span className="block text-xs text-gray-500">Photos, mods, maintenance. No prices, shops, notes, or lists.</span>
+                    <span className="block text-body font-medium text-text-primary">Build showcase</span>
+                    <span className="block text-meta text-text-secondary">Photos, mods, maintenance. No prices, shops, notes, or lists.</span>
                   </span>
                 </button>
                 <button
@@ -165,59 +168,57 @@ export default function ShareDialog({ carId, carLabel, onClose }: ShareDialogPro
                   className={`flex items-start gap-2 rounded-xl border px-3 py-2.5 text-left transition-colors ${
                     scope === 'full'
                       ? 'border-accent bg-accent/10'
-                      : 'border-border hover:border-gray-600'
+                      : 'border-border hover:border-accent/40'
                   }`}
                 >
-                  <Layers size={16} className={scope === 'full' ? 'text-accent mt-0.5' : 'text-gray-500 mt-0.5'} />
+                  <Layers size={16} aria-hidden className={`mt-0.5 ${scope === 'full' ? 'text-accent' : 'text-text-tertiary'}`} />
                   <span>
-                    <span className="block text-sm font-medium text-white">Everything (read-only)</span>
-                    <span className="block text-xs text-gray-500">Adds your wishlist, to-dos, issues, costs, shops &amp; notes.</span>
+                    <span className="block text-body font-medium text-text-primary">Everything (read-only)</span>
+                    <span className="block text-meta text-text-secondary">Adds your wishlist, to-dos, issues, costs, shops &amp; notes.</span>
                   </span>
                 </button>
               </div>
             </div>
             {scope === 'full' && (
-              <p className="text-xs text-amber-300/90 flex items-center gap-1.5">
-                <AlertTriangle size={12} /> Anyone with this link sees your prices, shops, notes and private lists for this car.
+              <p className="text-meta text-warning-fg flex items-center gap-1.5">
+                <AlertTriangle size={12} aria-hidden /> Anyone with this link sees your prices, shops, notes and private lists for this car.
               </p>
             )}
-            <div>
-              <label className="label" htmlFor="share-expiry">Expiry date <span className="text-gray-600">(optional — default never)</span></label>
+            <div role="group" aria-labelledby="share-expiry-label">
+              <span id="share-expiry-label" className="label">Expiry date <span className="font-normal text-text-disabled">(optional — default never)</span></span>
               <DateInput value={expiryDate} onChange={setExpiryDate} />
             </div>
             {createError && (
-              <p className="text-xs text-red-400 flex items-center gap-1.5"><AlertTriangle size={12} /> {createError}</p>
+              <p className="text-meta text-danger-fg flex items-center gap-1.5"><AlertTriangle size={12} aria-hidden /> {createError}</p>
             )}
-            <button onClick={() => void handleCreate()} disabled={creating} className="btn-primary w-full justify-center">
-              <Plus size={14} /> {creating ? 'Creating…' : 'Create link'}
-            </button>
+            <Button variant="primary" onClick={() => void handleCreate()} loading={creating} className="w-full">
+              <Plus size={14} /> Create link
+            </Button>
           </div>
 
           {/* Freshly-created link — shown ONCE. */}
           {created && (
-            <div className="card space-y-2 border-green-700/40 bg-green-900/10">
-              <p className="text-xs font-semibold text-green-300 flex items-center gap-1.5">
-                <Check size={13} /> Link created
-              </p>
-              <p className="text-xs text-gray-400">
-                Copy it now — for security this full link <span className="text-gray-200">won't be shown again</span>.
+            <div className="card space-y-2 border-success-border bg-success/30">
+              <Badge status="success">Link created</Badge>
+              <p className="text-meta text-text-secondary">
+                Copy it now — for security this full link <span className="text-text-primary font-medium">won't be shown again</span>.
               </p>
               <div className="flex gap-2">
                 <input
-                  className="input flex-1 font-mono text-xs"
+                  className="input flex-1 font-mono text-meta"
                   value={created.url}
                   readOnly
                   onFocus={(e) => e.currentTarget.select()}
                   aria-label="Share link URL"
                 />
-                <button onClick={() => void handleCopy()} className="btn-outline shrink-0" aria-label="Copy link">
-                  {copied ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
+                <Button variant="secondary" size="sm" onClick={() => void handleCopy()} className="shrink-0" aria-label="Copy link">
+                  {copied ? <Check size={14} className="text-success-fg" /> : <Copy size={14} />}
                   {copied ? 'Copied' : 'Copy'}
-                </button>
+                </Button>
               </div>
               {created.expiresAt != null && (
-                <p className="text-xs text-gray-500 flex items-center gap-1.5">
-                  <Clock size={11} /> Expires {fmtDate(created.expiresAt)}
+                <p className="text-meta text-text-secondary flex items-center gap-1.5">
+                  <Clock size={11} aria-hidden /> Expires {fmtDate(created.expiresAt)}
                 </p>
               )}
             </div>
@@ -225,58 +226,55 @@ export default function ShareDialog({ carId, carLabel, onClose }: ShareDialogPro
 
           {/* Existing links */}
           <div className="space-y-2">
-            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-widest">Existing links</h3>
+            <h3 className="text-meta font-semibold text-text-tertiary uppercase tracking-widest">Existing links</h3>
             {loadError && (
-              <p className="text-xs text-red-400 flex items-center gap-1.5"><AlertTriangle size={12} /> {loadError}</p>
+              <p className="text-meta text-danger-fg flex items-center gap-1.5"><AlertTriangle size={12} aria-hidden /> {loadError}</p>
             )}
             {loading ? (
-              <p className="text-sm text-gray-600 py-2">Loading…</p>
+              <p className="text-body text-text-secondary py-2">Loading…</p>
             ) : links.length === 0 ? (
-              <p className="text-sm text-gray-600 py-2">No share links yet.</p>
+              <p className="text-body text-text-secondary py-2">No share links yet.</p>
             ) : (
               <ul className="space-y-2">
                 {links.map((link) => {
                   const state = linkState(link, nowSeconds)
                   return (
                     <li key={link.id} className="card flex items-center gap-3 py-2.5">
-                      <Link2 size={14} className="text-gray-500 shrink-0" />
+                      <Link2 size={14} aria-hidden className="text-text-tertiary shrink-0" />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-mono text-xs text-gray-300 truncate">{link.id}</span>
-                          {state === 'revoked' && <span className="badge bg-red-900/40 text-red-400 border border-red-800/50">Revoked</span>}
-                          {state === 'expired' && <span className="badge bg-gray-800 text-gray-400 border border-gray-700">Expired</span>}
-                          {state === 'active' && <span className="badge bg-green-900/50 text-green-300 border border-green-700/50">Active</span>}
+                          <span className="font-mono text-meta text-text-secondary truncate">{link.id}</span>
+                          {state === 'revoked' && <Badge status="danger">Revoked</Badge>}
+                          {state === 'expired' && <Badge status="neutral">Expired</Badge>}
+                          {state === 'active' && <Badge status="success">Active</Badge>}
                           {link.scope === 'full' ? (
-                            <span className="badge bg-amber-900/40 text-amber-300 border border-amber-700/50 inline-flex items-center gap-1" title="Shares everything (read-only)">
-                              <Layers size={10} /> Everything
-                            </span>
+                            <Badge status="warning" icon={Layers} title="Shares everything (read-only)">Everything</Badge>
                           ) : (
-                            <span className="badge bg-gray-800 text-gray-400 border border-gray-700 inline-flex items-center gap-1" title="Curated build showcase">
-                              <Images size={10} /> Showcase
-                            </span>
+                            <Badge status="neutral" icon={Images} title="Curated build showcase">Showcase</Badge>
                           )}
                         </div>
-                        <p className="text-xs text-gray-500 mt-0.5">
+                        <p className="text-meta text-text-secondary mt-0.5">
                           Created {fmtDate(link.createdAt)}
                           {link.expiresAt != null ? ` · expires ${fmtDate(link.expiresAt)}` : ' · no expiry'}
                           {' · '}
                           <span
-                            className="text-accent inline-flex items-center gap-1 align-middle"
+                            className="inline-flex items-center gap-1 align-middle"
                             title="Views (counted once per browser session)"
                           >
-                            <Eye size={11} /> {formatViewCount(link.viewCount)}
+                            <Eye size={11} aria-hidden /> {formatViewCount(link.viewCount)}
                           </span>
                         </p>
                       </div>
                       {state !== 'revoked' && (
-                        <button
+                        <IconButton
                           onClick={() => setRevokeTarget(link)}
-                          className="btn-ghost text-red-500 hover:text-red-400 shrink-0"
+                          variant="ghost"
+                          className="shrink-0"
                           aria-label={`Revoke link ${link.id}`}
                           title="Revoke"
                         >
-                          <Trash2 size={14} />
-                        </button>
+                          <Trash2 size={14} className="text-danger-fg" />
+                        </IconButton>
                       )}
                     </li>
                   )
@@ -287,7 +285,7 @@ export default function ShareDialog({ carId, carLabel, onClose }: ShareDialogPro
         </div>
 
         <div className="flex gap-3 px-5 py-4 border-t border-border shrink-0">
-          <button onClick={onClose} className="btn-outline flex-1 justify-center">Done</button>
+          <Button variant="secondary" onClick={onClose} className="flex-1">Done</Button>
         </div>
       </div>
 

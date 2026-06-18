@@ -1,26 +1,46 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import { Plus, Trash2, AlertTriangle, CheckCircle2, Clock, Pencil, Check, X } from 'lucide-react'
+import { Plus, Trash2, AlertTriangle, Clock, CheckCircle2, RotateCcw, Pencil } from 'lucide-react'
+import { tokens } from '@chudbox/shared'
 import useGarageStore from '../../store/useGarageStore'
 import ConfirmModal from '../ConfirmModal'
-import type { Car, Issue, IssueSeverity, IssueStatus, FieldChangeEvent } from '../../types'
+import Badge from '../ui/Badge'
+import Button from '../ui/Button'
+import IconButton from '../ui/IconButton'
+import type { Car, Issue, IssueSeverity, IssueStatus, StatusRole, FieldChangeEvent } from '../../types'
 
-const SEVERITY: Record<IssueSeverity, { label: string; class: string }> = {
-  minor:    { label: 'Minor',    class: 'bg-gray-800 text-gray-300 border-gray-700' },
-  moderate: { label: 'Moderate', class: 'bg-yellow-900/50 text-yellow-300 border-yellow-700/40' },
-  critical: { label: 'Critical', class: 'bg-red-900/50 text-red-300 border-red-700/40' },
+// Severity → status role. Orange stays reclaimed: critical is the danger token,
+// moderate the warning token, minor neutral. (Color is always paired with the
+// Badge's icon + text — never color alone.)
+const SEVERITY: Record<IssueSeverity, { label: string; role: StatusRole }> = {
+  minor:    { label: 'Minor',    role: 'neutral' },
+  moderate: { label: 'Moderate', role: 'warning' },
+  critical: { label: 'Critical', role: 'danger' },
 }
 
-const STATUS_ICON: Record<IssueStatus, { icon: LucideIcon; class: string }> = {
-  open:          { icon: AlertTriangle, class: 'text-red-400' },
-  'in-progress': { icon: Clock,         class: 'text-yellow-400' },
-  resolved:      { icon: CheckCircle2,  class: 'text-green-400' },
+// Status → status role + label. open = the active alert (danger, matching the
+// CarCard open-issues alert), in-progress = info, resolved = success.
+const STATUS: Record<IssueStatus, { label: string; role: StatusRole }> = {
+  open:          { label: 'Open',        role: 'danger' },
+  'in-progress': { label: 'In progress', role: 'info' },
+  resolved:      { label: 'Resolved',    role: 'success' },
+}
+
+// The labeled "advance status" action for each state (replaces the old opaque
+// icon-cycle): the button text says what it will do, so it's clear to keyboard
+// + screen-reader users.
+const ADVANCE: Record<IssueStatus, { to: IssueStatus; label: string; icon: LucideIcon }> = {
+  open:          { to: 'in-progress', label: 'Start',   icon: Clock },
+  'in-progress': { to: 'resolved',    label: 'Resolve', icon: CheckCircle2 },
+  resolved:      { to: 'open',        label: 'Reopen',  icon: RotateCcw },
 }
 
 type IssueForm = Pick<Issue, 'title' | 'description' | 'severity'>
 
 const emptyForm: IssueForm = { title: '', description: '', severity: 'moderate' }
+
+const ADD_FORM_ID = 'issue-add-form'
 
 interface IssuesTabProps {
   car: Car
@@ -36,6 +56,8 @@ export default function IssuesTab({ car }: IssuesTabProps) {
   const [editForm, setEditForm] = useState<Partial<Issue>>({})
   const [filter, setFilter]         = useState<'open' | 'resolved'>('open')
   const [confirmIssue, setConfirmIssue] = useState<Issue | null>(null)
+  // A12: status changes are announced politely to assistive tech.
+  const [liveMsg, setLiveMsg] = useState('')
 
   const set =
     <K extends keyof IssueForm>(key: K) =>
@@ -56,15 +78,16 @@ export default function IssuesTab({ car }: IssuesTabProps) {
   }
 
   const startEdit = (issue: Issue) => { setEditId(issue.id); setEditForm({ ...issue }) }
-  const saveEdit = () => {
+  const saveEdit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
     if (editId) updateIssue(car.id, editId, editForm)
     setEditId(null)
   }
 
-  const cycleStatus = (issue: Issue) => {
-    const next: Record<IssueStatus, IssueStatus> = { open: 'in-progress', 'in-progress': 'resolved', resolved: 'open' }
-    const nextStatus = next[issue.status]
+  const advanceStatus = (issue: Issue) => {
+    const nextStatus = ADVANCE[issue.status].to
     updateIssue(car.id, issue.id, { status: nextStatus, resolvedAt: nextStatus === 'resolved' ? new Date().toISOString() : null })
+    setLiveMsg(`"${issue.title}" marked ${STATUS[nextStatus].label.toLowerCase()}`)
   }
 
   const open = car.issues.filter((i) => i.status !== 'resolved')
@@ -73,69 +96,81 @@ export default function IssuesTab({ car }: IssuesTabProps) {
 
   return (
     <div>
+      {/* A12: visually-hidden polite live region for status-change feedback. */}
+      <p className="sr-only" role="status" aria-live="polite">{liveMsg}</p>
+
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h3 className="text-white font-semibold">Issues</h3>
-          <p className="text-xs text-gray-500 mt-0.5">{open.length} open · {resolved.length} resolved</p>
+          <h3 className="text-subhead font-semibold text-text-primary">Issues</h3>
+          <p className="text-meta text-text-secondary mt-0.5">{open.length} open · {resolved.length} resolved</p>
         </div>
-        <button onClick={() => setShowForm((v) => !v)} className="btn-primary"><Plus size={14} /> Log Issue</button>
+        <Button size="sm" onClick={() => setShowForm((v) => !v)}><Plus size={tokens.iconSize.sm} /> Log issue</Button>
       </div>
 
       {/* Filter */}
       <div className="flex gap-2 mb-4">
-        <button onClick={() => setFilter('open')} className={`tab-btn ${filter === 'open' ? 'tab-active' : 'tab-inactive'}`}>Open ({open.length})</button>
-        <button onClick={() => setFilter('resolved')} className={`tab-btn ${filter === 'resolved' ? 'tab-active' : 'tab-inactive'}`}>Resolved ({resolved.length})</button>
+        <button type="button" onClick={() => setFilter('open')} className={`tab-btn ${filter === 'open' ? 'tab-active' : 'tab-inactive'}`}>Open ({open.length})</button>
+        <button type="button" onClick={() => setFilter('resolved')} className={`tab-btn ${filter === 'resolved' ? 'tab-active' : 'tab-inactive'}`}>Resolved ({resolved.length})</button>
       </div>
 
       {showForm && (
-        <form onSubmit={handleAdd} className="card mb-5 space-y-3 border-red-800/40">
-          <h4 className="text-sm font-semibold text-white">New Issue</h4>
+        <form id={ADD_FORM_ID} onSubmit={handleAdd} className="card mb-5 space-y-3">
+          <h4 className="text-body font-semibold text-text-primary">New issue</h4>
           <div>
-            <label className="label">Title *</label>
-            <input className="input" placeholder="Check engine light on" value={form.title} onChange={set('title')} required />
+            <label htmlFor="issue-add-title" className="label">Title *</label>
+            <input id="issue-add-title" className="input" placeholder="Check engine light on" value={form.title} onChange={set('title')} required />
           </div>
           <div>
-            <label className="label">Description</label>
-            <textarea className="input resize-none" rows={3} value={form.description} onChange={set('description')} placeholder="Describe the issue in detail…" />
+            <label htmlFor="issue-add-desc" className="label">Description</label>
+            <textarea id="issue-add-desc" className="input resize-none" rows={3} value={form.description} onChange={set('description')} placeholder="Describe the issue in detail…" />
           </div>
           <div className="w-40">
-            <label className="label">Severity</label>
-            <select className="input" value={form.severity} onChange={set('severity')}>
+            <label htmlFor="issue-add-severity" className="label">Severity</label>
+            <select id="issue-add-severity" className="input" value={form.severity} onChange={set('severity')}>
               <option value="minor">Minor</option>
               <option value="moderate">Moderate</option>
               <option value="critical">Critical</option>
             </select>
           </div>
           <div className="flex gap-2">
-            <button type="button" onClick={() => setShowForm(false)} className="btn-outline">Cancel</button>
-            <button type="submit" className="btn-primary">Log Issue</button>
+            <Button type="button" variant="secondary" size="sm" onClick={() => setShowForm(false)}>Cancel</Button>
+            <Button type="submit" size="sm" form={ADD_FORM_ID}>Log issue</Button>
           </div>
         </form>
       )}
 
       {displayed.length === 0 ? (
-        <div className="text-center py-16 text-gray-600">
-          <AlertTriangle size={36} className="mx-auto mb-3 opacity-40" />
+        <div className="text-center py-16 text-text-secondary">
+          <AlertTriangle size={tokens.iconSize.xl} className="mx-auto mb-3 opacity-40" aria-hidden />
           <p>{filter === 'resolved' ? 'No resolved issues.' : 'No open issues — all clear!'}</p>
         </div>
       ) : (
         <div className="space-y-3">
           {displayed.map((issue) => {
-            const { icon: StatusIcon, class: statusClass } = STATUS_ICON[issue.status]
+            const advance = ADVANCE[issue.status]
+            const AdvanceIcon = advance.icon
             return editId === issue.id ? (
-              <div key={issue.id} className="card border-accent/30 space-y-3">
-                <div><label className="label">Title</label><input className="input" value={editForm.title ?? ''} onChange={setEdit('title')} /></div>
-                <div><label className="label">Description</label><textarea className="input resize-none" rows={3} value={editForm.description ?? ''} onChange={setEdit('description')} /></div>
+              <form key={issue.id} onSubmit={saveEdit} className="card space-y-3">
+                <div>
+                  <label htmlFor={`issue-${issue.id}-title`} className="label">Title</label>
+                  <input id={`issue-${issue.id}-title`} className="input" value={editForm.title ?? ''} onChange={setEdit('title')} />
+                </div>
+                <div>
+                  <label htmlFor={`issue-${issue.id}-desc`} className="label">Description</label>
+                  <textarea id={`issue-${issue.id}-desc`} className="input resize-none" rows={3} value={editForm.description ?? ''} onChange={setEdit('description')} />
+                </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><label className="label">Severity</label>
-                    <select className="input" value={editForm.severity} onChange={setEdit('severity')}>
+                  <div>
+                    <label htmlFor={`issue-${issue.id}-severity`} className="label">Severity</label>
+                    <select id={`issue-${issue.id}-severity`} className="input" value={editForm.severity} onChange={setEdit('severity')}>
                       <option value="minor">Minor</option>
                       <option value="moderate">Moderate</option>
                       <option value="critical">Critical</option>
                     </select>
                   </div>
-                  <div><label className="label">Status</label>
-                    <select className="input" value={editForm.status} onChange={setEdit('status')}>
+                  <div>
+                    <label htmlFor={`issue-${issue.id}-status`} className="label">Status</label>
+                    <select id={`issue-${issue.id}-status`} className="input" value={editForm.status} onChange={setEdit('status')}>
                       <option value="open">Open</option>
                       <option value="in-progress">In Progress</option>
                       <option value="resolved">Resolved</option>
@@ -143,27 +178,35 @@ export default function IssuesTab({ car }: IssuesTabProps) {
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={() => setEditId(null)} className="btn-ghost"><X size={14} /> Cancel</button>
-                  <button onClick={saveEdit} className="btn-primary"><Check size={14} /> Save</button>
+                  <Button type="button" variant="secondary" size="sm" onClick={() => setEditId(null)}>Cancel</Button>
+                  <Button type="submit" size="sm">Save</Button>
                 </div>
-              </div>
+              </form>
             ) : (
-              <div key={issue.id} className="card flex gap-4 items-start hover:border-accent/20">
-                <button onClick={() => cycleStatus(issue)} title="Cycle status" className={`mt-0.5 shrink-0 ${statusClass} hover:opacity-70 transition-opacity`}>
-                  <StatusIcon size={18} />
-                </button>
+              <div key={issue.id} className="card flex gap-4 items-start">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`font-medium ${issue.status === 'resolved' ? 'text-gray-500 line-through' : 'text-white'}`}>{issue.title}</span>
-                    <span className={`badge border ${SEVERITY[issue.severity].class}`}>{SEVERITY[issue.severity].label}</span>
-                    <span className="text-xs text-gray-600 capitalize">{issue.status.replace('-', ' ')}</span>
+                    <span className={`font-medium ${issue.status === 'resolved' ? 'text-text-secondary line-through' : 'text-text-primary'}`}>{issue.title}</span>
+                    <Badge status={SEVERITY[issue.severity].role}>{SEVERITY[issue.severity].label}</Badge>
+                    <Badge status={STATUS[issue.status].role}>{STATUS[issue.status].label}</Badge>
                   </div>
-                  {issue.description && <p className="text-xs text-gray-400 mt-1">{issue.description}</p>}
-                  <p className="text-xs text-gray-600 mt-1">{new Date(issue.createdAt).toLocaleDateString()}{issue.resolvedAt ? ` · Resolved ${new Date(issue.resolvedAt).toLocaleDateString()}` : ''}</p>
+                  {issue.description && <p className="text-meta text-text-secondary mt-1">{issue.description}</p>}
+                  <p className="text-meta text-text-secondary mt-1">{new Date(issue.createdAt).toLocaleDateString()}{issue.resolvedAt ? ` · Resolved ${new Date(issue.resolvedAt).toLocaleDateString()}` : ''}</p>
                 </div>
-                <div className="flex gap-1 shrink-0">
-                  <button onClick={() => startEdit(issue)} className="btn-ghost"><Pencil size={14} /></button>
-                  <button onClick={() => setConfirmIssue(issue)} className="btn-ghost text-red-500 hover:text-red-400"><Trash2 size={14} /></button>
+                <div className="flex items-center gap-1 shrink-0">
+                  <IconButton
+                    aria-label={`Mark issue "${issue.title}" as ${STATUS[advance.to].label.toLowerCase()}`}
+                    title={`Mark as ${STATUS[advance.to].label.toLowerCase()}`}
+                    onClick={() => advanceStatus(issue)}
+                  >
+                    <AdvanceIcon size={tokens.iconSize.sm} />
+                  </IconButton>
+                  <IconButton aria-label={`Edit issue: ${issue.title}`} onClick={() => startEdit(issue)}>
+                    <Pencil size={tokens.iconSize.sm} />
+                  </IconButton>
+                  <IconButton aria-label={`Delete issue: ${issue.title}`} onClick={() => setConfirmIssue(issue)}>
+                    <Trash2 size={tokens.iconSize.sm} />
+                  </IconButton>
                 </div>
               </div>
             )

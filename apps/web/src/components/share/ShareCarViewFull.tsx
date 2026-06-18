@@ -1,19 +1,19 @@
 import { useState } from 'react'
-import type { LucideIcon } from 'lucide-react'
+import type { ReactNode } from 'react'
 import {
-  Camera,
-  Wrench,
-  ClipboardList,
-  ShoppingCart,
-  CheckSquare,
   AlertTriangle,
-  ExternalLink,
   Calendar,
+  Camera,
+  CheckSquare,
+  ClipboardList,
   Eye,
+  ShoppingCart,
   Tag,
+  Wrench,
 } from 'lucide-react'
-import { formatMileage, formatMoney, shareImgPath } from '@chudbox/shared'
+import { formatMileage, formatMoney, shareImgPath, tokens } from '@chudbox/shared'
 import type {
+  CarStatus,
   DistanceUnitCode,
   FullCarSnapshot,
   FullIssue,
@@ -21,23 +21,42 @@ import type {
   FullMod,
   FullTodo,
   FullWishlistItem,
+  IssueSeverity,
+  StatusRole,
+  TodoPriority,
+  WishlistStatus,
 } from '@chudbox/shared'
 import { STATUS_CONFIG } from '../../utils/carStatus'
 import CarHero from '../CarHero'
 import MileageText from '../MileageText'
-import { PhotoGrid } from './ShareCarView'
+import Badge from '../ui/Badge'
+import { DetailTabBar, EmptyState, ExternalLinkA, PhotoGrid, ShareShell } from './ShareCarView'
+import type { ShareTab } from './ShareCarView'
+
+/**
+ * Car status → design-system status role (canonical map, matches CarCard /
+ * ShareCarView). Kept local rather than exported from ShareCarView so that file
+ * exports components only (react-refresh stays clean).
+ */
+const STATUS_ROLE: Record<CarStatus, StatusRole> = {
+  current: 'neutral',
+  'for-sale': 'success',
+  'for-trade': 'info',
+  sold: 'neutral',
+  totaled: 'warning',
+}
 
 /**
  * Read-only FULL public viewer ('full' scope). Driven ENTIRELY by the
- * FullCarSnapshot the server built from the link's STORED scope — there is no
- * store, no auth, and NO add/edit/delete control anywhere (every section is a
- * pure render of the snapshot). It mirrors the owner page's tab idioms
- * (CarHero, the tab bar, the card layouts) but in a strictly read-only form,
- * showing the owner-only fields the curated viewer withholds: money, shops,
- * notes, the wishlist / to-do / issues lists, and salePrice / tradeFor.
+ * FullCarSnapshot the server built from the link's STORED scope — no store, no
+ * auth, no add/edit/delete control anywhere. Same redesigned chrome + photo-led
+ * layout as the curated viewer (DEC-8 / DEC-9), but it surfaces the owner-only
+ * fields the curated view withholds: money, shops, notes, and the wishlist /
+ * to-do / issues lists. Shared building blocks come from ShareCarView so the two
+ * variants stay pixel-identical where they overlap.
  *
- * It reuses the curated viewer's PhotoGrid for the photo tab (identical
- * behavior) and never imports the auth client, so it works fully logged-out.
+ * V5 token rules: money is passive data → text-primary + weight (NOT orange);
+ * status/priority/severity → the <Badge> primitive (color + icon + text).
  */
 
 interface ShareCarViewFullProps {
@@ -46,49 +65,50 @@ interface ShareCarViewFullProps {
   token: string
 }
 
-type TabId = 'photos' | 'mods' | 'maintenance' | 'wishlist' | 'todos' | 'issues'
-
-interface TabDef {
-  id: TabId
-  label: string
-  icon: LucideIcon
-  count: number
-}
+type TabId = 'mods' | 'maintenance' | 'wishlist' | 'todos' | 'issues'
 
 const fmtDay = (d: string): string => new Date(`${d}T12:00:00`).toLocaleDateString()
 
-/** Format a numeric money amount with the owner's display currency (the same
- * currency the owner sees; it travels in the full snapshot's settings). */
+/** Numeric money in the owner's display currency (travels in the full snapshot). */
 function money(amount: number, currency: string): string {
   return formatMoney(amount, currency)
 }
 
-const WISHLIST_STATUS: Record<FullWishlistItem['status'], { label: string; class: string }> = {
-  wanted: { label: 'Wanted', class: 'bg-blue-900/50 text-blue-300 border-blue-700/40' },
-  ordered: { label: 'Ordered', class: 'bg-yellow-900/50 text-yellow-300 border-yellow-700/40' },
-  installed: { label: 'Installed', class: 'bg-green-900/50 text-green-300 border-green-700/40' },
+const WISHLIST_ROLE: Record<WishlistStatus, StatusRole> = {
+  wanted: 'info',
+  ordered: 'warning',
+  installed: 'success',
+}
+const WISHLIST_LABEL: Record<WishlistStatus, string> = {
+  wanted: 'Wanted',
+  ordered: 'Ordered',
+  installed: 'Installed',
 }
 
-const TODO_PRIORITY: Record<FullTodo['priority'], { label: string; class: string }> = {
-  low: { label: 'Low', class: 'bg-gray-800 text-gray-400 border-gray-700' },
-  medium: { label: 'Medium', class: 'bg-blue-900/50 text-blue-300 border-blue-700/40' },
-  high: { label: 'High', class: 'bg-red-900/50 text-red-300 border-red-700/40' },
+const TODO_ROLE: Record<TodoPriority, StatusRole> = { low: 'neutral', medium: 'info', high: 'danger' }
+const TODO_LABEL: Record<TodoPriority, string> = { low: 'Low', medium: 'Medium', high: 'High' }
+
+const ISSUE_ROLE: Record<IssueSeverity, StatusRole> = {
+  minor: 'neutral',
+  moderate: 'warning',
+  critical: 'danger',
+}
+const ISSUE_LABEL: Record<IssueSeverity, string> = {
+  minor: 'Minor',
+  moderate: 'Moderate',
+  critical: 'Critical',
 }
 
-const ISSUE_SEVERITY: Record<FullIssue['severity'], { label: string; class: string }> = {
-  minor: { label: 'Minor', class: 'bg-gray-800 text-gray-300 border-gray-700' },
-  moderate: { label: 'Moderate', class: 'bg-yellow-900/50 text-yellow-300 border-yellow-700/40' },
-  critical: { label: 'Critical', class: 'bg-red-900/50 text-red-300 border-red-700/40' },
+/** Price tokens (V5): weight, not orange. */
+function Price({ children }: { children: ReactNode }) {
+  return <span className="text-meta font-semibold text-text-primary">{children}</span>
 }
+
+// ── Detail lists (full scope) ─────────────────────────────────────────────────
 
 function ModList({ mods, currency }: { mods: FullMod[]; currency: string }) {
   if (mods.length === 0) {
-    return (
-      <div className="text-center py-16 text-gray-600">
-        <Wrench size={36} className="mx-auto mb-3 opacity-40" />
-        <p>No modifications shared.</p>
-      </div>
-    )
+    return <EmptyState icon={Wrench}>No modifications shared.</EmptyState>
   }
   const grouped = mods.reduce<Record<string, FullMod[]>>((acc, mod) => {
     const key = mod.category || 'Other'
@@ -100,30 +120,23 @@ function ModList({ mods, currency }: { mods: FullMod[]; currency: string }) {
     <div className="space-y-6">
       {Object.entries(grouped).map(([category, group]) => (
         <div key={category}>
-          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-2">{category}</h4>
+          <p className="mb-2 text-meta font-semibold uppercase tracking-widest text-text-secondary">
+            {category}
+          </p>
           <div className="space-y-2">
             {group.map((mod, i) => (
               <div key={`${mod.name}-${i}`} className="card">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-medium text-white">{mod.name}</span>
-                  {mod.cost != null && (
-                    <span className="text-xs text-accent font-semibold">{money(mod.cost, currency)}</span>
-                  )}
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-semibold text-text-primary">{mod.name}</span>
+                  {mod.cost != null && <Price>{money(mod.cost, currency)}</Price>}
                 </div>
-                {mod.description && <p className="text-xs text-gray-400 mt-1">{mod.description}</p>}
-                <div className="flex gap-3 mt-1.5 text-xs text-gray-600 flex-wrap items-center">
+                {mod.description && (
+                  <p className="mt-1 text-meta text-text-secondary">{mod.description}</p>
+                )}
+                <div className="mt-1.5 flex flex-wrap items-center gap-3 text-meta text-text-secondary">
                   {mod.installedDate && <span>{fmtDay(mod.installedDate)}</span>}
                   {mod.shop && <span>at {mod.shop}</span>}
-                  {mod.link && (
-                    <a
-                      href={mod.link}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex items-center gap-1 text-blue-400 hover:text-blue-300 transition-colors"
-                    >
-                      <ExternalLink size={11} /> View Link
-                    </a>
-                  )}
+                  {mod.link && <ExternalLinkA href={mod.link} />}
                 </div>
               </div>
             ))}
@@ -144,29 +157,22 @@ function MaintenanceList({
   currency: string
 }) {
   if (records.length === 0) {
-    return (
-      <div className="text-center py-16 text-gray-600">
-        <ClipboardList size={36} className="mx-auto mb-3 opacity-40" />
-        <p>No maintenance records shared.</p>
-      </div>
-    )
+    return <EmptyState icon={ClipboardList}>No maintenance records shared.</EmptyState>
   }
   const sorted = [...records].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
   return (
     <div className="space-y-3">
       {sorted.map((rec, i) => (
         <div key={`${rec.service}-${i}`} className="card">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-medium text-white">{rec.service}</span>
-            {rec.cost != null && (
-              <span className="text-xs text-accent font-semibold">{money(rec.cost, currency)}</span>
-            )}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-semibold text-text-primary">{rec.service}</span>
+            {rec.cost != null && <Price>{money(rec.cost, currency)}</Price>}
           </div>
-          {rec.notes && <p className="text-xs text-gray-400 mt-1">{rec.notes}</p>}
-          <div className="flex gap-3 mt-1.5 text-xs text-gray-500 flex-wrap">
+          {rec.notes && <p className="mt-1 text-meta text-text-secondary">{rec.notes}</p>}
+          <div className="mt-1.5 flex flex-wrap gap-3 text-meta text-text-secondary">
             {rec.date && (
-              <span className="flex items-center gap-1">
-                <Calendar size={10} />
+              <span className="inline-flex items-center gap-1">
+                <Calendar size={tokens.iconSize.xs} className="text-text-tertiary" aria-hidden />
                 {fmtDay(rec.date)}
               </span>
             )}
@@ -174,7 +180,7 @@ function MaintenanceList({
             {rec.shop && <span>at {rec.shop}</span>}
           </div>
           {(rec.nextDueDate || rec.nextDueMileageRaw) && (
-            <p className="text-xs text-gray-600 mt-1">
+            <p className="mt-1 text-meta text-text-secondary">
               Next:{' '}
               {rec.nextDueDate ? fmtDay(rec.nextDueDate) : ''}
               {rec.nextDueDate && rec.nextDueMileageRaw ? ' / ' : ''}
@@ -189,43 +195,25 @@ function MaintenanceList({
 
 function WishList({ items, currency }: { items: FullWishlistItem[]; currency: string }) {
   if (items.length === 0) {
-    return (
-      <div className="text-center py-16 text-gray-600">
-        <ShoppingCart size={36} className="mx-auto mb-3 opacity-40" />
-        <p>No wishlist items shared.</p>
-      </div>
-    )
+    return <EmptyState icon={ShoppingCart}>No wishlist items shared.</EmptyState>
   }
   return (
     <div className="space-y-3">
       {items.map((item, i) => (
-        <div key={`${item.name}-${i}`} className="card flex gap-4 items-start">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-medium text-white">{item.name}</span>
-              {item.category && (
-                <span className="text-xs text-gray-500 border border-border rounded-sm px-1.5 py-0.5">{item.category}</span>
-              )}
-              <span className={`badge border ${WISHLIST_STATUS[item.status].class}`}>
-                {WISHLIST_STATUS[item.status].label}
+        <div key={`${item.name}-${i}`} className="card">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-semibold text-text-primary">{item.name}</span>
+            {item.category && (
+              <span className="rounded-sm border border-border px-1.5 py-0.5 text-meta text-text-secondary">
+                {item.category}
               </span>
-            </div>
-            {item.notes && <p className="text-xs text-gray-500 mt-1">{item.notes}</p>}
-            <div className="flex items-center gap-3 mt-2 flex-wrap">
-              {item.price != null && (
-                <span className="text-sm font-semibold text-accent">{money(item.price, currency)}</span>
-              )}
-              {item.link && (
-                <a
-                  href={item.link}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300"
-                >
-                  <ExternalLink size={11} /> View Link
-                </a>
-              )}
-            </div>
+            )}
+            <Badge status={WISHLIST_ROLE[item.status]}>{WISHLIST_LABEL[item.status]}</Badge>
+          </div>
+          {item.notes && <p className="mt-1 text-meta text-text-secondary">{item.notes}</p>}
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            {item.price != null && <Price>{money(item.price, currency)}</Price>}
+            {item.link && <ExternalLinkA href={item.link} />}
           </div>
         </div>
       ))}
@@ -235,14 +223,9 @@ function WishList({ items, currency }: { items: FullWishlistItem[]; currency: st
 
 function TodoList({ todos }: { todos: FullTodo[] }) {
   if (todos.length === 0) {
-    return (
-      <div className="text-center py-16 text-gray-600">
-        <CheckSquare size={36} className="mx-auto mb-3 opacity-40" />
-        <p>No tasks shared.</p>
-      </div>
-    )
+    return <EmptyState icon={CheckSquare}>No tasks shared.</EmptyState>
   }
-  const order: Record<FullTodo['priority'], number> = { high: 0, medium: 1, low: 2 }
+  const order: Record<TodoPriority, number> = { high: 0, medium: 1, low: 2 }
   const pending = todos.filter((t) => !t.done).sort((a, b) => order[a.priority] - order[b.priority])
   const done = todos.filter((t) => t.done)
   return (
@@ -251,23 +234,28 @@ function TodoList({ todos }: { todos: FullTodo[] }) {
         <div className="space-y-2">
           {pending.map((todo, i) => (
             <div key={`p-${i}`} className="card flex items-center gap-3 py-3">
-              <span className="w-4 h-4 rounded-sm border border-border shrink-0" aria-hidden />
-              <span className="flex-1 text-sm text-gray-200">{todo.text}</span>
-              <span className={`badge border text-xs ${TODO_PRIORITY[todo.priority].class}`}>
-                {TODO_PRIORITY[todo.priority].label}
-              </span>
+              <span className="h-4 w-4 shrink-0 rounded-sm border border-border" aria-hidden />
+              <span className="flex-1 text-body text-text-primary">{todo.text}</span>
+              <Badge status={TODO_ROLE[todo.priority]}>{TODO_LABEL[todo.priority]}</Badge>
             </div>
           ))}
         </div>
       )}
       {done.length > 0 && (
         <div>
-          <p className="text-xs text-gray-600 uppercase tracking-wide mb-2">Completed</p>
+          <p className="mb-2 text-meta uppercase tracking-wide text-text-secondary">Completed</p>
           <div className="space-y-2">
             {done.map((todo, i) => (
-              <div key={`d-${i}`} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-surface/50 opacity-50">
-                <CheckSquare size={16} className="text-accent shrink-0" aria-hidden />
-                <span className="flex-1 text-sm text-gray-400 line-through">{todo.text}</span>
+              <div
+                key={`d-${i}`}
+                className="card-row flex items-center gap-3 opacity-60"
+              >
+                <CheckSquare
+                  size={tokens.iconSize.sm}
+                  className="shrink-0 text-text-tertiary"
+                  aria-hidden
+                />
+                <span className="flex-1 text-body text-text-secondary line-through">{todo.text}</span>
               </div>
             ))}
           </div>
@@ -279,84 +267,101 @@ function TodoList({ todos }: { todos: FullTodo[] }) {
 
 function IssueList({ issues }: { issues: FullIssue[] }) {
   if (issues.length === 0) {
-    return (
-      <div className="text-center py-16 text-gray-600">
-        <AlertTriangle size={36} className="mx-auto mb-3 opacity-40" />
-        <p>No issues shared.</p>
-      </div>
-    )
+    return <EmptyState icon={AlertTriangle}>No issues shared.</EmptyState>
   }
   return (
     <div className="space-y-3">
       {issues.map((issue, i) => (
-        <div key={`${issue.title}-${i}`} className="card flex gap-4 items-start">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className={`font-medium ${issue.status === 'resolved' ? 'text-gray-500 line-through' : 'text-white'}`}>
-                {issue.title}
-              </span>
-              <span className={`badge border ${ISSUE_SEVERITY[issue.severity].class}`}>
-                {ISSUE_SEVERITY[issue.severity].label}
-              </span>
-              <span className="text-xs text-gray-600 capitalize">{issue.status.replace('-', ' ')}</span>
-            </div>
-            {issue.description && <p className="text-xs text-gray-400 mt-1">{issue.description}</p>}
-            <p className="text-xs text-gray-600 mt-1">
-              {new Date(issue.createdAt).toLocaleDateString()}
-              {issue.resolvedAt ? ` · Resolved ${new Date(issue.resolvedAt).toLocaleDateString()}` : ''}
-            </p>
+        <div key={`${issue.title}-${i}`} className="card">
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={
+                issue.status === 'resolved'
+                  ? 'font-semibold text-text-secondary line-through'
+                  : 'font-semibold text-text-primary'
+              }
+            >
+              {issue.title}
+            </span>
+            <Badge status={ISSUE_ROLE[issue.severity]}>{ISSUE_LABEL[issue.severity]}</Badge>
+            <span className="text-meta capitalize text-text-secondary">
+              {issue.status.replace('-', ' ')}
+            </span>
           </div>
+          {issue.description && (
+            <p className="mt-1 text-meta text-text-secondary">{issue.description}</p>
+          )}
+          <p className="mt-1 text-meta text-text-secondary">
+            {new Date(issue.createdAt).toLocaleDateString()}
+            {issue.resolvedAt ? ` · Resolved ${new Date(issue.resolvedAt).toLocaleDateString()}` : ''}
+          </p>
         </div>
       ))}
     </div>
   )
 }
 
+// ── Page ──────────────────────────────────────────────────────────────────────
+
 export default function ShareCarViewFull({ car, token }: ShareCarViewFullProps) {
   const unit = car.settings.distanceUnit
   const currency = car.settings.currency
-  const statusCfg = STATUS_CONFIG[car.status] ?? STATUS_CONFIG.current
   const coverSrc = car.coverPhotoId ? shareImgPath(token, car.coverPhotoId) : ''
-  const saleAmount = car.salePrice != null && Number.isFinite(Number(car.salePrice)) && car.salePrice !== ''
-    ? money(Number(car.salePrice), currency)
-    : car.salePrice
+  const status = car.status as CarStatus
+  const saleAmount =
+    car.salePrice != null && Number.isFinite(Number(car.salePrice)) && car.salePrice !== ''
+      ? money(Number(car.salePrice), currency)
+      : car.salePrice
 
-  const tabs: TabDef[] = [
-    { id: 'photos', label: 'Photos', icon: Camera, count: car.photos.length },
-    { id: 'mods', label: 'Mods', icon: Wrench, count: car.mods.length },
-    { id: 'maintenance', label: 'Maintenance', icon: ClipboardList, count: car.maintenance.length },
-    { id: 'wishlist', label: 'Wishlist', icon: ShoppingCart, count: car.wishlist.length },
-    { id: 'todos', label: 'To-Do', icon: CheckSquare, count: car.todos.length },
-    { id: 'issues', label: 'Issues', icon: AlertTriangle, count: car.issues.length },
+  const tabs: ShareTab<TabId>[] = [
+    { id: 'mods', label: 'Mods', icon: Wrench },
+    { id: 'maintenance', label: 'Maintenance', icon: ClipboardList },
+    { id: 'wishlist', label: 'Wishlist', icon: ShoppingCart },
+    { id: 'todos', label: 'To-Do', icon: CheckSquare },
+    { id: 'issues', label: 'Issues', icon: AlertTriangle },
   ]
-  const firstWithContent = tabs.find((t) => t.count > 0)?.id ?? 'photos'
-  const [tab, setTab] = useState<TabId>(firstWithContent)
+  // Default to the first tab that has content (Photos lead as the gallery, not a
+  // tab), preserving the pre-redesign "first non-empty section" behaviour.
+  const counts: Record<TabId, number> = {
+    mods: car.mods.length,
+    maintenance: car.maintenance.length,
+    wishlist: car.wishlist.length,
+    todos: car.todos.length,
+    issues: car.issues.length,
+  }
+  const [tab, setTab] = useState<TabId>(tabs.find((t) => counts[t.id] > 0)?.id ?? 'mods')
 
   return (
-    <div className="min-h-screen bg-dark">
+    <ShareShell>
       <CarHero
         coverSrc={coverSrc}
         topLeft={
-          <span className="absolute top-4 left-4 badge bg-dark/90 border border-white/10 text-gray-300">
-            <Eye size={11} className="mr-1" /> Read-only shared build (full)
-          </span>
-        }
-        actions={
-          <span className="absolute top-4 right-4 text-sm font-bold tracking-tight text-white/70">Chudbox</span>
+          <div className="absolute left-4 top-4">
+            <Badge status="neutral" icon={Eye}>
+              Read-only shared build (full)
+            </Badge>
+          </div>
         }
         meta={
           <>
-            <span className={`badge border text-xs ${statusCfg.class}`}>{statusCfg.label}</span>
-            {car.purchaseDate && <span className="text-xs text-gray-500">Owned since {fmtDay(car.purchaseDate)}</span>}
+            <Badge status={STATUS_ROLE[status] ?? 'neutral'}>
+              {(STATUS_CONFIG[status] ?? STATUS_CONFIG.current).label}
+            </Badge>
+            {car.purchaseDate && (
+              <span className="text-meta text-text-secondary">Owned since {fmtDay(car.purchaseDate)}</span>
+            )}
             {car.status === 'sold' && car.saleDate && (
-              <span className="text-xs text-gray-500">Sold {fmtDay(car.saleDate)}</span>
+              <span className="text-meta text-text-secondary">Sold {fmtDay(car.saleDate)}</span>
             )}
             {saleAmount && (
-              <span className="text-xs text-accent inline-flex items-center gap-1">
-                <Tag size={11} /> {saleAmount}
+              <span className="inline-flex items-center gap-1 text-meta font-semibold text-text-primary">
+                <Tag size={tokens.iconSize.xs} className="text-text-tertiary" aria-hidden />
+                {saleAmount}
               </span>
             )}
-            {car.tradeFor && <span className="text-xs text-gray-400">Trade for {car.tradeFor}</span>}
+            {car.tradeFor && (
+              <span className="text-meta text-text-secondary">Trade for {car.tradeFor}</span>
+            )}
           </>
         }
         title={
@@ -366,45 +371,46 @@ export default function ShareCarViewFull({ car, token }: ShareCarViewFullProps) 
         }
         subline={
           <>
-            {car.trim && <span className="text-sm text-gray-300">{car.trim}</span>}
-            {car.color && <span className="text-sm text-gray-400">· {car.color}</span>}
+            {car.trim && <span className="text-body text-text-secondary">{car.trim}</span>}
+            {car.color && <span className="text-body text-text-secondary">· {car.color}</span>}
             {car.mileageRaw && (
-              <span className="text-sm text-gray-400">
+              <span className="text-body text-text-secondary">
                 · <MileageText raw={car.mileageRaw} miles={car.mileageMiles} unit={unit} />
               </span>
             )}
-            {car.nickname && <span className="text-sm text-accent font-medium">· "{car.nickname}"</span>}
+            {car.nickname && (
+              <span className="text-body italic text-text-secondary">· “{car.nickname}”</span>
+            )}
           </>
         }
       />
 
-      {/* Tab bar */}
-      <div className="border-b border-border bg-surface/30 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="flex gap-1 py-2 overflow-x-auto no-scrollbar" style={{ scrollbarWidth: 'none' }}>
-            {tabs.map(({ id: tid, label, icon: Icon }) => (
-              <button
-                key={tid}
-                onClick={() => setTab(tid)}
-                className={`tab-btn flex items-center gap-1.5 ${tab === tid ? 'tab-active' : 'tab-inactive'}`}
-              >
-                <Icon size={14} />
-                {label}
-              </button>
-            ))}
+      {/* DEC-8: lead with photos — the gallery is the showcase. */}
+      {car.photos.length > 0 && (
+        <section aria-labelledby="gallery-heading" className="mx-auto w-full max-w-7xl px-6 pt-8">
+          <div className="mb-4 flex items-center gap-2">
+            <Camera size={tokens.iconSize.md} className="text-text-tertiary" aria-hidden />
+            <h2 id="gallery-heading" className="text-subhead font-semibold text-text-primary">
+              Gallery
+            </h2>
+            <span className="text-meta text-text-secondary">
+              {car.photos.length} photo{car.photos.length === 1 ? '' : 's'}
+            </span>
           </div>
-        </div>
-      </div>
+          <PhotoGrid photos={car.photos} token={token} />
+        </section>
+      )}
 
-      {/* Tab content */}
-      <div className="max-w-7xl mx-auto px-6 py-8">
-        {tab === 'photos' && <PhotoGrid photos={car.photos} token={token} />}
+      <DetailTabBar tabs={tabs} current={tab} onSelect={setTab} className="mt-8" />
+      <div className="mx-auto w-full max-w-7xl px-6 py-8">
         {tab === 'mods' && <ModList mods={car.mods} currency={currency} />}
-        {tab === 'maintenance' && <MaintenanceList records={car.maintenance} unit={unit} currency={currency} />}
+        {tab === 'maintenance' && (
+          <MaintenanceList records={car.maintenance} unit={unit} currency={currency} />
+        )}
         {tab === 'wishlist' && <WishList items={car.wishlist} currency={currency} />}
         {tab === 'todos' && <TodoList todos={car.todos} />}
         {tab === 'issues' && <IssueList issues={car.issues} />}
       </div>
-    </div>
+    </ShareShell>
   )
 }

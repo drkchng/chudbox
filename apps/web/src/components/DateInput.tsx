@@ -84,14 +84,24 @@ export default function DateInput({ value = '', onChange, className = '' }: Date
     }
   }
 
-  const seg = 'bg-transparent text-center text-sm text-gray-200 focus:outline-hidden focus:text-accent placeholder-gray-600 caret-accent'
+  // Token-wired segment: body type, primary text, accent caret. The per-segment
+  // global :focus-visible ring is suppressed (focus-visible:ring-0) so the WHOLE
+  // control shows a single composite ring instead (on the wrapper, below).
+  const seg =
+    'bg-transparent text-center text-body text-text-primary placeholder:text-text-disabled caret-accent focus:outline-hidden focus-visible:ring-0'
+  const sep = 'text-text-disabled select-none text-body'
 
   return (
-    <div className={`flex items-center bg-surface-2 border border-border rounded-lg px-3 py-2 gap-1 focus-within:border-accent/60 transition-colors ${className}`}>
+    // Composite focus treatment (A7): one .focus-ring around the whole control
+    // when any segment is focused — the same ring/offset the primitives use.
+    <div
+      className={`flex items-center gap-1 rounded-lg border border-border bg-surface-2 px-3 py-2 transition-colors focus-within:border-accent/60 focus-within:outline-hidden focus-within:ring-2 focus-within:ring-accent focus-within:ring-offset-2 focus-within:ring-offset-surface ${className}`}
+    >
       <input
         ref={dayRef}
         type="text"
         inputMode="numeric"
+        aria-label="Day"
         placeholder="DD"
         value={d}
         onChange={handleDay}
@@ -99,11 +109,12 @@ export default function DateInput({ value = '', onChange, className = '' }: Date
         className={`${seg} w-7`}
         maxLength={2}
       />
-      <span className="text-gray-600 select-none text-sm">/</span>
+      <span aria-hidden className={sep}>/</span>
       <input
         ref={monthRef}
         type="text"
         inputMode="numeric"
+        aria-label="Month"
         placeholder="MM"
         value={m}
         onChange={handleMonth}
@@ -112,11 +123,12 @@ export default function DateInput({ value = '', onChange, className = '' }: Date
         className={`${seg} w-7`}
         maxLength={2}
       />
-      <span className="text-gray-600 select-none text-sm">/</span>
+      <span aria-hidden className={sep}>/</span>
       <input
         ref={yearRef}
         type="text"
         inputMode="numeric"
+        aria-label="Year"
         placeholder="YYYY"
         value={y}
         onChange={handleYear}

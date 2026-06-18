@@ -1,5 +1,7 @@
 import { AlertTriangle } from 'lucide-react'
-import { useModalDismiss } from '../hooks/useModalDismiss'
+import { tokens } from '@chudbox/shared'
+import Modal from './ui/Modal'
+import Button from './ui/Button'
 
 interface ConfirmModalProps {
   title: string
@@ -9,27 +11,35 @@ interface ConfirmModalProps {
   confirmLabel?: string
 }
 
+/**
+ * ConfirmModal — the app-wide destructive-confirm primitive. Built on the shared
+ * <Modal> (focus trap / Esc / outside-press / dialog ARIA come free) and <Button>
+ * primitives. The destructive intent is carried by BOTH the danger-token warning
+ * icon and the danger-variant confirm button (never colour alone) — orange stays
+ * reserved for action/alert elsewhere.
+ */
 export default function ConfirmModal({ title, message, onConfirm, onClose, confirmLabel = 'Delete' }: ConfirmModalProps) {
   const handleConfirm = () => { onConfirm(); onClose() }
-  const onBackdropClick = useModalDismiss(onClose)
 
   return (
-    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80" onClick={onBackdropClick}>
-      <div className="modal-content bg-surface border border-border rounded-2xl w-full max-w-sm shadow-2xl p-6 space-y-4">
+    <Modal
+      open
+      onOpenChange={(o) => { if (!o) onClose() }}
+      title={title}
+      size="sm"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button variant="danger" onClick={handleConfirm}>{confirmLabel}</Button>
+        </>
+      }
+    >
+      {message && (
         <div className="flex items-start gap-3">
-          <AlertTriangle size={20} className="text-red-400 mt-0.5 shrink-0" />
-          <div>
-            <h3 className="font-semibold text-white">{title}</h3>
-            {message && <p className="text-sm text-gray-400 mt-1">{message}</p>}
-          </div>
+          <AlertTriangle size={tokens.iconSize.lg} aria-hidden className="mt-0.5 shrink-0 text-danger-fg" />
+          <p className="text-body text-text-secondary">{message}</p>
         </div>
-        <div className="flex gap-3">
-          <button onClick={onClose} className="btn-outline flex-1 justify-center">Cancel</button>
-          <button onClick={handleConfirm} className="btn-danger flex-1 justify-center">
-            {confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>
+      )}
+    </Modal>
   )
 }

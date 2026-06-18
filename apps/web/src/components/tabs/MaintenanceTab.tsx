@@ -1,11 +1,15 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Plus, Trash2, ClipboardList, Pencil, Check, X, Calendar } from 'lucide-react'
+import { tokens } from '@chudbox/shared'
 import useGarageStore from '../../store/useGarageStore'
-import { CURRENCIES, DISTANCE_UNITS, formatMileage, mileagePrefill } from '../../utils/units'
+import { CURRENCIES, DISTANCE_UNITS, formatMileage, formatMoney, mileagePrefill } from '../../utils/units'
 import DateInput from '../DateInput'
 import ConfirmModal from '../ConfirmModal'
 import MileageText from '../MileageText'
+import Button from '../ui/Button'
+import IconButton from '../ui/IconButton'
+import Badge from '../ui/Badge'
 import type { MaintenanceRecord, StoredCar, StoredMaintenance, FieldChangeEvent } from '../../types'
 
 const SERVICES = ['Oil Change', 'Tire Rotation', 'Brake Pads', 'Brake Fluid', 'Coolant Flush', 'Transmission Fluid', 'Spark Plugs', 'Air Filter', 'Cabin Filter', 'Belt / Chain', 'Battery', 'Alignment', 'Tires', 'Inspection', 'Other']
@@ -23,9 +27,14 @@ interface MaintenanceForm {
 
 const emptyForm: MaintenanceForm = { service: '', date: '', mileage: '', cost: '', shop: '', notes: '', nextDueDate: '', nextDueMileage: '' }
 
+const fmtDate = (iso: string): string => new Date(iso + 'T12:00:00').toLocaleDateString()
+
 type MaintenanceFieldSetter = <K extends keyof MaintenanceForm>(key: K) => (eOrVal: string | FieldChangeEvent) => void
 
 interface FormFieldsProps {
+  /** Namespaces field ids so the add-form and an open inline edit-form never
+   *  collide on the same htmlFor/id (both can be mounted at once). */
+  idPrefix: string
   vals: MaintenanceForm
   onChange: MaintenanceFieldSetter
   sym?: string
@@ -33,32 +42,48 @@ interface FormFieldsProps {
 }
 
 // Defined outside MaintenanceTab so React never unmounts/remounts it on re-render
-function FormFields({ vals, onChange, sym = '$', distShort = 'mi' }: FormFieldsProps) {
+function FormFields({ idPrefix, vals, onChange, sym = '$', distShort = 'mi' }: FormFieldsProps) {
+  const id = (suffix: string) => `${idPrefix}-${suffix}`
   return (
     <>
       <div className="grid sm:grid-cols-2 gap-3">
         <div>
-          <label className="label">Service *</label>
-          <input className="input" list="service-list" placeholder="Oil Change" value={vals.service} onChange={onChange('service')} required />
-          <datalist id="service-list">{SERVICES.map((s) => <option key={s} value={s} />)}</datalist>
+          <label htmlFor={id('service')} className="label">Service *</label>
+          <input id={id('service')} className="input" list={id('service-list')} placeholder="Oil Change" value={vals.service} onChange={onChange('service')} required />
+          <datalist id={id('service-list')}>{SERVICES.map((s) => <option key={s} value={s} />)}</datalist>
         </div>
-        <div>
-          <label className="label">Date</label>
+        <div role="group" aria-labelledby={id('date-label')}>
+          <span id={id('date-label')} className="label">Date</span>
           <DateInput value={vals.date} onChange={onChange('date')} />
         </div>
       </div>
       <div className="grid sm:grid-cols-3 gap-3">
-        <div><label className="label">Mileage ({distShort})</label><input className="input" type="number" placeholder="45000" value={vals.mileage} onChange={onChange('mileage')} /></div>
-        <div><label className="label">Cost ({sym})</label><input className="input" type="number" step="0.01" placeholder="0.00" value={vals.cost} onChange={onChange('cost')} /></div>
-        <div><label className="label">Shop</label><input className="input" placeholder="Self / Shop name" value={vals.shop} onChange={onChange('shop')} /></div>
-      </div>
-      <div><label className="label">Notes</label><textarea className="input resize-none" rows={2} value={vals.notes} onChange={onChange('notes')} /></div>
-      <div className="grid sm:grid-cols-2 gap-3">
         <div>
-          <label className="label">Next Due Date</label>
+          <label htmlFor={id('mileage')} className="label">Mileage ({distShort})</label>
+          <input id={id('mileage')} className="input" type="number" placeholder="45000" value={vals.mileage} onChange={onChange('mileage')} />
+        </div>
+        <div>
+          <label htmlFor={id('cost')} className="label">Cost ({sym})</label>
+          <input id={id('cost')} className="input" type="number" step="0.01" placeholder="0.00" value={vals.cost} onChange={onChange('cost')} />
+        </div>
+        <div>
+          <label htmlFor={id('shop')} className="label">Shop</label>
+          <input id={id('shop')} className="input" placeholder="Self / Shop name" value={vals.shop} onChange={onChange('shop')} />
+        </div>
+      </div>
+      <div>
+        <label htmlFor={id('notes')} className="label">Notes</label>
+        <textarea id={id('notes')} className="input resize-none" rows={2} value={vals.notes} onChange={onChange('notes')} />
+      </div>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <div role="group" aria-labelledby={id('nextdate-label')}>
+          <span id={id('nextdate-label')} className="label">Next due date</span>
           <DateInput value={vals.nextDueDate} onChange={onChange('nextDueDate')} />
         </div>
-        <div><label className="label">Next Due Mileage</label><input className="input" type="number" placeholder="50000" value={vals.nextDueMileage} onChange={onChange('nextDueMileage')} /></div>
+        <div>
+          <label htmlFor={id('nextmileage')} className="label">Next due mileage ({distShort})</label>
+          <input id={id('nextmileage')} className="input" type="number" placeholder="50000" value={vals.nextDueMileage} onChange={onChange('nextDueMileage')} />
+        </div>
       </div>
     </>
   )
@@ -127,68 +152,89 @@ export default function MaintenanceTab({ car }: MaintenanceTabProps) {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-5">
-        <div>
-          <h3 className="text-white font-semibold">Maintenance Log</h3>
+      <div className="flex items-center justify-between gap-3 mb-5">
+        <div className="min-w-0">
+          <h3 className="text-subhead font-semibold text-text-primary">Maintenance log</h3>
           {car.maintenance.length > 0 && (
-            <p className="text-xs text-gray-500 mt-0.5">{car.maintenance.length} records · Total spent: {sym}{totalCost.toFixed(2)}</p>
+            <p className="mt-0.5 text-meta text-text-secondary">
+              {car.maintenance.length} records · Total spent:{' '}
+              <span className="text-text-primary font-semibold">{formatMoney(totalCost, currency)}</span>
+            </p>
           )}
         </div>
-        <button onClick={() => setShowForm((v) => !v)} className="btn-primary"><Plus size={14} /> Log Service</button>
+        <Button size="sm" onClick={() => setShowForm((v) => !v)}>
+          <Plus size={tokens.iconSize.sm} /> Log Service
+        </Button>
       </div>
 
       {showForm && (
         <form onSubmit={handleAdd} className="card mb-5 space-y-3 border-accent/30">
-          <h4 className="text-sm font-semibold text-white">New Service Record</h4>
-          <FormFields vals={form} onChange={set} sym={sym} distShort={distShort} />
+          <h4 className="text-body font-semibold text-text-primary">New service record</h4>
+          <FormFields idPrefix="maint-add" vals={form} onChange={set} sym={sym} distShort={distShort} />
           <div className="flex gap-2">
-            <button type="button" onClick={() => setShowForm(false)} className="btn-outline">Cancel</button>
-            <button type="submit" className="btn-primary">Save Record</button>
+            <Button type="button" variant="secondary" size="sm" onClick={() => setShowForm(false)}>Cancel</Button>
+            <Button type="submit" size="sm">Save Record</Button>
           </div>
         </form>
       )}
 
       {car.maintenance.length === 0 ? (
-        <div className="text-center py-16 text-gray-600">
-          <ClipboardList size={36} className="mx-auto mb-3 opacity-40" />
-          <p>No maintenance records yet.</p>
+        <div className="text-center py-16">
+          <ClipboardList size={tokens.iconSize.xl} className="mx-auto mb-3 text-text-disabled" />
+          <p className="text-text-secondary">No maintenance records yet.</p>
         </div>
       ) : (
         <div className="space-y-3">
           {sorted.map((rec) => editId === rec.id ? (
             <div key={rec.id} className="card border-accent/30 space-y-3">
-              <FormFields vals={editForm} onChange={setEdit} sym={sym} distShort={distShort} />
+              <FormFields idPrefix="maint-edit" vals={editForm} onChange={setEdit} sym={sym} distShort={distShort} />
               <div className="flex gap-2">
-                <button onClick={() => setEditId(null)} className="btn-ghost"><X size={14} /> Cancel</button>
-                <button onClick={saveEdit} className="btn-primary"><Check size={14} /> Save</button>
+                <Button variant="secondary" size="sm" onClick={() => setEditId(null)}>
+                  <X size={tokens.iconSize.sm} /> Cancel
+                </Button>
+                <Button size="sm" onClick={saveEdit}>
+                  <Check size={tokens.iconSize.sm} /> Save
+                </Button>
               </div>
             </div>
           ) : (
-            <div key={rec.id} className={`card flex gap-4 items-start hover:border-accent/20 ${isOverdue(rec) ? 'border-red-700/40' : ''}`}>
+            <div key={rec.id} className={`card-row flex gap-4 items-start ${isOverdue(rec) ? 'border-danger-border' : ''}`}>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-medium text-white">{rec.service}</span>
-                  {rec.cost && <span className="text-xs text-accent font-semibold">{sym}{Number(rec.cost).toFixed(2)}</span>}
-                  {isOverdue(rec) && <span className="badge bg-red-900/50 text-red-300 border border-red-700/40">Overdue</span>}
+                  <span className="font-medium text-text-primary">{rec.service}</span>
+                  {/* V5: price = data → text-primary weight, not orange. */}
+                  {rec.cost ? (
+                    <span className="text-meta font-semibold text-text-primary">{formatMoney(Number(rec.cost), currency)}</span>
+                  ) : null}
+                  {isOverdue(rec) && <Badge status="danger">Overdue</Badge>}
                 </div>
-                {rec.notes && <p className="text-xs text-gray-400 mt-1">{rec.notes}</p>}
-                <div className="flex gap-3 mt-1.5 text-xs text-gray-500 flex-wrap">
-                  {rec.date && <span className="flex items-center gap-1"><Calendar size={10} />{new Date(rec.date + 'T12:00:00').toLocaleDateString()}</span>}
+                {rec.notes && <p className="mt-1 text-meta text-text-secondary">{rec.notes}</p>}
+                <div className="mt-1.5 flex flex-wrap gap-3 text-meta text-text-secondary">
+                  {rec.date && (
+                    <span className="flex items-center gap-1">
+                      <Calendar size={tokens.iconSize.xs} className="text-text-tertiary" />
+                      {fmtDate(rec.date)}
+                    </span>
+                  )}
                   <MileageText raw={rec.mileage} miles={rec.mileageMiles} unit={distanceUnit} />
                   {rec.shop && <span>at {rec.shop}</span>}
                 </div>
                 {(rec.nextDueDate || rec.nextDueMileage) && (
-                  <p className="text-xs text-gray-600 mt-1">
+                  <p className="mt-1 text-meta text-text-secondary">
                     Next:{' '}
-                    {rec.nextDueDate ? new Date(rec.nextDueDate + 'T12:00:00').toLocaleDateString() : ''}
+                    {rec.nextDueDate ? fmtDate(rec.nextDueDate) : ''}
                     {rec.nextDueDate && rec.nextDueMileage ? ' / ' : ''}
                     {formatMileage(rec.nextDueMileage, rec.nextDueMileageMiles, distanceUnit) ?? ''}
                   </p>
                 )}
               </div>
               <div className="flex gap-1 shrink-0">
-                <button onClick={() => startEdit(rec)} className="btn-ghost"><Pencil size={14} /></button>
-                <button onClick={() => setConfirmRec(rec)} className="btn-ghost text-red-500 hover:text-red-400"><Trash2 size={14} /></button>
+                <IconButton aria-label={`Edit "${rec.service}"`} title="Edit" onClick={() => startEdit(rec)}>
+                  <Pencil size={tokens.iconSize.sm} />
+                </IconButton>
+                <IconButton aria-label={`Delete "${rec.service}"`} title="Delete" onClick={() => setConfirmRec(rec)}>
+                  <Trash2 size={tokens.iconSize.sm} />
+                </IconButton>
               </div>
             </div>
           ))}

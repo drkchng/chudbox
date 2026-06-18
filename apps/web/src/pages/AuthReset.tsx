@@ -2,10 +2,12 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { AlertTriangle, Check, KeyRound } from 'lucide-react'
+import { tokens } from '@chudbox/shared'
 import { authClient } from '../auth/client'
 import { authErrorMessage, callAuth, MIN_PASSWORD_LENGTH } from '../auth/errors'
 import { resetTokenFromParams } from '../auth/landingParams'
 import AuthPageShell from '../components/auth/AuthPageShell'
+import Button from '../components/ui/Button'
 import SignInModal from '../components/auth/SignInModal'
 import ForgotPasswordModal from '../components/auth/ForgotPasswordModal'
 
@@ -78,19 +80,17 @@ export default function AuthReset() {
       <AuthPageShell>
         <div className="space-y-4">
           <div className="flex items-start gap-3">
-            <AlertTriangle size={20} className="text-yellow-400 mt-0.5 shrink-0" />
+            <AlertTriangle size={tokens.iconSize.lg} className="mt-0.5 shrink-0 text-warning-fg" aria-hidden />
             <div>
-              <h1 className="font-semibold text-white">Reset link invalid</h1>
-              <p className="text-sm text-gray-400 mt-1">
+              <h1 className="text-subhead font-semibold text-text-primary">Reset link invalid</h1>
+              <p className="mt-1 text-body text-text-secondary">
                 This password-reset link is invalid or has expired. Request a fresh one and try again.
               </p>
             </div>
           </div>
-          <button onClick={() => setModal('forgot')} className="btn-primary w-full justify-center">
-            Request a new link
-          </button>
-          <p className="text-xs text-gray-400 text-center">
-            <Link to="/" className="hover:text-accent transition-colors">Back to the garage</Link>
+          <Button onClick={() => setModal('forgot')} className="w-full">Request a new link</Button>
+          <p className="text-center text-meta text-text-secondary">
+            <Link to="/" className="transition-colors hover:text-accent">Back to the garage</Link>
           </p>
         </div>
         {modals}
@@ -103,17 +103,15 @@ export default function AuthReset() {
       <AuthPageShell>
         <div className="space-y-4">
           <div className="flex items-start gap-3">
-            <Check size={20} className="text-green-300 mt-0.5 shrink-0" />
+            <Check size={tokens.iconSize.lg} className="mt-0.5 shrink-0 text-success-fg" aria-hidden />
             <div>
-              <h1 className="font-semibold text-white">Password updated</h1>
-              <p className="text-sm text-gray-400 mt-1">You can sign in with your new password now.</p>
+              <h1 className="text-subhead font-semibold text-text-primary">Password updated</h1>
+              <p className="mt-1 text-body text-text-secondary">You can sign in with your new password now.</p>
             </div>
           </div>
-          <button onClick={() => setModal('signin')} className="btn-primary w-full justify-center" autoFocus>
-            Sign in
-          </button>
-          <p className="text-xs text-gray-400 text-center">
-            <Link to="/" className="hover:text-accent transition-colors">Back to the garage</Link>
+          <Button onClick={() => setModal('signin')} className="w-full" autoFocus>Sign in</Button>
+          <p className="text-center text-meta text-text-secondary">
+            <Link to="/" className="transition-colors hover:text-accent">Back to the garage</Link>
           </p>
         </div>
         {modals}
@@ -125,8 +123,8 @@ export default function AuthReset() {
     <AuthPageShell>
       <div className="space-y-5">
         <div className="flex items-center gap-2">
-          <KeyRound size={16} className="text-accent" />
-          <h1 className="font-semibold text-white">Choose a new password</h1>
+          <KeyRound size={tokens.iconSize.md} className="text-text-tertiary" aria-hidden />
+          <h1 className="text-subhead font-semibold text-text-primary">Choose a new password</h1>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -144,7 +142,7 @@ export default function AuthReset() {
               autoFocus
               aria-describedby="reset-password-hint"
             />
-            <p id="reset-password-hint" className="text-xs text-gray-400 mt-1">
+            <p id="reset-password-hint" className="mt-1 text-meta text-text-secondary">
               At least {MIN_PASSWORD_LENGTH} characters.
             </p>
           </div>
@@ -163,7 +161,7 @@ export default function AuthReset() {
               aria-describedby={mismatch ? 'reset-confirm-error' : undefined}
             />
             {mismatch && (
-              <p id="reset-confirm-error" role="alert" className="text-xs text-red-300 mt-1">
+              <p id="reset-confirm-error" role="alert" className="mt-1 text-meta text-danger-fg">
                 Passwords don&apos;t match.
               </p>
             )}
@@ -172,19 +170,17 @@ export default function AuthReset() {
           {error && (
             <div
               role="alert"
-              className="flex items-start gap-2 rounded-lg border border-red-700/40 bg-red-900/30 px-3 py-2.5 text-sm text-red-300"
+              className="flex items-start gap-2 rounded-md border border-danger-border bg-danger px-3 py-2.5 text-body text-danger-fg"
             >
-              <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+              <AlertTriangle size={tokens.iconSize.sm} className="mt-0.5 shrink-0" aria-hidden />
               <p>{error}</p>
             </div>
           )}
 
-          <button type="submit" disabled={busy} className="btn-primary w-full justify-center disabled:opacity-60">
-            {busy ? 'Updating…' : 'Set new password'}
-          </button>
+          <Button type="submit" loading={busy} className="w-full">Set new password</Button>
 
-          <p className="text-xs text-gray-400 text-center">
-            <Link to="/" className="hover:text-accent transition-colors">Back to the garage</Link>
+          <p className="text-center text-meta text-text-secondary">
+            <Link to="/" className="transition-colors hover:text-accent">Back to the garage</Link>
           </p>
         </form>
       </div>

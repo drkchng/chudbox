@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
 import { useParams } from 'react-router-dom'
 import { Loader2, LinkIcon, Ban, WifiOff } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import { tokens } from '@chudbox/shared'
 import { fetchShareSnapshot, recordShareView } from '../share/shareClient'
 import type { SnapshotResult } from '../share/shareClient'
 import { applyThemeFromSettings, captureThemeVars, restoreThemeVars } from '../utils/themes'
-import ShareCarView from '../components/share/ShareCarView'
+import ShareCarView, { ShareShell } from '../components/share/ShareCarView'
 import ShareCarViewFull from '../components/share/ShareCarViewFull'
+import Button from '../components/ui/Button'
 
 /**
  * Public route for `/share/:token` (clean URL). Fetches the curated snapshot and renders a
@@ -13,15 +17,37 @@ import ShareCarViewFull from '../components/share/ShareCarViewFull'
  * fully logged-out; everything it needs comes from the token in the URL. Maps
  * the server's 404 (invalid) / 410 (revoked or expired) into distinct, friendly
  * messages, and handles loading + network errors.
+ *
+ * Terminal states reuse the share <ShareShell> chrome (logo-as-home nav + soft
+ * "make your own garage" CTA, DEC-9) so even a dead link still offers a way home
+ * and doubles as a discovery hook.
  */
 
 type State = { phase: 'loading' } | { phase: 'done'; result: SnapshotResult }
 
-function Centered({ children }: { children: React.ReactNode }) {
+/** A centered message inside the public share chrome (nav + soft CTA footer). */
+function StatusScreen({
+  icon: Icon,
+  title,
+  children,
+  action,
+}: {
+  icon: LucideIcon
+  title: string
+  children: ReactNode
+  action?: ReactNode
+}) {
   return (
-    <div className="min-h-screen bg-dark flex items-center justify-center p-6">
-      <div className="text-center max-w-sm">{children}</div>
-    </div>
+    <ShareShell>
+      <div className="flex flex-1 items-center justify-center p-6">
+        <div className="max-w-sm text-center">
+          <Icon size={tokens.iconSize.xl} className="mx-auto mb-3 text-text-tertiary" aria-hidden />
+          <h1 className="mb-1.5 text-subhead font-semibold text-text-primary">{title}</h1>
+          <p className="text-body text-text-secondary">{children}</p>
+          {action && <div className="mt-5 flex justify-center">{action}</div>}
+        </div>
+      </div>
+    </ShareShell>
   )
 }
 
@@ -67,20 +93,20 @@ export default function SharePage() {
   // rather than via a synchronous setState in the effect.
   if (!token) {
     return (
-      <Centered>
-        <LinkIcon size={32} className="mx-auto mb-3 text-gray-600" />
-        <h1 className="text-lg font-semibold text-white mb-1.5">Link not found</h1>
-        <p className="text-sm text-gray-400">This share link is invalid or has been removed.</p>
-      </Centered>
+      <StatusScreen icon={LinkIcon} title="Link not found">
+        This share link is invalid or has been removed.
+      </StatusScreen>
     )
   }
 
   if (state.phase === 'loading') {
     return (
-      <Centered>
-        <Loader2 size={28} className="mx-auto mb-3 text-accent animate-spin" />
-        <p className="text-gray-400 text-sm">Loading shared build…</p>
-      </Centered>
+      <div className="flex min-h-screen items-center justify-center bg-dark p-6">
+        <div className="text-center">
+          <Loader2 size={tokens.iconSize.lg} className="mx-auto mb-3 animate-spin text-accent" aria-hidden />
+          <p className="text-body text-text-secondary">Loading shared build…</p>
+        </div>
+      </div>
     )
   }
 
@@ -100,35 +126,32 @@ export default function SharePage() {
 
   if (result.kind === 'not-found') {
     return (
-      <Centered>
-        <LinkIcon size={32} className="mx-auto mb-3 text-gray-600" />
-        <h1 className="text-lg font-semibold text-white mb-1.5">Link not found</h1>
-        <p className="text-sm text-gray-400">
-          This share link is invalid or has been removed. Double-check the URL.
-        </p>
-      </Centered>
+      <StatusScreen icon={LinkIcon} title="Link not found">
+        This share link is invalid or has been removed. Double-check the URL.
+      </StatusScreen>
     )
   }
 
   if (result.kind === 'gone') {
     return (
-      <Centered>
-        <Ban size={32} className="mx-auto mb-3 text-gray-600" />
-        <h1 className="text-lg font-semibold text-white mb-1.5">Link unavailable</h1>
-        <p className="text-sm text-gray-400">
-          This shared build has been revoked or has expired and is no longer viewable.
-        </p>
-      </Centered>
+      <StatusScreen icon={Ban} title="Link unavailable">
+        This shared build has been revoked or has expired and is no longer viewable.
+      </StatusScreen>
     )
   }
 
   // result.kind === 'error'
   return (
-    <Centered>
-      <WifiOff size={32} className="mx-auto mb-3 text-gray-600" />
-      <h1 className="text-lg font-semibold text-white mb-1.5">Couldn't load this build</h1>
-      <p className="text-sm text-gray-400 mb-4">{result.message}</p>
-      <button onClick={() => window.location.reload()} className="btn-outline">Try again</button>
-    </Centered>
+    <StatusScreen
+      icon={WifiOff}
+      title="Couldn't load this build"
+      action={
+        <Button variant="secondary" onClick={() => window.location.reload()}>
+          Try again
+        </Button>
+      }
+    >
+      {result.message}
+    </StatusScreen>
   )
 }

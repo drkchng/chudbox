@@ -41,10 +41,12 @@ export default function CarHero({
   return (
     <div className="relative h-56 bg-surface-2 overflow-hidden">
       {coverSrc ? (
-        <img src={coverSrc} alt="cover" className="w-full h-full object-cover opacity-60" />
+        // A16: the cover is purely decorative (the <h1> already names the car) →
+        // empty alt so screen readers skip it rather than announce "cover".
+        <img src={coverSrc} alt="" className="w-full h-full object-cover opacity-60" />
       ) : (
         <div className="w-full h-full flex items-center justify-center">
-          <Car size={64} className="text-gray-700" />
+          <Car size={64} className="text-text-disabled" />
         </div>
       )}
       <div className="absolute inset-0 bg-gradient-to-t from-dark via-dark/60 to-transparent" />
@@ -55,7 +57,7 @@ export default function CarHero({
       {/* Car info */}
       <div className="absolute bottom-5 left-6">
         <div className="flex items-center gap-2 mb-1.5">{meta}</div>
-        <h1 className="text-3xl font-bold text-white leading-tight">{title}</h1>
+        <h1 className="text-hero font-bold text-text-primary">{title}</h1>
         {subline && <div className="flex items-center gap-3 mt-1 flex-wrap">{subline}</div>}
         {belowTitle}
       </div>

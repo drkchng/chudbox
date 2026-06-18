@@ -76,7 +76,7 @@ export async function openCar(page: Page, car: NewCar): Promise<void> {
 
 /** Log a mod on the open Car profile and wait for it to appear in the list. */
 export async function addMod(page: Page, name: string): Promise<void> {
-  await page.getByRole('button', { name: 'Mods', exact: true }).click()
+  await page.getByRole('tab', { name: 'Mods', exact: true }).click()
   const nameField = page.getByPlaceholder('Coilover Kit')
   // The add-mod form may already be open + focused (DEC-4 log-first auto-opens
   // it right after a car is created). Only toggle it open if it isn't showing,
