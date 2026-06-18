@@ -193,6 +193,11 @@ const carArb: fc.Arbitrary<Car> = uniqueById(photoArb).chain((photos) =>
     // DEC-13 VIN: ABSENT or a non-empty value ('' round-trips to absent, pinned
     // separately). DEC-6 bannerPhoto + DEC-16 mileageLog (absent or non-empty).
     vin: fc.option(fc.string({ minLength: 1 }), { nil: undefined }),
+    // DEC-19 plate: ABSENT or non-empty ('' ⇒ absent, pinned separately).
+    // showPlate: ABSENT or true (false ⇔ absent, like a null bannerPhoto — the
+    // hidden default never materializes a cell), pinned separately.
+    plate: fc.option(fc.string({ minLength: 1 }), { nil: undefined }),
+    showPlate: fc.option(fc.constant(true), { nil: undefined }),
     coverPhoto: coverPhotoArb(photos),
     bannerPhoto: bannerPhotoArb(photos),
     createdAt: strArb,
@@ -471,6 +476,8 @@ describe('new cells + tables (DEC-6/13/16/11) round trip + omission', () => {
       ...minimalCar({}),
       id: 'car-x',
       vin: '1HGCM82633A004352',
+      plate: 'GR-SUPRA',
+      showPlate: true,
       coverPhoto: 'p1',
       bannerPhoto: 'p2',
       photos: [
@@ -493,6 +500,9 @@ describe('new cells + tables (DEC-6/13/16/11) round trip + omission', () => {
     expect(joinCar(flat)).toEqual(car)
 
     expect(flat.car.vin).toBe('1HGCM82633A004352')
+    // DEC-19: plate + showPlate materialize cells only when present/opted-in.
+    expect(flat.car.plate).toBe('GR-SUPRA')
+    expect(flat.car.showPlate).toBe(true)
     expect(flat.car.bannerPhoto).toBe('p2')
     // DEC-6: General photo has NO source/sourceId cell; item photo carries both.
     expect('source' in flat.photos['p1']!).toBe(false)
@@ -509,18 +519,24 @@ describe('new cells + tables (DEC-6/13/16/11) round trip + omission', () => {
     const car: Car = {
       ...minimalCar({}),
       vin: '', // blank ⇒ no cell (absent ⇔ '')
+      plate: '', // blank ⇒ no cell (absent ⇔ '')
+      showPlate: false, // hidden default ⇒ no cell (absent ⇔ false)
       bannerPhoto: null, // explicit null ⇒ no cell
       photos: [{ id: 'p1', dataUrl: 'data:,a', caption: '', uploadedAt: 'x', source: 'car' }], // General
       mileageLog: [],
     }
     const flat = flattenCar(car, { currency: 'USD', distanceUnit: 'mi' })
     expect('vin' in flat.car).toBe(false)
+    expect('plate' in flat.car).toBe(false)
+    expect('showPlate' in flat.car).toBe(false)
     expect('bannerPhoto' in flat.car).toBe(false)
     expect('source' in flat.photos['p1']!).toBe(false) // 'car' is never materialized
     expect(Object.keys(flat.mileage)).toHaveLength(0)
 
     const joined = joinCar(flat)
     expect('vin' in joined).toBe(false)
+    expect('plate' in joined).toBe(false)
+    expect('showPlate' in joined).toBe(false)
     expect('bannerPhoto' in joined).toBe(false)
     expect('mileageLog' in joined).toBe(false)
     expect(joined.photos[0]!.source).toBeUndefined()

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { X, Share2, Copy, Check, Link2, Trash2, Plus, AlertTriangle, Clock, Eye, Images, Layers } from 'lucide-react'
+import { X, Share2, Copy, Check, Link2, Trash2, Plus, AlertTriangle, Clock, Eye, Images, Layers, Tag } from 'lucide-react'
 import DateInput from './DateInput'
 import ConfirmModal from './ConfirmModal'
 import Button from './ui/Button'
@@ -29,6 +29,38 @@ const fmtDate = (epochSeconds: number): string =>
   })
 
 type LinkState = 'revoked' | 'expired' | 'active'
+
+// DEC-14 — shares have a PURPOSE (presets, not à-la-carte). The purpose IS the
+// third value of the server-side `scope` discriminant: Showcase = 'curated',
+// For-Sale Listing = 'listing', Everything = 'full'. The snapshot gating server-
+// side enforces which private fields each preset exposes; this picker only
+// records the owner's choice.
+interface PurposeOption {
+  scope: ShareScope
+  label: string
+  blurb: string
+  icon: typeof Images
+}
+const PURPOSES: PurposeOption[] = [
+  {
+    scope: 'curated',
+    label: 'Showcase',
+    blurb: 'Photos, mods, maintenance. No prices, shops, notes, or lists.',
+    icon: Images,
+  },
+  {
+    scope: 'listing',
+    label: 'For-Sale Listing',
+    blurb: 'Showcase plus the asking price, trade wishes, and the VIN for buyers.',
+    icon: Tag,
+  },
+  {
+    scope: 'full',
+    label: 'Everything (read-only)',
+    blurb: 'Adds your wishlist, to-dos, issues, costs, shops & notes.',
+    icon: Layers,
+  },
+]
 
 function linkState(link: ShareLinkMeta, nowSeconds: number): LinkState {
   if (link.revokedAt != null) return 'revoked'
@@ -134,51 +166,44 @@ export default function ShareDialog({ carId, carLabel, onClose }: ShareDialogPro
 
         <div className="overflow-y-auto px-5 py-4 space-y-5">
           <p className="text-body text-text-secondary">
-            Create a public, read-only page for <span className="text-text-primary">{carLabel}</span>. Choose what it
-            shows — the curated build showcase, or everything you see (read-only).
+            Create a public, read-only page for <span className="text-text-primary">{carLabel}</span>. Pick a
+            purpose — it sets what the page (and its link preview) shows.
           </p>
 
           {/* Create */}
           <div className="card space-y-3 border-accent/30">
             <div>
-              <span className="label">What can viewers see?</span>
-              <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Share visibility">
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={scope === 'curated'}
-                  onClick={() => setScope('curated')}
-                  className={`flex items-start gap-2 rounded-xl border px-3 py-2.5 text-left transition-colors ${
-                    scope === 'curated'
-                      ? 'border-accent bg-accent/10'
-                      : 'border-border hover:border-accent/40'
-                  }`}
-                >
-                  <Images size={16} aria-hidden className={`mt-0.5 ${scope === 'curated' ? 'text-accent' : 'text-text-tertiary'}`} />
-                  <span>
-                    <span className="block text-body font-medium text-text-primary">Build showcase</span>
-                    <span className="block text-meta text-text-secondary">Photos, mods, maintenance. No prices, shops, notes, or lists.</span>
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={scope === 'full'}
-                  onClick={() => setScope('full')}
-                  className={`flex items-start gap-2 rounded-xl border px-3 py-2.5 text-left transition-colors ${
-                    scope === 'full'
-                      ? 'border-accent bg-accent/10'
-                      : 'border-border hover:border-accent/40'
-                  }`}
-                >
-                  <Layers size={16} aria-hidden className={`mt-0.5 ${scope === 'full' ? 'text-accent' : 'text-text-tertiary'}`} />
-                  <span>
-                    <span className="block text-body font-medium text-text-primary">Everything (read-only)</span>
-                    <span className="block text-meta text-text-secondary">Adds your wishlist, to-dos, issues, costs, shops &amp; notes.</span>
-                  </span>
-                </button>
+              <span className="label">What is this share for?</span>
+              <div className="grid grid-cols-1 gap-2" role="radiogroup" aria-label="Share purpose">
+                {PURPOSES.map(({ scope: value, label, blurb, icon: Icon }) => {
+                  const active = scope === value
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => setScope(value)}
+                      className={`flex items-start gap-2 rounded-xl border px-3 py-2.5 text-left transition-colors ${
+                        active ? 'border-accent bg-accent/10' : 'border-border hover:border-accent/40'
+                      }`}
+                    >
+                      <Icon size={16} aria-hidden className={`mt-0.5 ${active ? 'text-accent' : 'text-text-tertiary'}`} />
+                      <span>
+                        <span className="block text-body font-medium text-text-primary">{label}</span>
+                        <span className="block text-meta text-text-secondary">{blurb}</span>
+                      </span>
+                    </button>
+                  )
+                })}
               </div>
             </div>
+            {scope === 'listing' && (
+              <p className="text-meta text-text-secondary flex items-start gap-1.5">
+                <Tag size={12} aria-hidden className="mt-0.5 shrink-0" /> Buyers will see the asking price, any trade
+                wishes, and the VIN. Turn on your display name in Settings so they know who&apos;s selling.
+              </p>
+            )}
             {scope === 'full' && (
               <p className="text-meta text-warning-fg flex items-center gap-1.5">
                 <AlertTriangle size={12} aria-hidden /> Anyone with this link sees your prices, shops, notes and private lists for this car.
@@ -249,6 +274,8 @@ export default function ShareDialog({ carId, carLabel, onClose }: ShareDialogPro
                           {state === 'active' && <Badge status="success">Active</Badge>}
                           {link.scope === 'full' ? (
                             <Badge status="warning" icon={Layers} title="Shares everything (read-only)">Everything</Badge>
+                          ) : link.scope === 'listing' ? (
+                            <Badge status="info" icon={Tag} title="For-Sale listing (price, trade & VIN)">For sale</Badge>
                           ) : (
                             <Badge status="neutral" icon={Images} title="Curated build showcase">Showcase</Badge>
                           )}

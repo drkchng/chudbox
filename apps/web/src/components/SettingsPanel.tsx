@@ -4,6 +4,7 @@ import { X, DollarSign, Gauge, Palette, Check, Pipette, DatabaseBackup, Download
 import useGarageStore, { exportBackup, importBackup, parseBackupFile } from '../store/useGarageStore'
 import type { ParsedBackup } from '../store/useGarageStore'
 import AccountSection from './auth/AccountSection'
+import ShareIdentitySection from './auth/ShareIdentitySection'
 import IconButton from './ui/IconButton'
 import Button from './ui/Button'
 import Modal from './ui/Modal'
@@ -255,6 +256,9 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
 
           {/* Account (optional) */}
           <AccountSection />
+
+          {/* DEC-10 — display name + "show my name on shares" consent. */}
+          <ShareIdentitySection />
 
           {/* DEC-12 — Backup & data: manual export/import, account-free. */}
           <section>

@@ -173,6 +173,19 @@ export interface CarDetails {
    * default; surfaced publicly only under scope='listing'.
    */
   vin?: string
+  /**
+   * DEC-19 license plate — store-as-entered free text; '' / absent ⇔ no plate.
+   * PRIVATE by default; surfaced publicly only when `showPlate` is the owner's
+   * explicit opt-in (the INVERSE of VIN: sellers hide plates, enthusiasts flaunt
+   * vanity plates on a showcase). Exposure is owner-CHOICE, not purpose-gated.
+   */
+  plate?: string
+  /**
+   * DEC-19 owner opt-in to expose the plate on shares. Absent/false ⇔ hidden
+   * (the default — plate stays private). When true, the plate appears on ALL
+   * scopes (curated/listing/full) via the same key-by-key allowlist as VIN.
+   */
+  showPlate?: boolean
 }
 
 export interface Car extends CarDetails {

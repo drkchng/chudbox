@@ -298,7 +298,7 @@ export function PhotoGrid({ photos, token }: { photos: PublicPhoto[]; token: str
 
 // ── Curated detail lists ──────────────────────────────────────────────────────
 
-function ModList({ mods }: { mods: PublicMod[] }) {
+export function ModList({ mods }: { mods: PublicMod[] }) {
   if (mods.length === 0) {
     return <EmptyState icon={Wrench}>No modifications shared.</EmptyState>
   }
@@ -335,7 +335,7 @@ function ModList({ mods }: { mods: PublicMod[] }) {
   )
 }
 
-function MaintenanceList({ records, unit }: { records: PublicMaintenance[]; unit: DistanceUnitCode }) {
+export function MaintenanceList({ records, unit }: { records: PublicMaintenance[]; unit: DistanceUnitCode }) {
   if (records.length === 0) {
     return <EmptyState icon={ClipboardList}>No maintenance records shared.</EmptyState>
   }
@@ -400,6 +400,11 @@ export default function ShareCarView({ car, token }: ShareCarViewProps) {
             <Badge status={STATUS_ROLE[car.status] ?? 'neutral'}>
               {(STATUS_CONFIG[car.status] ?? STATUS_CONFIG.current).label}
             </Badge>
+            {/* DEC-10: owner display name — present ONLY when the server resolved
+                consent on (the snapshot is the gate; render iff it carries it). */}
+            {car.ownerName && (
+              <span className="text-meta text-text-secondary">by {car.ownerName}</span>
+            )}
             {car.purchaseDate && (
               <span className="text-meta text-text-secondary">Owned since {fmtDay(car.purchaseDate)}</span>
             )}
@@ -426,6 +431,15 @@ export default function ShareCarView({ car, token }: ShareCarViewProps) {
               <span className="text-body italic text-text-secondary">· “{car.nickname}”</span>
             )}
           </>
+        }
+        belowTitle={
+          /* DEC-19: the plate appears ONLY when the owner opted in (the snapshot
+             carries it iff showPlate was on) — flaunt-the-vanity-plate case. */
+          car.plate ? (
+            <p className="mt-1.5 text-meta text-text-tertiary">
+              Plate <span className="font-mono text-text-secondary">{car.plate}</span>
+            </p>
+          ) : undefined
         }
       />
 

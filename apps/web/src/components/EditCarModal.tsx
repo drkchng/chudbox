@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import useGarageStore from '../store/useGarageStore'
 import DateInput from './DateInput'
+import CarIdentityFields from './CarIdentityFields'
 import Modal from './ui/Modal'
 import Button from './ui/Button'
 import type { CarDetails, CarStoredStatus, StoredCar, FieldChangeEvent } from '../types'
@@ -32,6 +33,7 @@ export default function EditCarModal({ car, onClose }: EditCarModalProps) {
     trim: car.trim || '', color: car.color || '', nickname: car.nickname || '',
     purchaseDate: car.purchaseDate || '', saleDate: car.saleDate || '',
     status: car.status || 'current', salePrice: car.salePrice || '', tradeFor: car.tradeFor || '',
+    vin: car.vin ?? '', plate: car.plate ?? '', showPlate: car.showPlate ?? false,
   })
 
   const set =
@@ -163,6 +165,17 @@ export default function EditCarModal({ car, onClose }: EditCarModalProps) {
             </div>
           )}
         </div>
+
+        {/* DEC-13 VIN + DEC-19 plate — private identity fields. */}
+        <CarIdentityFields
+          idPrefix="edit-car"
+          vin={form.vin ?? ''}
+          plate={form.plate ?? ''}
+          showPlate={form.showPlate ?? false}
+          onVin={set('vin')}
+          onPlate={set('plate')}
+          onShowPlate={(v) => setForm((f) => ({ ...f, showPlate: v }))}
+        />
       </form>
     </Modal>
   )

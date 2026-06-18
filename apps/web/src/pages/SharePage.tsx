@@ -9,6 +9,7 @@ import type { SnapshotResult } from '../share/shareClient'
 import { applyThemeFromSettings, captureThemeVars, restoreThemeVars } from '../utils/themes'
 import ShareCarView, { ShareShell } from '../components/share/ShareCarView'
 import ShareCarViewFull from '../components/share/ShareCarViewFull'
+import ShareCarViewListing from '../components/share/ShareCarViewListing'
 import Button from '../components/ui/Button'
 
 /**
@@ -115,10 +116,12 @@ export default function SharePage() {
   if (result.kind === 'ok') {
     // The server tells us, via the validated body's discriminant, which view
     // this link grants — it is read SERVER-SIDE from the stored link, never
-    // chosen by this client. 'full' renders the owner-equivalent read-only
-    // page; everything else stays the curated showcase.
+    // chosen by this client. 'full' renders the owner-equivalent read-only page,
+    // 'listing' the For-Sale view (DEC-14), everything else the curated showcase.
     return result.data.scope === 'full' ? (
       <ShareCarViewFull car={result.data.car} token={token} />
+    ) : result.data.scope === 'listing' ? (
+      <ShareCarViewListing car={result.data.car} token={token} />
     ) : (
       <ShareCarView car={result.data.car} token={token} />
     )

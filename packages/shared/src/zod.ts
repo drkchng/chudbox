@@ -139,3 +139,47 @@ export const createShareRequestSchema = z.strictObject({
 })
 
 export type CreateShareRequestInput = z.infer<typeof createShareRequestSchema>
+
+// ── Account display settings (DEC-10) ───────────────────────
+// Update the owner's display NAME (= user.name) and/or the `show_owner_name`
+// consent on the D1 user row. Both fields are OPTIONAL (a partial update — omit
+// one to leave it unchanged); `.refine` rejects an empty `{}` so a no-op write
+// never reaches D1. `name` is trimmed + bounded and must be NON-EMPTY (the
+// account name is NOT NULL in D1, and an empty name reads as "no name" on shares
+// — clearing the name is what the consent toggle is for, not a blank string).
+export const updateAccountDisplaySchema = z
+  .strictObject({
+    name: z.string().trim().min(1, 'Enter a display name').max(120).optional(),
+    showOwnerName: z.boolean().optional(),
+  })
+  .refine((body) => body.name !== undefined || body.showOwnerName !== undefined, {
+    message: 'Provide a name and/or showOwnerName to update',
+  })
+
+export type UpdateAccountDisplayInput = z.infer<typeof updateAccountDisplaySchema>
+
+// ── DEC-13 VIN — LIGHT validation (a nudge, NOT a block) ────
+// A modern VIN is 17 characters of the ISO-3779 charset (which excludes I, O and
+// Q to avoid confusion with 1 and 0). We store the VIN verbatim as untrusted
+// free text (snapshots render it as text — no injection surface), so this is
+// purely an inline "this doesn't look like a VIN" HINT for the car form: it
+// never rejects a save. RN-safe (pure string logic, no DOM).
+export const VIN_LENGTH = 17
+const VIN_CHARSET = /^[A-HJ-NPR-Z0-9]+$/
+
+/**
+ * A soft, human-readable warning for a VIN that doesn't look right, or null when
+ * it's blank (no VIN) or plausibly a VIN. Trims + upper-cases before checking,
+ * mirroring how a real VIN is normalized — the caller still stores the raw input.
+ */
+export function vinHint(raw: string): string | null {
+  const value = raw.trim().toUpperCase()
+  if (value === '') return null
+  if (value.length !== VIN_LENGTH) {
+    return `A VIN is usually ${VIN_LENGTH} characters — this is ${value.length}.`
+  }
+  if (!VIN_CHARSET.test(value)) {
+    return 'A VIN uses letters and numbers only (no I, O, or Q).'
+  }
+  return null
+}

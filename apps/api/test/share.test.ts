@@ -116,8 +116,11 @@ beforeAll(async () => {
 })
 
 // ── Fully-populated car (secrets in every EXCLUDED field) ───
-function makeShareCar({ carId, photoId }: Ids): Car {
+// `extra` lets a test override car fields (e.g. DEC-19 plate/showPlate) without
+// disturbing the shared secret-bearing fixture every other test relies on.
+function makeShareCar({ carId, photoId }: Ids, extra: Partial<Car> = {}): Car {
   return {
+    ...{
     id: carId,
     year: '1991',
     make: 'KEEP_make',
@@ -208,6 +211,8 @@ function makeShareCar({ carId, photoId }: Ids): Car {
         createdAt: 'x',
       },
     ],
+    },
+    ...extra,
   }
 }
 
@@ -227,7 +232,10 @@ async function seedStore(store: MergeableStore): Promise<void> {
 /** Upload the real photo bytes to R2 (so the share image serves) and seed the
  * fully-populated car — with the photo row carrying the matching r2Key — into
  * the caller's DO. Returns the r2Key for absence assertions. */
-async function uploadAndSeedCar({ carId, photoId }: Ids): Promise<{ r2Key: string }> {
+async function uploadAndSeedCar(
+  { carId, photoId }: Ids,
+  extra: Partial<Car> = {},
+): Promise<{ r2Key: string }> {
   const r2Key = buildPhotoKey({ userId: session.userId, carId, photoId, ext: 'webp' })
   const fd = new FormData()
   fd.append(UPLOAD_FILE_FIELD, new Blob([WEBP_BYTES], { type: 'image/webp' }), 'p')
@@ -244,7 +252,7 @@ async function uploadAndSeedCar({ carId, photoId }: Ids): Promise<{ r2Key: strin
   expect(((await up.json()) as UploadResponse).r2Key).toBe(r2Key)
 
   const store = createGarageStore('client-share')
-  const flat = flattenCar(makeShareCar({ carId, photoId }), { currency: 'USD', distanceUnit: 'mi' })
+  const flat = flattenCar(makeShareCar({ carId, photoId }, extra), { currency: 'USD', distanceUnit: 'mi' })
   store.setRow('cars', flat.carId, flat.car)
   for (const [table, rows] of [
     ['photos', flat.photos],
@@ -965,5 +973,45 @@ describe('GET public snapshot — listing scope + owner name', () => {
         .bind(session.userId)
         .run()
     }
+  })
+
+  // ── DEC-19 license plate — owner-opt-in, exposed on EVERY scope ───────────
+  const PLATE = 'GR-SUPRA-7'
+
+  it('exposes the plate on curated, listing AND full when showPlate is ON (DEC-19)', async () => {
+    const ids = freshIds()
+    await uploadAndSeedCar(ids, { plate: PLATE, showPlate: true })
+    for (const scope of ['curated', 'listing', 'full'] as const) {
+      const link = await createScopedLink(ids.carId, scope)
+      const body = (await (
+        await SELF.fetch(`${BASE}${shareSnapshotPath(link.token)}`)
+      ).json()) as ShareSnapshotResponse
+      expect(body.scope).toBe(scope)
+      expect(
+        (body.car as unknown as Record<string, unknown>).plate,
+        `${scope} should expose the opted-in plate`,
+      ).toBe(PLATE)
+    }
+  })
+
+  it('WITHHOLDS the plate on every scope when showPlate is OFF (DEC-19 default)', async () => {
+    const ids = freshIds()
+    await uploadAndSeedCar(ids, { plate: PLATE, showPlate: false })
+    for (const scope of ['curated', 'listing', 'full'] as const) {
+      const link = await createScopedLink(ids.carId, scope)
+      const text = await (await SELF.fetch(`${BASE}${shareSnapshotPath(link.token)}`)).text()
+      expect(text, `${scope} leaked a private (showPlate off) plate`).not.toContain(PLATE)
+    }
+  })
+
+  it('keeps the plate out of the OG / crawler document even when showPlate is ON', async () => {
+    const ids = freshIds()
+    await uploadAndSeedCar(ids, { plate: PLATE, showPlate: true })
+    const link = await createScopedLink(ids.carId, 'listing')
+    // The /share/:token DOCUMENT is the most-cached, session-less surface — its
+    // curated OG meta must never carry the plate (or the VIN).
+    const html = await (await SELF.fetch(`${BASE}/share/${link.token}`)).text()
+    expect(html).not.toContain(PLATE)
+    expect(html).not.toContain(SHARE_VIN)
   })
 })

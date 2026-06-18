@@ -132,6 +132,12 @@ export function flattenCar(car: Car, settings: FlattenSettings): FlattenedCar {
   if (car.bannerPhoto != null) carRow.bannerPhoto = car.bannerPhoto
   // DEC-13 VIN: omit iff blank/absent (absent ⇔ ''), so VIN-less cars cost 0 cells.
   if (car.vin != null && car.vin !== '') carRow.vin = car.vin
+  // DEC-19 plate: omit iff blank/absent (absent ⇔ ''), exactly like VIN — a
+  // plate-less car costs 0 cells.
+  if (car.plate != null && car.plate !== '') carRow.plate = car.plate
+  // DEC-19 showPlate: owner opt-in; write ONLY when explicitly true so the
+  // hidden default (absent ⇔ false) materializes no cell.
+  if (car.showPlate === true) carRow.showPlate = true
 
   const photos: Record<string, PhotosRow> = {}
   const photoPayloads: Record<string, string> = {}
@@ -390,6 +396,11 @@ export function joinCar(flat: FlattenedCar): Car {
   // round-trip fixtures) that lack them join back to an identical nested Car.
   if (row.bannerPhoto != null) car.bannerPhoto = row.bannerPhoto
   if (row.vin != null) car.vin = row.vin
+  // DEC-19: reattach plate/showPlate only when present, so legacy rows (and the
+  // round-trip fixtures) that lack them join back to an identical nested Car
+  // (absent ⇔ '' for plate, absent ⇔ false for showPlate).
+  if (row.plate != null) car.plate = row.plate
+  if (row.showPlate != null) car.showPlate = row.showPlate
   if (mileageLog.length > 0) car.mileageLog = mileageLog
   return car
 }

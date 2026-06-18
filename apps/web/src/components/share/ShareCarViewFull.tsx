@@ -347,6 +347,10 @@ export default function ShareCarViewFull({ car, token }: ShareCarViewFullProps) 
             <Badge status={STATUS_ROLE[status] ?? 'neutral'}>
               {(STATUS_CONFIG[status] ?? STATUS_CONFIG.current).label}
             </Badge>
+            {/* DEC-10: owner display name — present iff the server resolved consent. */}
+            {car.ownerName && (
+              <span className="text-meta text-text-secondary">by {car.ownerName}</span>
+            )}
             {car.purchaseDate && (
               <span className="text-meta text-text-secondary">Owned since {fmtDay(car.purchaseDate)}</span>
             )}
@@ -382,6 +386,14 @@ export default function ShareCarViewFull({ car, token }: ShareCarViewFullProps) 
               <span className="text-body italic text-text-secondary">· “{car.nickname}”</span>
             )}
           </>
+        }
+        belowTitle={
+          /* DEC-19: plate present iff the owner opted in (showPlate). */
+          car.plate ? (
+            <p className="mt-1.5 text-meta text-text-tertiary">
+              Plate <span className="font-mono text-text-secondary">{car.plate}</span>
+            </p>
+          ) : undefined
         }
       />
 

@@ -189,6 +189,27 @@ describe('settings are Values writes only (the units fix)', () => {
     adapter.getState().updateCar(carId, { salePrice: '' }) // blanked → tag dropped
     expect(adapter.store.hasCell('cars', carId, 'salePriceCurrency')).toBe(false)
   })
+
+  it('updateCar honors the strict-null rule for vin/plate/showPlate (DEC-13/DEC-19)', () => {
+    const adapter = makeAdapter()
+    const carId = addOneCar(adapter)
+    // Set them → cells materialize.
+    adapter.getState().updateCar(carId, { vin: '1HGCM82633A004352', plate: 'GR-1', showPlate: true })
+    expect(adapter.store.getCell('cars', carId, 'vin')).toBe('1HGCM82633A004352')
+    expect(adapter.store.getCell('cars', carId, 'plate')).toBe('GR-1')
+    expect(adapter.store.getCell('cars', carId, 'showPlate')).toBe(true)
+    expect(adapter.getState().cars[0].vin).toBe('1HGCM82633A004352')
+    expect(adapter.getState().cars[0].plate).toBe('GR-1')
+    expect(adapter.getState().cars[0].showPlate).toBe(true)
+    // Blank/hide → the cells are DELETED (absent ⇔ '' / false), never written empty.
+    adapter.getState().updateCar(carId, { vin: '', plate: '', showPlate: false })
+    expect(adapter.store.hasCell('cars', carId, 'vin')).toBe(false)
+    expect(adapter.store.hasCell('cars', carId, 'plate')).toBe(false)
+    expect(adapter.store.hasCell('cars', carId, 'showPlate')).toBe(false)
+    expect(adapter.getState().cars[0].vin).toBeUndefined()
+    expect(adapter.getState().cars[0].plate).toBeUndefined()
+    expect(adapter.getState().cars[0].showPlate).toBeUndefined()
+  })
 })
 
 describe('photos and cascades', () => {
@@ -706,6 +727,8 @@ describe('migration-load: OLD-schema content into the CURRENT-schema store', () 
 
     // Absent new cells default per the documented contract.
     expect(car.vin).toBeUndefined() // vin: absent ⇔ ''
+    expect(car.plate).toBeUndefined() // DEC-19 plate: absent ⇔ ''
+    expect(car.showPlate).toBeUndefined() // DEC-19 showPlate: absent ⇔ false
     expect(car.bannerPhoto).toBeUndefined() // bannerPhoto: absent ⇔ null
     expect(car.photos[0].source).toBeUndefined() // source: absent ⇔ 'car' (General)
     expect(car.photos[0].sourceId).toBeUndefined()

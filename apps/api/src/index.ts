@@ -23,6 +23,7 @@ import {
   renderShareMetaTags,
   shareMetaFromSnapshot,
 } from './og'
+import { accountApi } from './routes/account'
 import { imgApi } from './routes/img'
 import { lookupCuratedShareSnapshot, shareApi } from './routes/share'
 import { syncApi } from './routes/sync'
@@ -96,6 +97,11 @@ app.route('/', imgApi)
 // (already worker-first via run_worker_first ["/api/*", ...]); they derive
 // the owner/car/R2-key SERVER-SIDE from the validated share_links row.
 app.route('/', shareApi)
+
+// Account display settings (DEC-10): session-authed GET/POST of the owner's
+// display name + show_owner_name consent (the write side of the share route's
+// consent-gated ownerName injection). Validates the session before any D1 write.
+app.route('/', accountApi)
 
 // Better Auth owns everything under /api/auth/*.
 app.on(['GET', 'POST'], '/api/auth/*', (c) =>

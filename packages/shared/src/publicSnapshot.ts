@@ -132,6 +132,14 @@ export interface PublicCarSnapshot {
    * ⇒ no name.
    */
   ownerName?: string
+  /**
+   * DEC-19 license plate — OWNER-OPT-IN, exposed on ALL scopes (curated/listing/
+   * full) IFF car.showPlate is true (inverse of VIN's purpose-gating). Present
+   * here on the BASE snapshot so Listing/Full inherit it. Absent ⇒ no plate (the
+   * owner did not opt in, or the plate is blank). DELIBERATELY NOT in the OG
+   * projection (kept minimal/clean).
+   */
+  plate?: string
   mileageRaw: string
   /** Present iff mileageRaw parses numerically. */
   mileageMiles?: number
@@ -240,6 +248,15 @@ export function buildPublicSnapshot(
   if (car.purchaseDate !== '') snapshot.purchaseDate = car.purchaseDate
   if (car.saleDate !== '') snapshot.saleDate = car.saleDate
   if (coverPhotoId !== undefined) snapshot.coverPhotoId = coverPhotoId
+  // DEC-19 plate — OWNER-OPT-IN exposure, on EVERY scope (this curated base is
+  // reused byte-for-byte by buildListingSnapshot/buildFullSnapshot). Same strict,
+  // key-by-key allowlist as VIN: the plate cell is read ONLY when the owner
+  // toggled `showPlate` on AND the plate is non-empty. showPlate false/absent ⇒
+  // the field is never named ⇒ deny-by-default keeps it private. (Never reaches
+  // the OG projection, which reads its own fixed eight-field allowlist.)
+  if (car.showPlate === true && car.plate != null && car.plate !== '') {
+    snapshot.plate = car.plate
+  }
   return snapshot
 }
 

@@ -205,10 +205,31 @@ export default function CarProfile() {
             </>
           }
           belowTitle={
-            status === 'for-trade' && car.tradeFor ? (
-              <p className="mt-1.5 max-w-xs text-meta text-text-secondary">
-                Trade for: {car.tradeFor.split('\n').filter(Boolean).join(', ')}
-              </p>
+            (status === 'for-trade' && car.tradeFor) || car.vin || car.plate ? (
+              <div className="mt-1.5 space-y-1">
+                {status === 'for-trade' && car.tradeFor && (
+                  <p className="max-w-xs text-meta text-text-secondary">
+                    Trade for: {car.tradeFor.split('\n').filter(Boolean).join(', ')}
+                  </p>
+                )}
+                {/* DEC-13/DEC-19: VIN + plate are private — shown to the OWNER here.
+                    On shares the VIN appears only on a For-Sale listing and the
+                    plate only when the owner opted in (showPlate). */}
+                {(car.vin || car.plate) && (
+                  <p className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-meta text-text-tertiary">
+                    {car.vin && (
+                      <span>
+                        VIN <span className="font-mono text-text-secondary">{car.vin}</span>
+                      </span>
+                    )}
+                    {car.plate && (
+                      <span>
+                        Plate <span className="font-mono text-text-secondary">{car.plate}</span>
+                      </span>
+                    )}
+                  </p>
+                )}
+              </div>
             ) : undefined
           }
           bottomRight={

@@ -342,6 +342,31 @@ export interface ShareLinkListResponse {
   links: ShareLinkMeta[]
 }
 
+// ── Account display settings (DEC-10) ───────────────────────
+// The owner display NAME (= user.name, NEVER the email) + the per-user consent
+// `show_owner_name` (opt-out default). Both live on the D1 `user` row; the share
+// route reads them server-side (consent-gated) when injecting `ownerName`. This
+// authed route is the ONE place the owner edits them; it never touches the DO.
+
+/** GET (read) + POST (update) the caller's share display settings (DEC-10). */
+export const ACCOUNT_DISPLAY_PATH = '/api/account/display'
+
+/** The owner's current display-name + consent (GET response / POST result). */
+export interface AccountDisplaySettings {
+  /** user.name — the display name shown on shares when consent is on. */
+  name: string
+  /** user.show_owner_name — true ⇒ the name MAY appear on shares (DEC-10 opt-out default). */
+  showOwnerName: boolean
+}
+
+/** POST body — a partial update; omit a field to leave it unchanged. */
+export interface UpdateAccountDisplayRequest {
+  /** New display name (non-empty; NEVER the email). Omit to leave unchanged. */
+  name?: string
+  /** New consent value. Omit to leave unchanged. */
+  showOwnerName?: boolean
+}
+
 /**
  * Public GET response — a DISCRIMINATED UNION on the server-authoritative
  * `scope`. The viewer turns each photo's photoId into an image via
@@ -455,6 +480,9 @@ export const publicCarSnapshotSchema = z.strictObject({
   color: z.string(),
   nickname: z.string(),
   ownerName: z.string().optional(),
+  /** DEC-19 plate — owner-opt-in, valid on EVERY scope (listing inherits this via
+   * .extend; full names it explicitly). Absent ⇒ owner did not opt in. */
+  plate: z.string().optional(),
   mileageRaw: z.string(),
   mileageMiles: z.number().optional(),
   status: z.enum(PUBLIC_CAR_STATUSES),
@@ -555,6 +583,9 @@ export const fullCarSnapshotSchema = z.strictObject({
   color: z.string(),
   nickname: z.string(),
   ownerName: z.string().optional(),
+  /** DEC-19 plate — owner-opt-in, also valid on full (it is NOT purpose-gated like
+   * VIN, which stays listing-only and is absent here). */
+  plate: z.string().optional(),
   mileageRaw: z.string(),
   mileageMiles: z.number().optional(),
   status: z.enum(PUBLIC_CAR_STATUSES),

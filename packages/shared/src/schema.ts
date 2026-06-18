@@ -71,6 +71,10 @@ export const GARAGE_TABLES_SCHEMA = {
     bannerPhoto: { type: 'string' },
     /** DEC-13 VIN — private free text; omit iff ''. Nullable, NO default (absent ⇔ ''). */
     vin: { type: 'string' },
+    /** DEC-19 license plate — private free text; omit iff ''. Nullable, NO default (absent ⇔ ''). */
+    plate: { type: 'string' },
+    /** DEC-19 owner opt-in to expose the plate on shares. Omit iff false. Nullable, NO default (absent ⇔ false). */
+    showPlate: { type: 'boolean' },
     createdAt: { type: 'string' },
   },
   // rowId = photoId. METADATA ONLY: the base64 dataUrl must NEVER land in a
@@ -242,6 +246,8 @@ export type CarsRow = {
   coverPhoto?: string
   bannerPhoto?: string
   vin?: string
+  plate?: string
+  showPlate?: boolean
   createdAt: string
 }
 

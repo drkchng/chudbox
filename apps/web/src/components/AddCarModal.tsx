@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import useGarageStore from '../store/useGarageStore'
 import { DISTANCE_UNITS } from '../utils/units'
 import DateInput from './DateInput'
+import CarIdentityFields from './CarIdentityFields'
 import Modal from './ui/Modal'
 import Button from './ui/Button'
 import type { CarDetails, CarStoredStatus, FieldChangeEvent } from '../types'
@@ -13,6 +14,7 @@ const today = new Date().toISOString().slice(0, 10)
 const empty: CarDetails = {
   year: '', make: '', model: '', trim: '', color: '', mileage: '', nickname: '',
   purchaseDate: '', saleDate: '', status: 'current', salePrice: '', tradeFor: '',
+  vin: '', plate: '', showPlate: false,
 }
 
 // The form lives in the Modal body; the action buttons live in the Modal footer.
@@ -170,6 +172,17 @@ export default function AddCarModal({ onClose }: AddCarModalProps) {
             </div>
           )}
         </div>
+
+        {/* DEC-13 VIN + DEC-19 plate — private identity fields. */}
+        <CarIdentityFields
+          idPrefix="add-car"
+          vin={form.vin ?? ''}
+          plate={form.plate ?? ''}
+          showPlate={form.showPlate ?? false}
+          onVin={set('vin')}
+          onPlate={set('plate')}
+          onShowPlate={(v) => setForm((f) => ({ ...f, showPlate: v }))}
+        />
       </form>
     </Modal>
   )

@@ -629,6 +629,21 @@ export function createGarageAdapter(
           store.delCell('cars', id, 'salePriceCurrency')
         }
       }
+      // DEC-13/DEC-19: vin/plate are nullable (absent ⇔ ''), showPlate nullable
+      // (absent ⇔ false) — honor the strict null rule, DELETING the cell on the
+      // blank/hidden default so flattenCar's omission stays byte-consistent.
+      if (data.vin !== undefined) {
+        if (data.vin !== '') store.setCell('cars', id, 'vin', data.vin)
+        else store.delCell('cars', id, 'vin')
+      }
+      if (data.plate !== undefined) {
+        if (data.plate !== '') store.setCell('cars', id, 'plate', data.plate)
+        else store.delCell('cars', id, 'plate')
+      }
+      if (data.showPlate !== undefined) {
+        if (data.showPlate) store.setCell('cars', id, 'showPlate', true)
+        else store.delCell('cars', id, 'showPlate')
+      }
     })
   }
 

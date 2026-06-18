@@ -36,6 +36,9 @@ const SECRET_STRINGS = [
   // DEC-13/DEC-6/DEC-16: VIN, the photo attach metadata, and mileage check-ins
   // are ALL withheld from the curated showcase (deny-by-default).
   'SECRET_vin',
+  // DEC-19: plate is withheld unless the owner opted in (showPlate true). The
+  // fixture leaves showPlate OFF, so the plate must stay private on EVERY scope.
+  'SECRET_plate_value',
   'SECRET_photo_source',
   'SECRET_photo_sourceId',
   'SECRET_mileage_value',
@@ -125,6 +128,9 @@ function fullyPopulatedCar(): SnapshotCarInput {
     salePrice: 'SECRET_salePrice',
     tradeFor: 'SECRET_tradeFor',
     vin: 'SECRET_vin', // DEC-13: listing-only — NEVER in curated.
+    // DEC-19: plate present but showPlate OFF ⇒ withheld on ALL scopes.
+    plate: 'SECRET_plate_value',
+    showPlate: false,
     coverPhoto: 'photo-1',
     bannerPhoto: 'photo-1', // DEC-6: not a curated field (cover uses coverPhotoId).
     createdAt: 'KEEP_car_createdAt',
@@ -398,6 +404,54 @@ describe('buildPublicSnapshot — distance + optional omission', () => {
     expect((snap as unknown as Record<string, unknown>).vin).toBeUndefined()
     expect((snap as unknown as Record<string, unknown>).bannerPhoto).toBeUndefined()
     expect((snap as unknown as Record<string, unknown>).ownerName).toBeUndefined()
+    // DEC-19: showPlate is OFF in the fixture ⇒ no plate on the curated showcase.
+    expect((snap as unknown as Record<string, unknown>).plate).toBeUndefined()
+  })
+})
+
+// ── DEC-19 plate — owner-opt-in exposure across EVERY scope ──────────────────
+// Plate is the INVERSE of VIN: not purpose-gated, but owner-toggle-gated. When
+// showPlate is true it appears on curated/listing/full alike; it NEVER reaches
+// the OG projection (which holds its own fixed eight-field allowlist).
+function plateOptInCar(): SnapshotCarInput {
+  return { ...fullyPopulatedCar(), plate: 'KEEP_PLATE_7', showPlate: true } as SnapshotCarInput
+}
+
+describe('plate gating (DEC-19) — owner-opt-in, all scopes, never OG', () => {
+  it('curated EXPOSES the plate when showPlate is true', () => {
+    const snap = buildPublicSnapshot(plateOptInCar(), settings)
+    expect(snap.plate).toBe('KEEP_PLATE_7')
+  })
+
+  it('listing EXPOSES the plate when showPlate is true', () => {
+    const snap = buildListingSnapshot(plateOptInCar(), settings)
+    expect(snap.plate).toBe('KEEP_PLATE_7')
+  })
+
+  it('full EXPOSES the plate when showPlate is true', () => {
+    const snap = buildFullSnapshot(plateOptInCar(), settings)
+    expect(snap.plate).toBe('KEEP_PLATE_7')
+  })
+
+  it('WITHHOLDS the plate on every scope when showPlate is false', () => {
+    const off = { ...fullyPopulatedCar(), plate: 'KEEP_PLATE_7', showPlate: false } as SnapshotCarInput
+    expect((buildPublicSnapshot(off, settings) as unknown as Record<string, unknown>).plate).toBeUndefined()
+    expect((buildListingSnapshot(off, settings) as unknown as Record<string, unknown>).plate).toBeUndefined()
+    expect((buildFullSnapshot(off, settings) as unknown as Record<string, unknown>).plate).toBeUndefined()
+  })
+
+  it('WITHHOLDS the plate when showPlate is true but the plate is blank', () => {
+    const blank = { ...fullyPopulatedCar(), plate: '', showPlate: true } as SnapshotCarInput
+    expect((buildPublicSnapshot(blank, settings) as unknown as Record<string, unknown>).plate).toBeUndefined()
+    expect((buildListingSnapshot(blank, settings) as unknown as Record<string, unknown>).plate).toBeUndefined()
+    expect((buildFullSnapshot(blank, settings) as unknown as Record<string, unknown>).plate).toBeUndefined()
+  })
+
+  it('NEVER carries the plate into the OG projection (kept minimal)', () => {
+    const curated = buildPublicSnapshot(plateOptInCar(), settings)
+    const proj = buildShareOgProjection(curated)
+    expect((proj as unknown as Record<string, unknown>).plate).toBeUndefined()
+    expect(JSON.stringify(proj)).not.toContain('KEEP_PLATE_7')
   })
 })
 
