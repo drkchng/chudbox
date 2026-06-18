@@ -45,6 +45,7 @@ import {
 import type {
   CreateShareResponse,
   FullCarSnapshot,
+  ListingCarSnapshot,
   PublicCarSnapshot,
   RecordShareViewResponse,
   ShareLinkListResponse,
@@ -53,7 +54,7 @@ import type {
   ShareSnapshotResponse,
 } from '@chudbox/shared'
 import { createAuth } from '../auth'
-import { shareLinks } from '../db/schema'
+import { shareLinks, user } from '../db/schema'
 
 export const shareApi = new Hono<{ Bindings: Env }>()
 
@@ -76,15 +77,34 @@ type ShareLinkRow = typeof shareLinks.$inferSelect
 const nowSeconds = (): number => Math.floor(Date.now() / 1000)
 
 /**
- * Re-narrow the STORED scope to one of the two known values, defaulting to the
+ * Re-narrow the STORED scope to one of the three known values, defaulting to the
  * safe 'curated' for anything unexpected. The column is typed + written from a
  * validated enum, but we never trust a stored value blindly (an out-of-band
  * write or a future column change must degrade to the showcase, never silently
- * expose 'full'). This is the ONLY thing that decides what the public route
- * serves — it reads the row, never the request.
+ * expose 'full'/'listing'). This is the ONLY thing that decides what the public
+ * route serves — it reads the row, never the request.
  */
 function normalizeScope(stored: string): ShareScope {
-  return stored === 'full' ? 'full' : 'curated'
+  if (stored === 'full') return 'full'
+  if (stored === 'listing') return 'listing'
+  return 'curated'
+}
+
+/**
+ * DEC-10: resolve the owner's display name for a snapshot, consent-gated. A
+ * NARROW two-column SELECT (never `select().from(user)` spread into the body) —
+ * the name + consent live in D1, unreachable from the DO, so the ROUTE injects
+ * exactly one field, deny-by-default. Returns the name iff show_owner_name is on
+ * AND the name is non-empty; undefined otherwise (no name surfaced).
+ */
+async function resolveOwnerName(env: Env, userId: string): Promise<string | undefined> {
+  const rows = await db(env)
+    .select({ name: user.name, showOwnerName: user.showOwnerName })
+    .from(user)
+    .where(eq(user.id, userId))
+  const owner = rows[0]
+  if (owner && owner.showOwnerName && owner.name !== '') return owner.name
+  return undefined
 }
 
 /**
@@ -339,6 +359,12 @@ shareApi.get(SHARE_PUBLIC_PATH, async (c) => {
     return c.json({ error: 'This share link is no longer available' }, 410)
   }
 
+  // DEC-10: inject the owner display name (consent-gated) — the ONE field the
+  // ROUTE adds (the DO can't reach D1). Uniform across all three scopes; a
+  // listing nudges but never overrides this master consent.
+  const ownerName = await resolveOwnerName(c.env, row.userId)
+  if (ownerName !== undefined) snapshot.ownerName = ownerName
+
   // The snapshot carries photoIds (no URLs); the viewer composes the
   // token-scoped image URL via shareImgPath(token, photoId), served below. The
   // DO built `snapshot` at exactly `scope`, so the discriminant and the car
@@ -346,7 +372,9 @@ shareApi.get(SHARE_PUBLIC_PATH, async (c) => {
   const body: ShareSnapshotResponse =
     scope === 'full'
       ? { scope, car: snapshot as FullCarSnapshot, expiresAt: row.expiresAt }
-      : { scope, car: snapshot as PublicCarSnapshot, expiresAt: row.expiresAt }
+      : scope === 'listing'
+        ? { scope, car: snapshot as ListingCarSnapshot, expiresAt: row.expiresAt }
+        : { scope, car: snapshot as PublicCarSnapshot, expiresAt: row.expiresAt }
   c.header('Cache-Control', shareCacheControl(row.expiresAt, now))
   return c.json(body)
 })

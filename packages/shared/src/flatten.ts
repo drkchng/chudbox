@@ -21,8 +21,10 @@ import type {
   Car,
   Issue,
   MaintenanceRecord,
+  MileageCheckIn,
   Mod,
   Photo,
+  SavedBuild,
   Todo,
   WishlistItem,
 } from './types'
@@ -31,8 +33,10 @@ import type {
   CarsRow,
   IssuesRow,
   MaintenanceRow,
+  MileageRow,
   ModsRow,
   PhotosRow,
+  SavedBuildRow,
   TodosRow,
   WishlistRow,
 } from './schema'
@@ -57,6 +61,8 @@ export interface FlattenedCar {
   maintenance: Record<string, MaintenanceRow>
   todos: Record<string, TodosRow>
   issues: Record<string, IssuesRow>
+  /** DEC-16 dated odometer check-ins, keyed by checkInId. */
+  mileage: Record<string, MileageRow>
   /**
    * photoId → base64 dataUrl. NEVER lands in a table cell — it lives in a
    * local-only, non-mergeable store until photos move to R2 in M3.
@@ -121,18 +127,26 @@ export function flattenCar(car: Car, settings: FlattenSettings): FlattenedCar {
   // salePrice stays a string ('' when blank); the currency tag appears only
   // when it is non-empty.
   if (car.salePrice !== '') carRow.salePriceCurrency = settings.currency
-  // Strict null rule (coverPhoto may also dangle — preserved verbatim).
+  // Strict null rule (coverPhoto / bannerPhoto may dangle — preserved verbatim).
   if (car.coverPhoto != null) carRow.coverPhoto = car.coverPhoto
+  if (car.bannerPhoto != null) carRow.bannerPhoto = car.bannerPhoto
+  // DEC-13 VIN: omit iff blank/absent (absent ⇔ ''), so VIN-less cars cost 0 cells.
+  if (car.vin != null && car.vin !== '') carRow.vin = car.vin
 
   const photos: Record<string, PhotosRow> = {}
   const photoPayloads: Record<string, string> = {}
   for (const photo of car.photos) {
     // Metadata only — dataUrl goes in the side map, never in a cell.
-    photos[photo.id] = {
+    const photoRow: PhotosRow = {
       carId: car.id,
       caption: photo.caption,
       uploadedAt: photo.uploadedAt,
     }
+    // DEC-6: omit `source` for General (absent ⇔ 'car') to save the common-case
+    // cell; `sourceId` is the source of truth, written iff the photo is attached.
+    if (photo.source != null && photo.source !== 'car') photoRow.source = photo.source
+    if (photo.sourceId != null) photoRow.sourceId = photo.sourceId
+    photos[photo.id] = photoRow
     photoPayloads[photo.id] = photo.dataUrl
   }
 
@@ -226,7 +240,36 @@ export function flattenCar(car: Car, settings: FlattenSettings): FlattenedCar {
     issues[issue.id] = row
   }
 
-  return { carId: car.id, car: carRow, photos, wishlist, mods, maintenance, todos, issues, photoPayloads }
+  // DEC-16: each check-in freezes its OWN entry unit, so valueMiles canonicalizes
+  // from (valueRaw, checkIn.unit) — NOT the device distanceUnit. Present iff the
+  // raw parses numerically (parity with cars/maintenance mileageMiles).
+  const mileage: Record<string, MileageRow> = {}
+  for (const checkIn of car.mileageLog ?? []) {
+    const row: MileageRow = {
+      carId: car.id,
+      valueRaw: checkIn.value,
+      unit: checkIn.unit,
+      date: checkIn.date,
+      source: checkIn.source,
+      createdAt: checkIn.createdAt,
+    }
+    const miles = parseMileageMiles(checkIn.value, checkIn.unit)
+    if (miles != null) row.valueMiles = miles
+    mileage[checkIn.id] = row
+  }
+
+  return {
+    carId: car.id,
+    car: carRow,
+    photos,
+    wishlist,
+    mods,
+    maintenance,
+    todos,
+    issues,
+    mileage,
+    photoPayloads,
+  }
 }
 
 /**
@@ -239,12 +282,18 @@ export function flattenCar(car: Car, settings: FlattenSettings): FlattenedCar {
  * r2Key in that case.
  */
 export function joinCar(flat: FlattenedCar): Car {
-  const photos: Photo[] = Object.entries(flat.photos).map(([id, row]) => ({
-    id,
-    dataUrl: flat.photoPayloads[id] ?? '',
-    caption: row.caption,
-    uploadedAt: row.uploadedAt,
-  }))
+  const photos: Photo[] = Object.entries(flat.photos).map(([id, row]) => {
+    const photo: Photo = {
+      id,
+      dataUrl: flat.photoPayloads[id] ?? '',
+      caption: row.caption,
+      uploadedAt: row.uploadedAt,
+    }
+    // DEC-6: reattach the attach metadata when present (absent ⇔ General).
+    if (row.source != null) photo.source = row.source
+    if (row.sourceId != null) photo.sourceId = row.sourceId
+    return photo
+  })
 
   const wishlist: WishlistItem[] = Object.entries(flat.wishlist).map(([id, row]) => ({
     id,
@@ -302,8 +351,19 @@ export function joinCar(flat: FlattenedCar): Car {
     resolvedAt: row.resolvedAt ?? null,
   }))
 
+  // DEC-16: rebuild the timeline. valueMiles is a derived cell (recomputed on
+  // flatten), so joinCar drops it — the same lossy treatment as cars.mileageMiles.
+  const mileageLog: MileageCheckIn[] = Object.entries(flat.mileage).map(([id, row]) => ({
+    id,
+    value: row.valueRaw,
+    unit: row.unit,
+    date: row.date,
+    source: row.source,
+    createdAt: row.createdAt,
+  }))
+
   const row = flat.car
-  return {
+  const car: Car = {
     id: flat.carId,
     year: row.year,
     make: row.make,
@@ -325,5 +385,59 @@ export function joinCar(flat: FlattenedCar): Car {
     maintenance,
     todos,
     issues,
+  }
+  // New cells are reattached only when present, so legacy rows (and the existing
+  // round-trip fixtures) that lack them join back to an identical nested Car.
+  if (row.bannerPhoto != null) car.bannerPhoto = row.bannerPhoto
+  if (row.vin != null) car.vin = row.vin
+  if (mileageLog.length > 0) car.mileageLog = mileageLog
+  return car
+}
+
+// ── savedBuilds (DEC-11) — OUTSIDE the Car aggregate ────────
+// A SavedBuild is already flat (no children), so it does NOT pass through
+// flattenCar/joinCar. This is the trivial identity pair, applying the SAME
+// strict null rule: a nullable cell is omitted IFF strictly null/undefined;
+// '' / 0 are real, distinct values. The rowId (= sha256(token)) is supplied by
+// the (async) save action, not derived here.
+
+export function flattenSavedBuild(build: SavedBuild): SavedBuildRow {
+  const row: SavedBuildRow = { token: build.token, savedAt: build.savedAt }
+  if (build.nickname != null) row.nickname = build.nickname
+  if (build.sortOrder != null) row.sortOrder = build.sortOrder
+  if (build.cachedYear != null) row.cachedYear = build.cachedYear
+  if (build.cachedMake != null) row.cachedMake = build.cachedMake
+  if (build.cachedModel != null) row.cachedModel = build.cachedModel
+  if (build.cachedNickname != null) row.cachedNickname = build.cachedNickname
+  if (build.cachedOwnerName != null) row.cachedOwnerName = build.cachedOwnerName
+  if (build.cachedStatus != null) row.cachedStatus = build.cachedStatus
+  if (build.cachedMileageRaw != null) row.cachedMileageRaw = build.cachedMileageRaw
+  if (build.cachedModsCount != null) row.cachedModsCount = build.cachedModsCount
+  if (build.cachedCoverPhotoId != null) row.cachedCoverPhotoId = build.cachedCoverPhotoId
+  if (build.cachedScope != null) row.cachedScope = build.cachedScope
+  if (build.lastRefreshedAt != null) row.lastRefreshedAt = build.lastRefreshedAt
+  if (build.unavailableSince != null) row.unavailableSince = build.unavailableSince
+  return row
+}
+
+export function joinSavedBuild(rowId: string, row: SavedBuildRow): SavedBuild {
+  return {
+    id: rowId,
+    token: row.token,
+    savedAt: row.savedAt,
+    nickname: row.nickname ?? null,
+    sortOrder: row.sortOrder ?? null,
+    cachedYear: row.cachedYear ?? null,
+    cachedMake: row.cachedMake ?? null,
+    cachedModel: row.cachedModel ?? null,
+    cachedNickname: row.cachedNickname ?? null,
+    cachedOwnerName: row.cachedOwnerName ?? null,
+    cachedStatus: row.cachedStatus ?? null,
+    cachedMileageRaw: row.cachedMileageRaw ?? null,
+    cachedModsCount: row.cachedModsCount ?? null,
+    cachedCoverPhotoId: row.cachedCoverPhotoId ?? null,
+    cachedScope: row.cachedScope ?? null,
+    lastRefreshedAt: row.lastRefreshedAt ?? null,
+    unavailableSince: row.unavailableSince ?? null,
   }
 }

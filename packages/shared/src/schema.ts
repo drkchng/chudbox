@@ -15,6 +15,8 @@ import type {
   CarStoredStatus,
   IssueSeverity,
   IssueStatus,
+  MileageSource,
+  PhotoSource,
   TodoPriority,
   WishlistStatus,
 } from './types'
@@ -65,6 +67,10 @@ export const GARAGE_TABLES_SCHEMA = {
     tradeFor: { type: 'string' },
     /** Soft pointer to a photoId — can dangle after a merge; resolve with fallback. */
     coverPhoto: { type: 'string' },
+    /** DEC-6 hero banner soft pointer (resolve bannerPhoto → coverPhoto → first → none). Nullable, NO default. */
+    bannerPhoto: { type: 'string' },
+    /** DEC-13 VIN — private free text; omit iff ''. Nullable, NO default (absent ⇔ ''). */
+    vin: { type: 'string' },
     createdAt: { type: 'string' },
   },
   // rowId = photoId. METADATA ONLY: the base64 dataUrl must NEVER land in a
@@ -77,6 +83,10 @@ export const GARAGE_TABLES_SCHEMA = {
     uploadedAt: { type: 'string' },
     width: { type: 'number' },
     height: { type: 'number' },
+    /** DEC-6 attach KIND (advisory hint). Nullable, NO default — absent ⇔ 'car' (General). */
+    source: { type: 'string' },
+    /** DEC-6 soft FK to the parent loggable's rowId. Nullable, NO default — absent ⇔ attached to the car. */
+    sourceId: { type: 'string' },
   },
   // rowId = itemId
   wishlist: {
@@ -140,6 +150,46 @@ export const GARAGE_TABLES_SCHEMA = {
     /** Nullable: absent ⇔ null. */
     resolvedAt: { type: 'string' },
   },
+  // rowId = checkInId (DEC-16). 7th child table (carId cell). A check-in = one
+  // dated odometer reading; display order = (date, createdAt).
+  mileage: {
+    carId: { type: 'string' },
+    /** Odometer reading exactly as entered. */
+    valueRaw: { type: 'string' },
+    /** Canonical miles; present iff valueRaw parses under `unit`. Nullable, NO default. */
+    valueMiles: { type: 'number' },
+    /** 'mi' | 'km' — frozen at entry (distance analogue of the *Currency tag). */
+    unit: { type: 'string' },
+    /** ISO-8601 date the odometer was at this value. */
+    date: { type: 'string' },
+    /** 'manual' | 'initial' | 'import' | 'legacy-edit' (TS union, store-unconstrained). */
+    source: { type: 'string' },
+    createdAt: { type: 'string' },
+  },
+  // rowId = sha256(rawToken) hex (DEC-11). TOP-LEVEL (NOT a child of cars: no
+  // carId cell, no carId index). One row per followed build; the Watching list
+  // IS this whole bounded table. Nullable cached* cells declare a type but NO
+  // default (a default would resurrect a value the user/cache meant absent).
+  savedBuilds: {
+    /** RAW bearer token — refetch + token-scoped image URLs + view ping. */
+    token: { type: 'string' },
+    savedAt: { type: 'string' },
+    /** Follower's personal label. Nullable: absent ⇔ never set, '' ⇔ cleared. */
+    nickname: { type: 'string' },
+    sortOrder: { type: 'number' },
+    cachedYear: { type: 'string' },
+    cachedMake: { type: 'string' },
+    cachedModel: { type: 'string' },
+    cachedNickname: { type: 'string' },
+    cachedOwnerName: { type: 'string' },
+    cachedStatus: { type: 'string' },
+    cachedMileageRaw: { type: 'string' },
+    cachedModsCount: { type: 'number' },
+    cachedCoverPhotoId: { type: 'string' },
+    cachedScope: { type: 'string' },
+    lastRefreshedAt: { type: 'string' },
+    unavailableSince: { type: 'string' },
+  },
 } as const satisfies TablesSchema
 
 export const GARAGE_TABLE_IDS = [
@@ -150,10 +200,14 @@ export const GARAGE_TABLE_IDS = [
   'maintenance',
   'todos',
   'issues',
+  'mileage',
+  'savedBuilds',
 ] as const
 export type GarageTableId = (typeof GARAGE_TABLE_IDS)[number]
 
-/** Child tables keyed by carId — each gets a carId Index (see store.ts). */
+/** Child tables keyed by carId — each gets a carId Index (see store.ts).
+ * `savedBuilds` is deliberately NOT here (it has no carId; the Watching list is
+ * the whole table). */
 export const CHILD_TABLE_IDS = [
   'photos',
   'wishlist',
@@ -161,6 +215,7 @@ export const CHILD_TABLE_IDS = [
   'maintenance',
   'todos',
   'issues',
+  'mileage',
 ] as const
 export type ChildTableId = (typeof CHILD_TABLE_IDS)[number]
 
@@ -185,6 +240,8 @@ export type CarsRow = {
   salePriceCurrency?: string
   tradeFor: string
   coverPhoto?: string
+  bannerPhoto?: string
+  vin?: string
   createdAt: string
 }
 
@@ -195,6 +252,8 @@ export type PhotosRow = {
   uploadedAt: string
   width?: number
   height?: number
+  source?: PhotoSource
+  sourceId?: string
 }
 
 export type WishlistRow = {
@@ -256,6 +315,35 @@ export type IssuesRow = {
   resolvedAt?: string
 }
 
+export type MileageRow = {
+  carId: string
+  valueRaw: string
+  valueMiles?: number
+  unit: DistanceUnitCode
+  date: string
+  source: MileageSource
+  createdAt: string
+}
+
+export type SavedBuildRow = {
+  token: string
+  savedAt: string
+  nickname?: string
+  sortOrder?: number
+  cachedYear?: string
+  cachedMake?: string
+  cachedModel?: string
+  cachedNickname?: string
+  cachedOwnerName?: string
+  cachedStatus?: string
+  cachedMileageRaw?: string
+  cachedModsCount?: number
+  cachedCoverPhotoId?: string
+  cachedScope?: string
+  lastRefreshedAt?: string
+  unavailableSince?: string
+}
+
 export type GarageTableRow = {
   cars: CarsRow
   photos: PhotosRow
@@ -264,4 +352,6 @@ export type GarageTableRow = {
   maintenance: MaintenanceRow
   todos: TodosRow
   issues: IssuesRow
+  mileage: MileageRow
+  savedBuilds: SavedBuildRow
 }

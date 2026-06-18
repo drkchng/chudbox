@@ -37,16 +37,16 @@ Unblocks every data feature below. **No backfill here.**
   sensitive data reaches real users (`DATA_MODEL §15.11 #1`; closes backend gap G4). Also fix the R2-orphan
   delete endpoint.
 - **Reminders + push** (DEC-18): CF Cron Trigger + synced push tokens; predicts mileage-due from usage rate.
-  *[needs DEC-16 + accounts]*
+  *[needs DEC-16 + accounts]* — **⏸ DEFERRED (owner, 2026-06-18): captured only, NOT building now — future alley.**
 
 ## Phase 5 — Compliance gate (BEFORE marketing) — `COMPLIANCE.md`
 Privacy policy + named privacy officer + `privacy@` contact + cross-border EFVP/DPAs (Cloudflare, Resend) +
 the deletion hook (Phase 4) + breach plan. Gate before onboarding real users — not a dev blocker.
 
-## Phase 6 — Paid tier — `PAYMENTS.md`
+## Phase 6 — Paid tier — `PAYMENTS.md`  ·  ⏸ DEFERRED (owner, 2026-06-18: captured only, not building now)
 MoR (Polar with QST confirmed, else Paddle) + an entitlement check in the Workers backend. Annual or >$5.
 
-## Phase 7 — Native app (Expo + Unistyles)
+## Phase 7 — Native app (Expo + Unistyles)  ·  ⏸ DEFERRED (owner, 2026-06-18: captured only, not building now)
 Reuse `packages/shared` (logic + token SSOT); RN UI on Unistyles; web-purchase + app-login; RevenueCat for IAP.
 
 ## Cross-cutting gates / open policy calls (owner sign-off at the relevant phase)

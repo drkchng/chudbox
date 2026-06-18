@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { buildPublicSnapshot } from './publicSnapshot'
+import {
+  buildFullSnapshot,
+  buildListingSnapshot,
+  buildPublicSnapshot,
+  buildShareOgProjection,
+} from './publicSnapshot'
 import type { SnapshotCarInput } from './publicSnapshot'
 import type { GarageValues } from './schema'
 
@@ -28,6 +33,13 @@ const SECRET_STRINGS = [
   'SECRET_photo_extraField',
   'SECRET_future_car_field',
   'SECRET_currency_code',
+  // DEC-13/DEC-6/DEC-16: VIN, the photo attach metadata, and mileage check-ins
+  // are ALL withheld from the curated showcase (deny-by-default).
+  'SECRET_vin',
+  'SECRET_photo_source',
+  'SECRET_photo_sourceId',
+  'SECRET_mileage_value',
+  'SECRET_mileage_checkInId',
   'data:image/png;base64,SECRET_PHOTO_BYTES',
   'u/owner-uid/car-1/photo-1.webp',
 ]
@@ -112,7 +124,9 @@ function fullyPopulatedCar(): SnapshotCarInput {
     status: 'for-sale',
     salePrice: 'SECRET_salePrice',
     tradeFor: 'SECRET_tradeFor',
+    vin: 'SECRET_vin', // DEC-13: listing-only — NEVER in curated.
     coverPhoto: 'photo-1',
+    bannerPhoto: 'photo-1', // DEC-6: not a curated field (cover uses coverPhotoId).
     createdAt: 'KEEP_car_createdAt',
     photos: [
       {
@@ -125,6 +139,9 @@ function fullyPopulatedCar(): SnapshotCarInput {
         // Fields that are NOT on the curated PublicPhoto — must not pass through.
         r2Key: 'u/owner-uid/car-1/photo-1.webp',
         extraField: 'SECRET_photo_extraField',
+        // DEC-6 attach metadata — withheld in ALL scopes (§15.7).
+        source: 'SECRET_photo_source',
+        sourceId: 'SECRET_photo_sourceId',
       },
       {
         id: 'photo-2',
@@ -188,6 +205,18 @@ function fullyPopulatedCar(): SnapshotCarInput {
         status: 'open',
         createdAt: 'x',
         resolvedAt: null,
+      },
+    ],
+    // DEC-16: dated check-ins are withheld in curated (deny-by-default) — and
+    // their internal ids (checkInId/carId) are never exposed in any scope.
+    mileageLog: [
+      {
+        id: 'SECRET_mileage_checkInId',
+        value: 'SECRET_mileage_value',
+        unit: 'mi',
+        date: '2024-03-01',
+        source: 'manual',
+        createdAt: 'x',
       },
     ],
     // Fields not yet in the model / never meant to be shared:
@@ -357,5 +386,153 @@ describe('buildPublicSnapshot — distance + optional omission', () => {
     const snap = buildPublicSnapshot(car, settings)
     expect('mileageRaw' in snap.maintenance[0]).toBe(false)
     expect('mileageMiles' in snap.maintenance[0]).toBe(false)
+  })
+
+  it('curated photos never carry DEC-6 source/sourceId, and no mileage is exposed', () => {
+    const snap = buildPublicSnapshot(fullyPopulatedCar(), settings)
+    const photo = snap.photos[0] as unknown as Record<string, unknown>
+    expect(photo.source).toBeUndefined()
+    expect(photo.sourceId).toBeUndefined()
+    expect((snap as unknown as Record<string, unknown>).mileageLog).toBeUndefined()
+    expect((snap as unknown as Record<string, unknown>).mileage).toBeUndefined()
+    expect((snap as unknown as Record<string, unknown>).vin).toBeUndefined()
+    expect((snap as unknown as Record<string, unknown>).bannerPhoto).toBeUndefined()
+    expect((snap as unknown as Record<string, unknown>).ownerName).toBeUndefined()
+  })
+})
+
+// ── Listing (For-Sale) scope — DEC-14 ───────────────────────
+// The listing fixture re-tags the FOUR exposed fields with KEEP markers (so the
+// SECRET_* deep-scan still proves the FULL-only fields stay withheld).
+function listingInput(): SnapshotCarInput {
+  return {
+    ...fullyPopulatedCar(),
+    salePrice: 'KEEP_listing_price',
+    salePriceCurrency: 'CAD',
+    tradeFor: 'KEEP_listing_trade',
+    vin: 'KEEP_listing_VIN17',
+  }
+}
+
+describe('buildListingSnapshot — For-Sale allowlist (DEC-14/DEC-13)', () => {
+  const snap = buildListingSnapshot(listingInput(), settings)
+  const serialized = JSON.stringify(snap)
+
+  it('exposes exactly the four listing fields (price + its currency tag, tradeFor, vin)', () => {
+    expect(snap.salePrice).toBe('KEEP_listing_price')
+    expect(snap.salePriceCurrency).toBe('CAD') // DEC-1: the ENTERED tag, not the device setting
+    expect(snap.tradeFor).toBe('KEEP_listing_trade')
+    expect(snap.vin).toBe('KEEP_listing_VIN17')
+  })
+
+  it('keeps the curated base byte-identical (header/photos/mods/maintenance/settings)', () => {
+    const base = buildPublicSnapshot(listingInput(), settings)
+    expect(snap.make).toBe(base.make)
+    expect(snap.coverPhotoId).toBe(base.coverPhotoId)
+    expect(snap.photos).toEqual(base.photos)
+    expect(snap.mods).toEqual(base.mods)
+    expect(snap.maintenance).toEqual(base.maintenance)
+    expect(snap.settings).toEqual(base.settings)
+  })
+
+  it('STILL withholds the full-only data (no wishlist/todos/issues, no cost/shop/notes)', () => {
+    const loose = snap as unknown as Record<string, unknown>
+    expect(loose.wishlist).toBeUndefined()
+    expect(loose.todos).toBeUndefined()
+    expect(loose.issues).toBeUndefined()
+    expect(snap.mods[0] as unknown as Record<string, unknown>).not.toHaveProperty('cost')
+    expect(snap.mods[0] as unknown as Record<string, unknown>).not.toHaveProperty('shop')
+    expect(snap.maintenance[0] as unknown as Record<string, unknown>).not.toHaveProperty('notes')
+    expect((snap.settings as unknown as Record<string, unknown>).currency).toBeUndefined()
+    // Every withheld SECRET marker stays out (the four exposed fields are KEEP_*).
+    for (const secret of SECRET_STRINGS) {
+      expect(serialized, `listing leaked: ${secret}`).not.toContain(secret)
+    }
+    for (const amount of SECRET_NUMBERS) {
+      expect(serialized, `listing leaked amount: ${amount}`).not.toContain(String(amount))
+    }
+  })
+
+  it('never carries photo source/sourceId nor mileage internal ids', () => {
+    const photo = snap.photos[0] as unknown as Record<string, unknown>
+    expect(photo.source).toBeUndefined()
+    expect(photo.sourceId).toBeUndefined()
+    expect((snap as unknown as Record<string, unknown>).mileageLog).toBeUndefined()
+    expect(serialized).not.toContain('SECRET_mileage_checkInId')
+  })
+
+  it('omits the listing fields when blank (salePrice "" ⇒ no price, no currency tag, no vin)', () => {
+    const blank = buildListingSnapshot(
+      { ...fullyPopulatedCar(), salePrice: '', salePriceCurrency: 'CAD', tradeFor: '', vin: '' },
+      settings,
+    )
+    const loose = blank as unknown as Record<string, unknown>
+    expect(loose.salePrice).toBeUndefined()
+    expect(loose.salePriceCurrency).toBeUndefined() // tag only rides a present price
+    expect(loose.tradeFor).toBeUndefined()
+    expect(loose.vin).toBeUndefined()
+  })
+})
+
+// ── Full scope — review fix #5 (salePriceCurrency) + vin exclusion ──────────
+describe('buildFullSnapshot — DEC-1 currency fidelity + no VIN (review fix #5)', () => {
+  it('emits salePriceCurrency next to salePrice (entered tag, not device setting)', () => {
+    const snap = buildFullSnapshot(
+      { ...fullyPopulatedCar(), salePrice: 'KEEP_full_price', salePriceCurrency: 'JPY' },
+      settings,
+    )
+    expect(snap.salePrice).toBe('KEEP_full_price')
+    expect(snap.salePriceCurrency).toBe('JPY')
+  })
+
+  it('omits salePriceCurrency when salePrice is blank', () => {
+    const snap = buildFullSnapshot(
+      { ...fullyPopulatedCar(), salePrice: '', salePriceCurrency: 'JPY' },
+      settings,
+    )
+    expect((snap as unknown as Record<string, unknown>).salePrice).toBeUndefined()
+    expect((snap as unknown as Record<string, unknown>).salePriceCurrency).toBeUndefined()
+  })
+
+  it('NEVER carries vin (listing-only), nor photo source/sourceId, nor mileage', () => {
+    const snap = buildFullSnapshot(fullyPopulatedCar(), settings)
+    const loose = snap as unknown as Record<string, unknown>
+    expect(loose.vin).toBeUndefined()
+    expect(JSON.stringify(snap)).not.toContain('SECRET_vin')
+    const photo = snap.photos[0] as unknown as Record<string, unknown>
+    expect(photo.source).toBeUndefined()
+    expect(photo.sourceId).toBeUndefined()
+    expect(loose.mileageLog).toBeUndefined()
+    expect(JSON.stringify(snap)).not.toContain('SECRET_mileage_checkInId')
+  })
+})
+
+// ── OG minimal projection — review fix #1 (structural vin-free) ─────────────
+describe('buildShareOgProjection — minimal, vin-free by construction', () => {
+  const curated = buildPublicSnapshot(fullyPopulatedCar(), settings)
+
+  it('emits ONLY the eight allowlisted keys (never vin/photos/mods/settings)', () => {
+    const proj = buildShareOgProjection(curated, { ownerName: 'Alex' })
+    expect(new Set(Object.keys(proj))).toEqual(
+      new Set(['year', 'make', 'model', 'nickname', 'coverPhotoId', 'ownerName']),
+    )
+    const loose = proj as unknown as Record<string, unknown>
+    expect(loose.vin).toBeUndefined()
+    expect(loose.photos).toBeUndefined()
+    expect(loose.mods).toBeUndefined()
+    expect(loose.settings).toBeUndefined()
+    expect(JSON.stringify(proj)).not.toContain('SECRET_vin')
+  })
+
+  it('carries For-Sale price ONLY when supplied via extra (never lifted from a private object)', () => {
+    const withPrice = buildShareOgProjection(curated, {
+      salePrice: '12000',
+      salePriceCurrency: 'CAD',
+    })
+    expect(withPrice.salePrice).toBe('12000')
+    expect(withPrice.salePriceCurrency).toBe('CAD')
+    // Default (no extra): no price surfaces.
+    const noPrice = buildShareOgProjection(curated)
+    expect((noPrice as unknown as Record<string, unknown>).salePrice).toBeUndefined()
   })
 })

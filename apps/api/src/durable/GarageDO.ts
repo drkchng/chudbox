@@ -47,6 +47,7 @@ import {
   GARAGE_TABLE_IDS,
   MAX_SEED_CHUNK_CELLS,
   buildFullSnapshot,
+  buildListingSnapshot,
   buildPublicSnapshot,
   countSeedChunkCells,
   decodeSeedChunk,
@@ -61,7 +62,9 @@ import type {
   FullCarSnapshot,
   GarageValues,
   IssuesRow,
+  ListingCarSnapshot,
   MaintenanceRow,
+  MileageRow,
   ModsRow,
   PhotosRow,
   PublicCarSnapshot,
@@ -264,21 +267,24 @@ export class GarageDO extends WsServerDurableObject<Env> {
   getCarSnapshot(
     carId: string,
     scope: ShareScope = 'curated',
-  ): PublicCarSnapshot | FullCarSnapshot | null {
+  ): PublicCarSnapshot | ListingCarSnapshot | FullCarSnapshot | null {
     const store = this.getStore()
-    const carRow = store.getRow('cars', carId)
+    const carRow = store.getRow('cars', carId) as unknown as CarsRow
     if (!Object.values(carRow).some((cell) => cell !== null)) {
       return null
     }
     const flat: FlattenedCar = {
       carId,
-      car: carRow as unknown as CarsRow,
+      car: carRow,
       photos: this.collectChildRows<PhotosRow>('photos', carId),
       wishlist: this.collectChildRows<WishlistRow>('wishlist', carId),
       mods: this.collectChildRows<ModsRow>('mods', carId),
       maintenance: this.collectChildRows<MaintenanceRow>('maintenance', carId),
       todos: this.collectChildRows<TodosRow>('todos', carId),
       issues: this.collectChildRows<IssuesRow>('issues', carId),
+      // DEC-16: gather check-ins so the odometer timeline is computable
+      // server-authoritatively (withheld by deny-by-default until exposed).
+      mileage: this.collectChildRows<MileageRow>('mileage', carId),
       photoPayloads: {},
     }
     const car = joinCar(flat)
@@ -287,11 +293,14 @@ export class GarageDO extends WsServerDurableObject<Env> {
       width: flat.photos[photo.id]?.width,
       height: flat.photos[photo.id]?.height,
     }))
-    const input = { ...car, photos }
+    // joinCar drops the per-row salePriceCurrency tag (like the photo dims), so
+    // re-attach it from the flat row → listing AND full render the price in its
+    // ENTERED currency, not the viewer's settings.currency (DEC-1 fidelity).
+    const input = { ...car, photos, salePriceCurrency: carRow.salePriceCurrency }
     const settings = this.readSettings()
-    return scope === 'full'
-      ? buildFullSnapshot(input, settings)
-      : buildPublicSnapshot(input, settings)
+    if (scope === 'full') return buildFullSnapshot(input, settings)
+    if (scope === 'listing') return buildListingSnapshot(input, settings)
+    return buildPublicSnapshot(input, settings)
   }
 
   /**

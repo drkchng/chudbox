@@ -15,6 +15,7 @@ import {
   imgPath,
   parsePhotoKey,
   fullCarSnapshotSchema,
+  listingCarSnapshotSchema,
   publicCarSnapshotSchema,
   shareImgPath,
   shareRevokePath,
@@ -23,7 +24,7 @@ import {
 } from './contracts'
 import type { ShareSnapshotResponse } from './contracts'
 import type { PhotoExt } from './imagePolicy'
-import { buildFullSnapshot, buildPublicSnapshot } from './publicSnapshot'
+import { buildFullSnapshot, buildListingSnapshot, buildPublicSnapshot } from './publicSnapshot'
 import type { SnapshotCarInput } from './publicSnapshot'
 import type { GarageValues } from './schema'
 
@@ -308,6 +309,79 @@ describe('shareSnapshotResponseSchema — full scope', () => {
     expect(
       fullCarSnapshotSchema.safeParse({ ...fullCar, secretFutureField: 'x' }).success,
     ).toBe(false)
+  })
+
+  it('emits salePriceCurrency next to salePrice in full (review fix #5)', () => {
+    const fullPriced = buildFullSnapshot(
+      { ...sampleSnapshotInput(), salePrice: '8500', salePriceCurrency: 'JPY' },
+      snapshotSettings,
+    )
+    const parsed = shareSnapshotResponseSchema.parse({
+      scope: 'full',
+      car: fullPriced,
+      expiresAt: null,
+    })
+    if (parsed.scope !== 'full') throw new Error('expected full')
+    expect(parsed.car.salePrice).toBe('8500')
+    expect(parsed.car.salePriceCurrency).toBe('JPY')
+  })
+})
+
+describe('shareSnapshotResponseSchema — listing scope (DEC-14/DEC-13)', () => {
+  const listingCar = buildListingSnapshot(
+    {
+      ...sampleSnapshotInput(),
+      salePrice: '8500',
+      salePriceCurrency: 'CAD',
+      tradeFor: 'RX-7',
+      vin: '1HGCM82633A004352',
+    },
+    snapshotSettings,
+  )
+  const validListing = { scope: 'listing', car: listingCar, expiresAt: null } satisfies ShareSnapshotResponse
+
+  it('accepts exactly what buildListingSnapshot produces (the four For-Sale fields incl vin)', () => {
+    const parsed = shareSnapshotResponseSchema.parse(validListing)
+    if (parsed.scope !== 'listing') throw new Error('expected listing scope') // narrows
+    expect(parsed.car.salePrice).toBe('8500')
+    expect(parsed.car.salePriceCurrency).toBe('CAD')
+    expect(parsed.car.tradeFor).toBe('RX-7')
+    expect(parsed.car.vin).toBe('1HGCM82633A004352')
+    expect(parsed.car.make).toBe('Nissan') // curated base survives
+  })
+
+  it('REJECTS a listing car under a curated/full discriminant (vin/salePrice cannot wear another label)', () => {
+    expect(
+      shareSnapshotResponseSchema.safeParse({ scope: 'curated', car: listingCar, expiresAt: null })
+        .success,
+    ).toBe(false)
+    expect(
+      shareSnapshotResponseSchema.safeParse({ scope: 'full', car: listingCar, expiresAt: null })
+        .success,
+    ).toBe(false)
+  })
+
+  it('the listing schema REJECTS a leaked full-only field (deny-by-default, strict)', () => {
+    expect(listingCarSnapshotSchema.safeParse({ ...listingCar, wishlist: [] }).success).toBe(false)
+    expect(
+      listingCarSnapshotSchema.safeParse({ ...listingCar, secretFutureField: 'x' }).success,
+    ).toBe(false)
+  })
+
+  it('vin is accepted ONLY by the listing schema — curated and full reject it', () => {
+    const curated = buildPublicSnapshot(sampleSnapshotInput(), snapshotSettings)
+    const full = buildFullSnapshot(sampleSnapshotInput(), snapshotSettings)
+    expect(listingCarSnapshotSchema.safeParse({ ...curated, vin: 'X' }).success).toBe(true)
+    expect(publicCarSnapshotSchema.safeParse({ ...curated, vin: 'X' }).success).toBe(false)
+    expect(fullCarSnapshotSchema.safeParse({ ...full, vin: 'X' }).success).toBe(false)
+  })
+
+  it('ownerName (DEC-10) is accepted on all three snapshot schemas', () => {
+    const curated = buildPublicSnapshot(sampleSnapshotInput(), snapshotSettings)
+    const full = buildFullSnapshot(sampleSnapshotInput(), snapshotSettings)
+    expect(publicCarSnapshotSchema.safeParse({ ...curated, ownerName: 'Alex' }).success).toBe(true)
+    expect(listingCarSnapshotSchema.safeParse({ ...listingCar, ownerName: 'Alex' }).success).toBe(true)
+    expect(fullCarSnapshotSchema.safeParse({ ...full, ownerName: 'Alex' }).success).toBe(true)
   })
 })
 

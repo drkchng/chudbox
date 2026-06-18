@@ -71,8 +71,17 @@ const SECRET_STRINGS = [
   'SECRET_issue_title',
   'SECRET_issue_description',
   'SECRET_photo_uploadedAt',
+  // DEC-6 photo attach metadata + DEC-16 mileage internal ids: withheld in EVERY
+  // scope (curated/listing/full) — §15.7.
+  'SECRET_photo_sourceId',
+  'SECRET_checkin_id',
 ]
 const SECRET_NUMBERS = [91919191, 92929292, 93939393]
+
+// DEC-13: the VIN is EXPOSED only under scope='listing'; curated/full must never
+// carry it (so it is NOT a member of SECRET_STRINGS — listing legitimately shows
+// it — and is asserted per-scope instead).
+const SHARE_VIN = 'VIN0SHARE1234567X'
 
 // ── Auth helper (one session for the file) ──────────────────
 let session: { cookie: string; userId: string }
@@ -122,6 +131,7 @@ function makeShareCar({ carId, photoId }: Ids): Car {
     status: 'for-sale',
     salePrice: 'SECRET_salePrice',
     tradeFor: 'SECRET_tradeFor',
+    vin: SHARE_VIN, // DEC-13: exposed ONLY under scope='listing'
     coverPhoto: photoId,
     createdAt: 'KEEP_createdAt',
     photos: [
@@ -130,6 +140,9 @@ function makeShareCar({ carId, photoId }: Ids): Car {
         dataUrl: 'data:image/webp;base64,AAAA',
         caption: 'KEEP_caption',
         uploadedAt: 'SECRET_photo_uploadedAt',
+        // DEC-6 attach metadata — must be withheld in ALL scopes.
+        source: 'maintenance',
+        sourceId: 'SECRET_photo_sourceId',
       },
     ],
     wishlist: [
@@ -183,6 +196,18 @@ function makeShareCar({ carId, photoId }: Ids): Car {
         resolvedAt: null,
       },
     ],
+    // DEC-16: a dated check-in — withheld in every scope (current odometer still
+    // comes from cars.mileageRaw in Phase 1); its internal id must never leak.
+    mileageLog: [
+      {
+        id: 'SECRET_checkin_id',
+        value: '50000',
+        unit: 'mi',
+        date: '2024-01-01',
+        source: 'manual',
+        createdAt: 'x',
+      },
+    ],
   }
 }
 
@@ -228,6 +253,7 @@ async function uploadAndSeedCar({ carId, photoId }: Ids): Promise<{ r2Key: strin
     ['maintenance', flat.maintenance],
     ['todos', flat.todos],
     ['issues', flat.issues],
+    ['mileage', flat.mileage],
   ] as const) {
     for (const [rowId, row] of Object.entries(rows)) store.setRow(table, rowId, row)
   }
@@ -805,5 +831,139 @@ describe('record view', () => {
     expect(list.links[0].viewCount).toBe(3)
     // The list still leaks no raw token / full hash.
     expect(JSON.stringify(list)).not.toContain(link.token)
+  })
+})
+
+// ── Listing scope (DEC-14) + VIN (DEC-13) + owner name (DEC-10) ──────────────
+// Per §15.7 the three scopes are CROSS-CUTTING: vin is listing-ONLY (not full);
+// wishlist/todos/issues + per-item cost/shop/notes are full-ONLY (not listing).
+// Photo source/sourceId + mileage internal ids are withheld in EVERY scope.
+describe('GET public snapshot — listing scope + owner name', () => {
+  async function createScopedLink(
+    carId: string,
+    scope: 'curated' | 'listing' | 'full',
+  ): Promise<CreateShareResponse> {
+    const res = await SELF.fetch(`${BASE}${createShareLinkPath(carId)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', cookie: session.cookie },
+      body: JSON.stringify({ scope }),
+    })
+    expect(res.status).toBe(200)
+    return (await res.json()) as CreateShareResponse
+  }
+
+  // Listing legitimately exposes salePrice + tradeFor; every OTHER SECRET_* stays
+  // withheld (the full-only data + the always-withheld attach/mileage ids).
+  const LISTING_EXPOSED = new Set(['SECRET_salePrice', 'SECRET_tradeFor'])
+
+  it('a LISTING link exposes salePrice + currency tag + tradeFor + VIN, and nothing full-only', async () => {
+    const ids = freshIds()
+    const { r2Key } = await uploadAndSeedCar(ids)
+    const link = await createScopedLink(ids.carId, 'listing')
+
+    const res = await SELF.fetch(`${BASE}${shareSnapshotPath(link.token)}`)
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as ShareSnapshotResponse
+    expect(body.scope).toBe('listing')
+    if (body.scope !== 'listing') throw new Error('expected listing scope') // narrows
+    const { car } = body
+
+    // The four For-Sale fields (DEC-13 / DEC-14 / DEC-1 currency fidelity).
+    expect(car.salePrice).toBe('SECRET_salePrice')
+    expect(car.salePriceCurrency).toBe('USD') // the ENTERED tag, re-attached by the DO
+    expect(car.tradeFor).toBe('SECRET_tradeFor')
+    expect(car.vin).toBe(SHARE_VIN)
+    // Curated base survives.
+    expect(car.make).toBe('KEEP_make')
+    expect(car.coverPhotoId).toBe(ids.photoId)
+
+    // STILL withholds everything full adds beyond curated.
+    const loose = car as unknown as Record<string, unknown>
+    expect(loose.wishlist).toBeUndefined()
+    expect(loose.todos).toBeUndefined()
+    expect(loose.issues).toBeUndefined()
+    expect(car.mods[0] as unknown as Record<string, unknown>).not.toHaveProperty('cost')
+    expect(car.mods[0] as unknown as Record<string, unknown>).not.toHaveProperty('shop')
+    expect(car.maintenance[0] as unknown as Record<string, unknown>).not.toHaveProperty('notes')
+    expect((car.settings as unknown as Record<string, unknown>).currency).toBeUndefined()
+
+    // Always-withheld: photo attach metadata, mileage internal ids, r2Key, userId.
+    const photo = car.photos[0] as unknown as Record<string, unknown>
+    expect(photo.source).toBeUndefined()
+    expect(photo.sourceId).toBeUndefined()
+    const serialized = JSON.stringify(body)
+    expect(serialized).not.toContain(r2Key)
+    expect(serialized).not.toContain(session.userId)
+    for (const secret of SECRET_STRINGS) {
+      if (LISTING_EXPOSED.has(secret)) continue
+      expect(serialized, `listing leaked: ${secret}`).not.toContain(secret)
+    }
+    for (const amount of SECRET_NUMBERS) {
+      expect(serialized, `listing leaked amount: ${amount}`).not.toContain(String(amount))
+    }
+  })
+
+  it('VIN appears ONLY in listing — curated and full snapshots never carry it', async () => {
+    const ids = freshIds()
+    await uploadAndSeedCar(ids)
+    const curated = await createScopedLink(ids.carId, 'curated')
+    const full = await createScopedLink(ids.carId, 'full')
+
+    const curatedText = await (await SELF.fetch(`${BASE}${shareSnapshotPath(curated.token)}`)).text()
+    expect(curatedText).not.toContain(SHARE_VIN)
+    const fullText = await (await SELF.fetch(`${BASE}${shareSnapshotPath(full.token)}`)).text()
+    expect(fullText).not.toContain(SHARE_VIN)
+  })
+
+  it('FULL exposes salePriceCurrency next to salePrice (review fix #5) but never the VIN', async () => {
+    const ids = freshIds()
+    await uploadAndSeedCar(ids)
+    const link = await createScopedLink(ids.carId, 'full')
+    const body = (await (
+      await SELF.fetch(`${BASE}${shareSnapshotPath(link.token)}`)
+    ).json()) as ShareSnapshotResponse
+    expect(body.scope).toBe('full')
+    if (body.scope !== 'full') throw new Error('expected full scope')
+    expect(body.car.salePrice).toBe('SECRET_salePrice')
+    expect(body.car.salePriceCurrency).toBe('USD')
+    expect((body.car as unknown as Record<string, unknown>).vin).toBeUndefined()
+  })
+
+  it('withholds the mileage check-in internal id in EVERY scope (DEC-16)', async () => {
+    const ids = freshIds()
+    await uploadAndSeedCar(ids)
+    for (const scope of ['curated', 'listing', 'full'] as const) {
+      const link = await createScopedLink(ids.carId, scope)
+      const text = await (await SELF.fetch(`${BASE}${shareSnapshotPath(link.token)}`)).text()
+      expect(text, `${scope} leaked the check-in id`).not.toContain('SECRET_checkin_id')
+    }
+  })
+
+  it('injects ownerName iff show_owner_name consent is ON (DEC-10), uniformly across scopes', async () => {
+    const ids = freshIds()
+    await uploadAndSeedCar(ids)
+    const link = await createScopedLink(ids.carId, 'curated')
+
+    // Default consent (column DEFAULT 1): the account name is shown.
+    const onBody = (await (
+      await SELF.fetch(`${BASE}${shareSnapshotPath(link.token)}`)
+    ).json()) as ShareSnapshotResponse
+    expect(onBody.car.ownerName).toBe('Share Tester')
+
+    // Opt out → the name is withheld. Restore in finally so other tests are
+    // unaffected (the user row is shared across the file).
+    await env.DB.prepare('UPDATE user SET show_owner_name = 0 WHERE id = ?')
+      .bind(session.userId)
+      .run()
+    try {
+      const offBody = (await (
+        await SELF.fetch(`${BASE}${shareSnapshotPath(link.token)}`)
+      ).json()) as ShareSnapshotResponse
+      expect((offBody.car as unknown as Record<string, unknown>).ownerName).toBeUndefined()
+    } finally {
+      await env.DB.prepare('UPDATE user SET show_owner_name = 1 WHERE id = ?')
+        .bind(session.userId)
+        .run()
+    }
   })
 })

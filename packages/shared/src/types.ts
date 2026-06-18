@@ -1,3 +1,5 @@
+import type { DistanceUnitCode } from './units'
+
 // ── Status unions ───────────────────────────────────────────
 /**
  * Status a car can be assigned through the UI. `sold` can be set explicitly
@@ -13,12 +15,85 @@ export type TodoPriority = 'low' | 'medium' | 'high'
 export type IssueSeverity = 'minor' | 'moderate' | 'critical'
 export type IssueStatus = 'open' | 'in-progress' | 'resolved'
 
+/**
+ * DEC-6 (unified photos): the KIND of entity a photo attaches to — a CLOSED
+ * union = {'car'} ∪ {the photo-bearing child tables}. `'car'` is the gallery's
+ * "General" filter; the others map 1:1 to their tables. Read convention:
+ * absent `source` ⇔ 'car'. The effective parent is resolved from `sourceId`
+ * (the source of truth); `source` is an advisory cached hint (§15.2).
+ */
+export type PhotoSource = 'car' | 'mod' | 'maintenance' | 'issue' | 'todo'
+
+/** DEC-16: provenance of an odometer check-in (TS-only, store-unconstrained). */
+export type MileageSource = 'manual' | 'initial' | 'import' | 'legacy-edit'
+
 // ── Entities ────────────────────────────────────────────────
 export interface Photo {
   id: string
   dataUrl: string
   caption: string
   uploadedAt: string
+  /**
+   * DEC-6: parent KIND. Absent ⇔ 'car' (the General gallery). Advisory cached
+   * hint — the effective parent is resolved from `sourceId`, not this cell.
+   */
+  source?: PhotoSource
+  /**
+   * DEC-6: soft FK to the parent loggable item's rowId. Absent ⇔ attached to
+   * the car (General). May dangle after a merge / parent-delete → coalesces to
+   * General on read.
+   */
+  sourceId?: string
+}
+
+/**
+ * DEC-16: one dated odometer reading. The car's current odometer = the latest
+ * check-in. `unit` is frozen at entry (the distance analogue of the per-amount
+ * *Currency tag). The canonical miles value (`valueMiles`) is a derived cell on
+ * the flat row, dropped by joinCar (recomputed from `value`+`unit`).
+ */
+export interface MileageCheckIn {
+  id: string
+  /** Odometer reading exactly as entered (store-as-entered) → valueRaw cell. */
+  value: string
+  /** 'mi' | 'km' — frozen at entry. */
+  unit: DistanceUnitCode
+  /** ISO-8601 date the odometer was at this value (the timeline x-axis). */
+  date: string
+  source: MileageSource
+  createdAt: string
+}
+
+/**
+ * DEC-11 (follow / saved builds): a durable follow record of another owner's
+ * shared build, keyed by the share token's hash. Lives in the follower's own
+ * synced garage store (NOT the Car aggregate). `id` = sha256(rawToken) hex.
+ * The nullable cached* header fields follow the strict-null rule (absent ⇔
+ * null; '' / 0 are real, distinct values — e.g. a cleared `nickname`).
+ */
+export interface SavedBuild {
+  /** rowId = sha256(rawToken) hex (content-addressed; merge-idempotent). */
+  id: string
+  /** RAW bearer token — refetch + token-scoped image URLs + view ping. */
+  token: string
+  /** ISO-8601 first-saved time. */
+  savedAt: string
+  /** Follower's personal label. null ⇔ never set; '' ⇔ explicitly cleared. */
+  nickname: string | null
+  sortOrder: number | null
+  cachedYear: string | null
+  cachedMake: string | null
+  cachedModel: string | null
+  cachedNickname: string | null
+  cachedOwnerName: string | null
+  cachedStatus: string | null
+  cachedMileageRaw: string | null
+  cachedModsCount: number | null
+  cachedCoverPhotoId: string | null
+  /** 'curated' | 'listing' | 'full' — informational badge only. */
+  cachedScope: string | null
+  lastRefreshedAt: string | null
+  unavailableSince: string | null
 }
 
 export interface WishlistItem {
@@ -93,11 +168,21 @@ export interface CarDetails {
   status: CarStoredStatus
   salePrice: string
   tradeFor: string
+  /**
+   * DEC-13 VIN — store-as-entered free text; '' / absent ⇔ no VIN. Private by
+   * default; surfaced publicly only under scope='listing'.
+   */
+  vin?: string
 }
 
 export interface Car extends CarDetails {
   id: string
   coverPhoto?: string | null
+  /**
+   * DEC-6 hero banner — soft pointer to a photoId. Resolution chain:
+   * bannerPhoto → coverPhoto → first photo → none. Absent ⇔ null.
+   */
+  bannerPhoto?: string | null
   createdAt: string
   photos: Photo[]
   wishlist: WishlistItem[]
@@ -105,4 +190,6 @@ export interface Car extends CarDetails {
   maintenance: MaintenanceRecord[]
   todos: Todo[]
   issues: Issue[]
+  /** DEC-16 dated odometer check-ins (the mileage timeline). Absent ⇔ none. */
+  mileageLog?: MileageCheckIn[]
 }

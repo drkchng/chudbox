@@ -5,7 +5,12 @@
 // untrusted network body (the request-side validators live in zod.ts).
 import { z } from 'zod'
 import type { ImageContentType, PhotoExt } from './imagePolicy'
-import type { FullCarSnapshot, PublicCarSnapshot, ShareScope } from './publicSnapshot'
+import type {
+  FullCarSnapshot,
+  ListingCarSnapshot,
+  PublicCarSnapshot,
+  ShareScope,
+} from './publicSnapshot'
 
 // ── Routes ──────────────────────────────────────────────────
 /** WebSocket sync endpoint — same-origin so the session cookie rides the upgrade. */
@@ -344,17 +349,27 @@ export interface ShareLinkListResponse {
  *
  *  • scope: 'curated' → `car` is the allowlisted PublicCarSnapshot (the showcase
  *    — never a full Car).
+ *  • scope: 'listing' → `car` is the ListingCarSnapshot (curated + For-Sale
+ *    fields: salePrice/salePriceCurrency/tradeFor/vin). NO full-only data.
  *  • scope: 'full'    → `car` is the FullCarSnapshot (the owner-equivalent
- *    read-only view, still r2Key/userId/email-free).
+ *    read-only view, still r2Key/userId/email-free; NO vin).
  *
  * `scope` comes from the STORED share_links row, NEVER from the request, so a
- * viewer holding a 'curated' link can never receive 'full' data. The strict
- * response schema below rejects a body whose `car` shape disagrees with `scope`.
+ * viewer holding a 'curated' link can never receive 'full' or 'listing' data.
+ * The strict response schema below rejects a body whose `car` shape disagrees
+ * with `scope` (a curated body can never carry vin/salePrice; a listing body can
+ * never render as full).
  */
 export type ShareSnapshotResponse =
   | {
       scope: 'curated'
       car: PublicCarSnapshot
+      /** Epoch seconds; null = no expiry. */
+      expiresAt: number | null
+    }
+  | {
+      scope: 'listing'
+      car: ListingCarSnapshot
       /** Epoch seconds; null = no expiry. */
       expiresAt: number | null
     }
@@ -430,7 +445,8 @@ const publicSettingsSchema = z.strictObject({
   distanceUnit: z.enum(['mi', 'km']),
 })
 
-/** Validates a PublicCarSnapshot — strict, so any non-allowlisted key is rejected. */
+/** Validates a PublicCarSnapshot — strict, so any non-allowlisted key is rejected.
+ * `ownerName` (DEC-10) is route-injected (consent-gated) onto curated/listing/full. */
 export const publicCarSnapshotSchema = z.strictObject({
   year: z.string(),
   make: z.string(),
@@ -438,6 +454,7 @@ export const publicCarSnapshotSchema = z.strictObject({
   trim: z.string(),
   color: z.string(),
   nickname: z.string(),
+  ownerName: z.string().optional(),
   mileageRaw: z.string(),
   mileageMiles: z.number().optional(),
   status: z.enum(PUBLIC_CAR_STATUSES),
@@ -449,6 +466,19 @@ export const publicCarSnapshotSchema = z.strictObject({
   mods: z.array(publicModSchema),
   maintenance: z.array(publicMaintenanceSchema),
   settings: publicSettingsSchema,
+})
+
+/**
+ * Validates a ListingCarSnapshot — the curated allowlist (strict) extended with
+ * exactly the four For-Sale fields. `z.strictObject().extend(...)` preserves
+ * strict extra-key rejection (Zod 4.4.3), so the listing branch is genuinely
+ * deny-by-default: a leaked full-only field (wishlist, cost, …) is rejected.
+ */
+export const listingCarSnapshotSchema = publicCarSnapshotSchema.extend({
+  salePrice: z.string().optional(),
+  salePriceCurrency: z.string().optional(),
+  tradeFor: z.string().optional(),
+  vin: z.string().optional(),
 })
 
 // ── Full-scope snapshot validators ──────────────────────────
@@ -515,7 +545,8 @@ const fullSettingsSchema = z.strictObject({
   currency: z.string(),
 })
 
-/** Validates a FullCarSnapshot — strict, so any non-allowlisted key is rejected. */
+/** Validates a FullCarSnapshot — strict, so any non-allowlisted key is rejected.
+ * NOTE: NO `vin` here — VIN is listing-only (§14.2). */
 export const fullCarSnapshotSchema = z.strictObject({
   year: z.string(),
   make: z.string(),
@@ -523,6 +554,7 @@ export const fullCarSnapshotSchema = z.strictObject({
   trim: z.string(),
   color: z.string(),
   nickname: z.string(),
+  ownerName: z.string().optional(),
   mileageRaw: z.string(),
   mileageMiles: z.number().optional(),
   status: z.enum(PUBLIC_CAR_STATUSES),
@@ -531,6 +563,7 @@ export const fullCarSnapshotSchema = z.strictObject({
   createdAt: z.string(),
   coverPhotoId: z.string().optional(),
   salePrice: z.string().optional(),
+  salePriceCurrency: z.string().optional(),
   tradeFor: z.string().optional(),
   photos: z.array(publicPhotoSchema),
   mods: z.array(fullModSchema),
@@ -552,6 +585,12 @@ export const shareSnapshotResponseSchema = z.discriminatedUnion('scope', [
   z.strictObject({
     scope: z.literal('curated'),
     car: publicCarSnapshotSchema,
+    /** Epoch seconds; null = no expiry. */
+    expiresAt: z.number().nullable(),
+  }),
+  z.strictObject({
+    scope: z.literal('listing'),
+    car: listingCarSnapshotSchema,
     /** Epoch seconds; null = no expiry. */
     expiresAt: z.number().nullable(),
   }),

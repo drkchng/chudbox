@@ -37,14 +37,22 @@ import { parseMileageMiles } from './flatten'
  * strictly from the stored scope — never from any client-supplied value.
  *
  *  • 'curated' — the default build showcase (this module's strict allowlist:
- *    no money/shop/notes, no wishlist/todos/issues, no salePrice/tradeFor).
+ *    no money/shop/notes, no wishlist/todos/issues, no salePrice/tradeFor, no VIN).
+ *  • 'listing' — For-Sale preset (DEC-14): the curated showcase PLUS
+ *    salePrice/salePriceCurrency/tradeFor and the listing-only VIN (DEC-13).
+ *    Still NO wishlist/todos/issues, NO per-item cost/shop/notes.
  *  • 'full'    — everything the owner sees for THAT ONE car, READ-ONLY: the
  *    extra tables (wishlist/todos/issues) and the previously-withheld
- *    cost/shop/notes/salePrice/tradeFor. Still NO raw r2Key (photos use
- *    token-scoped urls), NO userId/email, NO other cars, NO internal row ids
- *    beyond the photoIds curated already exposes.
+ *    cost/shop/notes/salePrice/tradeFor. NO VIN (listing-only, §14.2). Still NO
+ *    raw r2Key (photos use token-scoped urls), NO userId/email, NO other cars,
+ *    NO internal row ids beyond the photoIds curated already exposes.
+ *
+ * The scopes are CROSS-CUTTING, not a chain: `vin` is listing-only (not in
+ * full); wishlist/todos/issues + per-item cost/shop/notes are full-only (not in
+ * listing). So curated ⊂ listing and curated ⊂ full, but listing ⊄ full and
+ * full ⊄ listing (§15.7).
  */
-export type ShareScope = 'curated' | 'full'
+export type ShareScope = 'curated' | 'listing' | 'full'
 
 // ── Builder input ───────────────────────────────────────────
 // The nested `Car` aggregate (flatten.ts: joinCar) drops the per-photo
@@ -59,9 +67,13 @@ export interface SnapshotPhotoInput extends Photo {
   height?: number | null
 }
 
-/** Curator input: a nested Car whose photos may carry downscaled dimensions. */
+/** Curator input: a nested Car whose photos may carry downscaled dimensions.
+ * `salePriceCurrency` is re-attached from the flat `cars` row by the DO (joinCar
+ * drops the per-row tag, exactly like the photo dims) so listing AND full render
+ * the price in its ENTERED currency, not the viewer's settings.currency (DEC-1). */
 export interface SnapshotCarInput extends Omit<Car, 'photos'> {
   photos: SnapshotPhotoInput[]
+  salePriceCurrency?: string | null
 }
 
 // ── Public (allowlisted) snapshot shape ─────────────────────
@@ -113,6 +125,13 @@ export interface PublicCarSnapshot {
   trim: string
   color: string
   nickname: string
+  /**
+   * DEC-10 owner display name (= user.name). Injected by the share ROUTE (not
+   * the DO builders — the name + consent live in D1, unreachable from the DO),
+   * iff user.show_owner_name && name !== ''. Inherited by Listing/Full. Absent
+   * ⇒ no name.
+   */
+  ownerName?: string
   mileageRaw: string
   /** Present iff mileageRaw parses numerically. */
   mileageMiles?: number
@@ -294,6 +313,8 @@ export interface FullCarSnapshot
   extends Omit<PublicCarSnapshot, 'mods' | 'maintenance' | 'settings'> {
   /** Present iff non-empty. */
   salePrice?: string
+  /** ISO-4217 tag (DEC-1 fidelity in full too, review fix #5): present iff salePrice is. */
+  salePriceCurrency?: string
   /** Present iff non-empty. */
   tradeFor?: string
   mods: FullMod[]
@@ -383,7 +404,110 @@ export function buildFullSnapshot(
     issues,
     settings: fullSettings,
   }
-  if (car.salePrice !== '') snapshot.salePrice = car.salePrice
+  if (car.salePrice !== '') {
+    snapshot.salePrice = car.salePrice
+    // DEC-1 fidelity: tag with the ENTERED currency (re-attached by the DO from
+    // the flat row) so the viewer formats it correctly, not against its own setting.
+    if (car.salePriceCurrency != null && car.salePriceCurrency !== '') {
+      snapshot.salePriceCurrency = car.salePriceCurrency
+    }
+  }
   if (car.tradeFor !== '') snapshot.tradeFor = car.tradeFor
   return snapshot
+}
+
+// ── Listing (For-Sale) snapshot shape — the THIRD scope (DEC-14) ─────────────
+// Still a strict, key-by-key allowlist: the curated showcase PLUS the four
+// listing fields (salePrice + its currency tag, tradeFor, and the listing-only
+// VIN). Withholds EVERYTHING full adds beyond curated (wishlist/todos/issues,
+// per-item cost/shop/notes, the currency setting) — listing ⊄ full and full ⊄
+// listing. NO photo source/sourceId, NO r2Key/dataUrl/userId/internal ids.
+
+/**
+ * The For-Sale read-only view of one car: the curated showcase + the buyer-facing
+ * listing fields. `vin` appears HERE and ONLY here (never in full — a forwarded
+ * "show-a-friend" full link must not carry a fraud-enabling identifier, §14.2).
+ */
+export interface ListingCarSnapshot extends PublicCarSnapshot {
+  /** Present iff non-empty. */
+  salePrice?: string
+  /** ISO-4217 tag: present iff salePrice is. */
+  salePriceCurrency?: string
+  /** Present iff non-empty. */
+  tradeFor?: string
+  /** DEC-13 VIN — listing-only; present iff non-empty. */
+  vin?: string
+}
+
+/**
+ * Build the For-Sale listing snapshot (the 'listing' scope). Reuses
+ * buildPublicSnapshot for the byte-identical curated base (like buildFullSnapshot),
+ * then appends salePrice/salePriceCurrency/tradeFor/vin key-by-key under the same
+ * strict allowlist. The full owner-only tables/fields are deliberately NOT added.
+ */
+export function buildListingSnapshot(
+  car: SnapshotCarInput,
+  settings: GarageValues,
+): ListingCarSnapshot {
+  const base = buildPublicSnapshot(car, settings)
+  const snapshot: ListingCarSnapshot = { ...base }
+  if (car.salePrice !== '') {
+    snapshot.salePrice = car.salePrice
+    if (car.salePriceCurrency != null && car.salePriceCurrency !== '') {
+      snapshot.salePriceCurrency = car.salePriceCurrency
+    }
+  }
+  if (car.tradeFor !== '') snapshot.tradeFor = car.tradeFor
+  if (car.vin != null && car.vin !== '') snapshot.vin = car.vin
+  return snapshot
+}
+
+// ── OG / link-preview projection (review fix #1 — SECURITY-SENSITIVE) ────────
+// The Open Graph crawler path is the highest-exposure surface (crawler-cached,
+// fetched with NO session). It must NEVER receive a vin-/notes-/wishlist-bearing
+// snapshot object. This is the DEDICATED minimal projection: a CLOSED shape that
+// by construction holds ONLY these eight fields — no `vin`, no per-item data, no
+// photos array, no settings. Built key-by-key from a CURATED snapshot (which is
+// itself vin-/price-free), so the structural guarantee is preserved, not
+// downgraded to renderer discipline.
+
+export interface ShareOgProjection {
+  year: string
+  make: string
+  model: string
+  nickname: string
+  /** For-Sale preview price (Phase 3 supplies it; never read from a vin-bearing object). */
+  salePrice?: string
+  salePriceCurrency?: string
+  /** Resolved cover photoId (already cover → first → none in the curated base). */
+  coverPhotoId?: string
+  /** DEC-10 owner name, consent-gated, route-injected. */
+  ownerName?: string
+}
+
+/**
+ * Down-project a CURATED snapshot to the minimal OG projection. Reads ONLY the
+ * eight allowlisted fields — `vin` and every full/listing-only field are absent
+ * by construction (the function never reads them). Optional `salePrice`/
+ * `salePriceCurrency`/`ownerName` are supplied by the caller (route), not lifted
+ * from a private-bearing object.
+ */
+export function buildShareOgProjection(
+  snapshot: PublicCarSnapshot,
+  extra: { salePrice?: string; salePriceCurrency?: string; ownerName?: string } = {},
+): ShareOgProjection {
+  const out: ShareOgProjection = {
+    year: snapshot.year,
+    make: snapshot.make,
+    model: snapshot.model,
+    nickname: snapshot.nickname,
+  }
+  if (snapshot.coverPhotoId !== undefined) out.coverPhotoId = snapshot.coverPhotoId
+  if (extra.salePrice !== undefined && extra.salePrice !== '') out.salePrice = extra.salePrice
+  if (extra.salePriceCurrency !== undefined && extra.salePriceCurrency !== '') {
+    out.salePriceCurrency = extra.salePriceCurrency
+  }
+  const ownerName = extra.ownerName ?? snapshot.ownerName
+  if (ownerName !== undefined && ownerName !== '') out.ownerName = ownerName
+  return out
 }

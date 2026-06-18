@@ -42,6 +42,14 @@ export const user = sqliteTable('user', {
   image: text('image'),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
+  // DEC-10: consent to show the owner's display name on shares. integer boolean,
+  // NOT NULL DEFAULT 1 ("shown by default, opt-out"); the DEFAULT backfills every
+  // existing user at ALTER time. MUST be an additive ADD COLUMN — rebuilding
+  // `user` would fire the ON DELETE CASCADE chain into session/account/share_links.
+  // Better Auth's drizzle adapter tolerates this extra defaulted column.
+  showOwnerName: integer('show_owner_name', { mode: 'boolean' })
+    .notNull()
+    .default(true),
 })
 
 export const session = sqliteTable(
@@ -119,13 +127,15 @@ export const rateLimit = sqliteTable('rate_limit', {
  * - view_count is a soft, public hit counter: POST /api/share/:token/view bumps
  *   it for VALID links only. Additive column (added in drizzle/0001), NOT NULL
  *   DEFAULT 0 so every pre-existing row reads as 0.
- * - scope is the owner's per-link visibility choice ('curated' | 'full'), chosen
- *   at create time by the AUTHENTICATED owner and read back SERVER-SIDE when
- *   building the public snapshot (never from the request). Additive column
- *   (added in drizzle/0002), NOT NULL DEFAULT 'curated' so every pre-existing
- *   row stays the safe build-showcase. The enum is a TS-level refinement only
- *   (SQLite has no enum / added CHECK), so the migration stays a plain ADD
- *   COLUMN; the route re-narrows the stored value to the two known scopes.
+ * - scope is the owner's per-link visibility choice ('curated' | 'listing' |
+ *   'full'), chosen at create time by the AUTHENTICATED owner and read back
+ *   SERVER-SIDE when building the public snapshot (never from the request).
+ *   Additive column (added in drizzle/0002), NOT NULL DEFAULT 'curated' so every
+ *   pre-existing row stays the safe build-showcase. The enum is a TS-level
+ *   refinement only (SQLite has no enum / added CHECK), so WIDENING it to add
+ *   'listing' (DEC-14) is CODE-ONLY — NO DDL (adding a CHECK would force a
+ *   share_links rebuild that re-touches the FK-to-user cascade). The route
+ *   re-narrows the stored value to the three known scopes (unknown → 'curated').
  */
 export const shareLinks = sqliteTable(
   'share_links',
@@ -139,7 +149,7 @@ export const shareLinks = sqliteTable(
     expiresAt: integer('expires_at'),
     revokedAt: integer('revoked_at'),
     viewCount: integer('view_count').notNull().default(0),
-    scope: text('scope', { enum: ['curated', 'full'] })
+    scope: text('scope', { enum: ['curated', 'listing', 'full'] })
       .notNull()
       .default('curated'),
   },

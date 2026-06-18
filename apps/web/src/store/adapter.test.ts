@@ -2,7 +2,7 @@
 // (a)/(d) support): strict-null cell writes, currency-tagging rules, the
 // no-rewrite settings semantics, delete cascades, and read-model caching.
 import { describe, expect, it, vi } from 'vitest'
-import { createStore } from 'tinybase'
+import { createMergeableStore, createStore } from 'tinybase'
 import { createGarageStore, KM_PER_MILE, mileagePrefill } from '@chudbox/shared'
 import { PHOTO_PAYLOADS_TABLE, createGarageAdapter } from './adapter'
 import type { GarageAdapter, PhotoHooks } from './adapter'
@@ -302,6 +302,72 @@ describe('R2 photo hooks (M3)', () => {
   })
 })
 
+describe('DEC-6 delete cascade (§15.10)', () => {
+  function makeAdapterWithHooks(hooks: PhotoHooks): GarageAdapter {
+    return createGarageAdapter(createGarageStore(), createStore(), hooks)
+  }
+
+  it('deleting a mod RE-PARENTS its photos to General (delCell sourceId + source=car), never R2-deleting', () => {
+    const onPhotosDeleted = vi.fn()
+    const adapter = makeAdapterWithHooks({ onPhotosDeleted })
+    const carId = addOneCar(adapter)
+    const state = adapter.getState()
+    state.addMod(carId, { name: 'coilovers', category: '', description: '', cost: null, installedDate: '', shop: '', link: '' })
+    const modId = adapter.store.getRowIds('mods')[0]
+    state.addPhoto(carId, { dataUrl: 'data:x', caption: '' })
+    const photoId = adapter.store.getRowIds('photos')[0]
+    // No attach UI in Phase 1 → wire the attachment + R2 bytes directly.
+    adapter.store.setCell('photos', photoId, 'sourceId', modId)
+    adapter.store.setCell('photos', photoId, 'source', 'mod')
+    adapter.store.setCell('photos', photoId, 'r2Key', 'u/user/car/p.webp')
+
+    adapter.getState().deleteMod(carId, modId)
+
+    // The mod is gone…
+    expect(adapter.store.hasRow('mods', modId)).toBe(false)
+    // …but the photo SURVIVES, re-parented to General: sourceId cleared (the
+    // authoritative move), source hint reset to 'car'.
+    expect(adapter.store.hasRow('photos', photoId)).toBe(true)
+    expect(adapter.store.hasCell('photos', photoId, 'sourceId')).toBe(false)
+    expect(adapter.store.getCell('photos', photoId, 'source')).toBe('car')
+    // R2 bytes are NEVER destroyed for a re-tag (must NOT route through onPhotosDeleted).
+    expect(onPhotosDeleted).not.toHaveBeenCalled()
+  })
+
+  it('re-parents only the deleted items photos, leaving other items attachments intact', () => {
+    const adapter = makeAdapterWithHooks({})
+    const carId = addOneCar(adapter)
+    const state = adapter.getState()
+    state.addMaintenance(carId, { service: 'oil', date: '', mileage: null, cost: null, shop: '', notes: '', nextDueDate: '', nextDueMileage: '' })
+    state.addIssue(carId, { title: 'rattle', description: '', severity: 'minor' })
+    const recId = adapter.store.getRowIds('maintenance')[0]
+    const issueId = adapter.store.getRowIds('issues')[0]
+    state.addPhoto(carId, { dataUrl: 'a', caption: '' })
+    state.addPhoto(carId, { dataUrl: 'b', caption: '' })
+    const [pMaint, pIssue] = adapter.store.getRowIds('photos')
+    adapter.store.setCell('photos', pMaint, 'sourceId', recId)
+    adapter.store.setCell('photos', pIssue, 'sourceId', issueId)
+
+    adapter.getState().deleteMaintenance(carId, recId)
+
+    expect(adapter.store.hasCell('photos', pMaint, 'sourceId')).toBe(false) // re-parented
+    expect(adapter.store.getCell('photos', pIssue, 'sourceId')).toBe(issueId) // untouched
+  })
+
+  it('deletePhoto clears BOTH bannerPhoto and coverPhoto when they point at it', () => {
+    const adapter = makeAdapterWithHooks({})
+    const carId = addOneCar(adapter)
+    adapter.getState().addPhoto(carId, { dataUrl: 'x', caption: '' })
+    const photoId = adapter.store.getRowIds('photos')[0]
+    adapter.getState().setCoverPhoto(carId, photoId)
+    adapter.store.setCell('cars', carId, 'bannerPhoto', photoId)
+
+    adapter.getState().deletePhoto(carId, photoId)
+    expect(adapter.store.hasCell('cars', carId, 'coverPhoto')).toBe(false)
+    expect(adapter.store.hasCell('cars', carId, 'bannerPhoto')).toBe(false)
+  })
+})
+
 describe('read model caching', () => {
   it('keeps state and car identities stable until their data changes', () => {
     const adapter = makeAdapter()
@@ -387,5 +453,93 @@ describe('mileage edit round-trip survives a units toggle', () => {
     expect(prefill).toBe('50000')
     adapter.getState().updateCar(carId, { mileage: prefill })
     expect(adapter.store.getCell('cars', carId, 'mileageMiles')).toBe(50_000)
+  })
+})
+
+// ── Local-first migration-load guard (Phase-2 EXPAND) ──────────────────────
+// EXPAND is a PURELY ADDITIVE superset (DATA_MODEL.md §2/§15.8): it adds the
+// `mileage`/`savedBuilds` tables and the cars.vin/bannerPhoto + photos.source/
+// sourceId cells. A device whose IndexedDB was written under the OLD schema
+// therefore holds a STRICT SUBSET of the current content. On boot the persister
+// does `store.setMergeableContent(<old content>)` into the CURRENT-schema store
+// (useGarageStore.ts initGarageStore → mainPersister.load()).
+//
+// This guard pins that the additive load tolerates absent tables/cells: absent
+// ⇔ empty/default, with the pre-existing cars/children preserved byte-for-byte.
+// `setMergeableContent` is exactly what the custom mergeable persister's load()
+// routes content into (idbMergeablePersister.ts → tinybase persister core:
+// getContent = getMergeableContent, and a non-changes content array dispatches
+// to setMergeableContent), so this exercises the real migration-load path
+// without needing an IndexedDB shim.
+describe('migration-load: OLD-schema content into the CURRENT-schema store', () => {
+  // Strict subset of GARAGE_TABLES_SCHEMA: 6 pre-DEC child tables (NO mileage /
+  // savedBuilds) and NONE of the new cells (vin, bannerPhoto, source, sourceId).
+  const OLD_TABLES_SCHEMA = {
+    cars: {
+      year: { type: 'string' }, make: { type: 'string' }, model: { type: 'string' },
+      trim: { type: 'string' }, color: { type: 'string' }, mileageRaw: { type: 'string' },
+      mileageMiles: { type: 'number' }, nickname: { type: 'string' }, purchaseDate: { type: 'string' },
+      saleDate: { type: 'string' }, status: { type: 'string' }, salePrice: { type: 'string' },
+      salePriceCurrency: { type: 'string' }, tradeFor: { type: 'string' }, coverPhoto: { type: 'string' },
+      createdAt: { type: 'string' },
+    },
+    photos: { carId: { type: 'string' }, r2Key: { type: 'string' }, caption: { type: 'string' }, uploadedAt: { type: 'string' } },
+    mods: { carId: { type: 'string' }, name: { type: 'string' }, category: { type: 'string' },
+      description: { type: 'string' }, cost: { type: 'number' }, costCurrency: { type: 'string' },
+      installedDate: { type: 'string' }, shop: { type: 'string' }, link: { type: 'string' }, addedAt: { type: 'string' } },
+    todos: { carId: { type: 'string' }, text: { type: 'string' }, priority: { type: 'string' },
+      done: { type: 'boolean' }, createdAt: { type: 'string' } },
+  } as const
+
+  function oldSchemaContent() {
+    const old = createMergeableStore('old-device')
+      .setTablesSchema(OLD_TABLES_SCHEMA as never)
+      .setValuesSchema({ themeId: { type: 'string', default: 'garage' }, currency: { type: 'string', default: 'USD' },
+        distanceUnit: { type: 'string', default: 'mi' }, customAccent: { type: 'string' } } as never)
+    old.setRow('cars', 'car-1', { year: '1999', make: 'Mazda', model: 'Miata', trim: '', color: '',
+      mileageRaw: '50000', mileageMiles: 50_000, nickname: 'Bess', purchaseDate: '', saleDate: '',
+      status: 'current', salePrice: '', tradeFor: '', coverPhoto: 'photo-1', createdAt: '2020-01-01' })
+    old.setRow('photos', 'photo-1', { carId: 'car-1', caption: 'front', uploadedAt: '2020-01-02', r2Key: 'u/x/photo-1.webp' })
+    old.setRow('mods', 'mod-1', { carId: 'car-1', name: 'exhaust', category: '', description: '',
+      cost: 500, costCurrency: 'USD', installedDate: '', shop: '', link: '', addedAt: '2020-01-03' })
+    old.setRow('todos', 'todo-1', { carId: 'car-1', text: 'wash it', priority: 'medium', done: false, createdAt: '2020-01-04' })
+    old.setValue('currency', 'EUR')
+    return old.getMergeableContent()
+  }
+
+  it('loads without throwing and preserves the pre-existing cars/children', () => {
+    const store = createGarageStore('this-device')
+    const adapter = createGarageAdapter(store, createStore())
+
+    // The exact operation mainPersister.load() performs on a device with
+    // OLD-schema IndexedDB content. MUST NOT throw "can't convert undefined to
+    // object" on the absent mileage/savedBuilds tables or absent new cells.
+    expect(() => store.setMergeableContent(oldSchemaContent())).not.toThrow()
+
+    const cars = adapter.getState().cars
+    expect(cars).toHaveLength(1)
+    const car = cars[0]
+    // Pre-existing data is intact (round-trip preserved).
+    expect(car.id).toBe('car-1')
+    expect(car.make).toBe('Mazda')
+    expect(car.nickname).toBe('Bess')
+    expect(car.mileage).toBe('50000')
+    expect(car.coverPhoto).toBe('photo-1')
+    expect(car.photos.map((p) => p.id)).toEqual(['photo-1'])
+    expect((car.photos[0] as { r2Key?: string }).r2Key).toBe('u/x/photo-1.webp')
+    expect(car.mods.map((m) => m.name)).toEqual(['exhaust'])
+    expect(car.mods[0].cost).toBe(500)
+    expect(car.todos.map((t) => t.text)).toEqual(['wash it'])
+    expect(adapter.getState().currency).toBe('EUR')
+
+    // Absent new cells default per the documented contract.
+    expect(car.vin).toBeUndefined() // vin: absent ⇔ ''
+    expect(car.bannerPhoto).toBeUndefined() // bannerPhoto: absent ⇔ null
+    expect(car.photos[0].source).toBeUndefined() // source: absent ⇔ 'car' (General)
+    expect(car.photos[0].sourceId).toBeUndefined()
+    // Absent additive tables ⇔ empty.
+    expect(car.mileageLog).toBeUndefined()
+    expect(store.getRowIds('mileage')).toHaveLength(0)
+    expect(store.getRowIds('savedBuilds')).toHaveLength(0)
   })
 })

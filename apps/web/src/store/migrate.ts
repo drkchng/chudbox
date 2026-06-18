@@ -73,6 +73,7 @@ const CHILD_ROW_SETS = [
   'maintenance',
   'todos',
   'issues',
+  'mileage',
 ] as const
 
 /**

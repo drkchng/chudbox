@@ -246,6 +246,8 @@ function makeCar({ carId, photoId }: Ids): Car {
     status: 'for-sale',
     salePrice: 'SECRET_salePrice',
     tradeFor: '',
+    // DEC-13: a VIN that the OG/crawler path must NEVER render (review fix #1).
+    vin: 'OGVIN1234567890XX',
     coverPhoto: photoId,
     createdAt: 'x',
     photos: [{ id: photoId, dataUrl: '', caption: 'KEEP_caption', uploadedAt: 'x' }],
@@ -293,7 +295,10 @@ async function seedCar(ids: Ids, opts?: { noCover?: boolean }): Promise<void> {
   await seedStore(store)
 }
 
-async function createLink(carId: string, scope?: 'curated' | 'full'): Promise<CreateShareResponse> {
+async function createLink(
+  carId: string,
+  scope?: 'curated' | 'listing' | 'full',
+): Promise<CreateShareResponse> {
   const res = await SELF.fetch(`${BASE}${createShareLinkPath(carId)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', cookie: session.cookie },
@@ -347,6 +352,29 @@ describe('GET /share/:token document — OG injection', () => {
     // …but the full link's private fields never reach the public preview.
     for (const secret of SECRETS) {
       expect(html, `full-link preview leaked: ${secret}`).not.toContain(secret)
+    }
+  })
+
+  // Review fix #1 (MAJOR): the OG/crawler path is the highest-exposure surface
+  // (crawler-cached, NO session). It must be STRUCTURALLY private-free — the
+  // rendered /share/:token HTML must NEVER contain the car's VIN, even for a
+  // LISTING link (where the snapshot scope CAN carry vin). The OG path downgrades
+  // every scope to curated, so vin is absent by construction.
+  it('NEVER renders the VIN in the /share/:token HTML for a listing link (regression #1)', async () => {
+    const ids = freshIds()
+    await seedCar(ids)
+    const link = await createLink(ids.carId, 'listing')
+
+    const res = await SELF.fetch(`${BASE}/share/${link.token}`)
+    expect(res.status).toBe(200)
+    const html = await res.text()
+    // The curated title still drives the preview…
+    expect(html).toContain('property="og:title" content="2008 Acura RSX')
+    // …but the VIN (a fraud-enabling identifier) is NOWHERE in the document.
+    expect(html).not.toContain('OGVIN1234567890XX')
+    // …and neither is the price/other private data.
+    for (const secret of SECRETS) {
+      expect(html, `listing-preview leaked: ${secret}`).not.toContain(secret)
     }
   })
 

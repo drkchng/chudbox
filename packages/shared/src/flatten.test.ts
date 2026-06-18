@@ -3,7 +3,9 @@ import fc from 'fast-check'
 import {
   KM_PER_MILE,
   flattenCar,
+  flattenSavedBuild,
   joinCar,
+  joinSavedBuild,
   milesToUnit,
   parseMileageMiles,
 } from './flatten'
@@ -16,13 +18,18 @@ import type {
   IssueSeverity,
   IssueStatus,
   MaintenanceRecord,
+  MileageCheckIn,
+  MileageSource,
   Mod,
   Photo,
+  PhotoSource,
+  SavedBuild,
   Todo,
   TodoPriority,
   WishlistItem,
   WishlistStatus,
 } from './types'
+import type { DistanceUnitCode } from './units'
 
 // ── Generators ──────────────────────────────────────────────
 // Strings deliberately mix plain ASCII with full-unicode graphemes; numbers
@@ -63,6 +70,24 @@ const photoArb: fc.Arbitrary<Photo> = fc.record({
   dataUrl: strArb.map((s) => `data:image/webp;base64,${s}`),
   caption: strArb,
   uploadedAt: strArb,
+  // DEC-6: a General photo is ABSENT source (flatten omits 'car'); item-attached
+  // photos carry a non-car source + a sourceId. 'car' is deliberately NOT in the
+  // generator (it round-trips to absent), exercised separately below.
+  source: fc.option(
+    fc.constantFrom<PhotoSource>('mod', 'maintenance', 'issue', 'todo'),
+    { nil: undefined },
+  ),
+  sourceId: fc.option(idArb, { nil: undefined }),
+})
+
+// DEC-16: each check-in freezes its OWN entry unit (NOT the device unit).
+const mileageCheckInArb: fc.Arbitrary<MileageCheckIn> = fc.record({
+  id: idArb,
+  value: mileageStringArb,
+  unit: fc.constantFrom<DistanceUnitCode>('mi', 'km'),
+  date: strArb,
+  source: fc.constantFrom<MileageSource>('manual', 'initial', 'import', 'legacy-edit'),
+  createdAt: strArb,
 })
 
 const wishlistArb: fc.Arbitrary<WishlistItem> = fc.record({
@@ -133,6 +158,17 @@ const coverPhotoArb = (photos: Photo[]): fc.Arbitrary<string | null> =>
       : []),
   )
 
+// bannerPhoto round-trips like coverPhoto, but joinCar is transparent for it
+// (absent ⇔ no banner), so the generator never emits an explicit null — it emits
+// ABSENT or a (possibly dangling) photoId. The null/absent equivalence is
+// asserted at the cell level below.
+const bannerPhotoArb = (photos: Photo[]): fc.Arbitrary<string | undefined> =>
+  fc.oneof(
+    fc.constant(undefined),
+    fc.uuid(),
+    ...(photos.length > 0 ? [fc.constantFrom(...photos.map((p) => p.id))] : []),
+  )
+
 const carArb: fc.Arbitrary<Car> = uniqueById(photoArb).chain((photos) =>
   fc.record({
     id: idArb,
@@ -154,7 +190,11 @@ const carArb: fc.Arbitrary<Car> = uniqueById(photoArb).chain((photos) =>
     ),
     salePrice: salePriceArb,
     tradeFor: strArb,
+    // DEC-13 VIN: ABSENT or a non-empty value ('' round-trips to absent, pinned
+    // separately). DEC-6 bannerPhoto + DEC-16 mileageLog (absent or non-empty).
+    vin: fc.option(fc.string({ minLength: 1 }), { nil: undefined }),
     coverPhoto: coverPhotoArb(photos),
+    bannerPhoto: bannerPhotoArb(photos),
     createdAt: strArb,
     photos: fc.constant(photos),
     wishlist: uniqueById(wishlistArb),
@@ -162,6 +202,10 @@ const carArb: fc.Arbitrary<Car> = uniqueById(photoArb).chain((photos) =>
     maintenance: uniqueById(maintenanceArb),
     todos: uniqueById(todoArb),
     issues: uniqueById(issueArb),
+    mileageLog: fc.option(
+      fc.uniqueArray(mileageCheckInArb, { selector: (x) => x.id, minLength: 1, maxLength: 4 }),
+      { nil: undefined },
+    ),
   }),
 )
 
@@ -181,6 +225,7 @@ const tableEntries = (flat: FlattenedCar) =>
     ['maintenance', flat.maintenance],
     ['todos', flat.todos],
     ['issues', flat.issues],
+    ['mileage', flat.mileage],
   ] as const
 
 function assertRowInvariants(flat: FlattenedCar, settings: FlattenSettings, car: Car) {
@@ -228,6 +273,23 @@ function assertRowInvariants(flat: FlattenedCar, settings: FlattenSettings, car:
   // maintenance.mileageRaw mirrors the source: present iff source non-null.
   for (const rec of car.maintenance) {
     expect('mileageRaw' in flat.maintenance[rec.id]!).toBe(rec.mileage !== null)
+  }
+
+  // DEC-16: each check-in's valueMiles is present IFF its raw parses under ITS
+  // OWN frozen unit (NOT the device unit).
+  for (const checkIn of car.mileageLog ?? []) {
+    const row = flat.mileage[checkIn.id]!
+    expect(row.valueRaw).toBe(checkIn.value)
+    expect(row.unit).toBe(checkIn.unit)
+    expect('valueMiles' in row).toBe(parseMileageMiles(checkIn.value, checkIn.unit) !== null)
+  }
+
+  // DEC-6: a General photo (absent/'car' source) carries no `source` cell; an
+  // item-attached photo carries its non-car source verbatim.
+  for (const photo of car.photos) {
+    const row = flat.photos[photo.id]!
+    expect('source' in row).toBe(photo.source != null && photo.source !== 'car')
+    expect('sourceId' in row).toBe(photo.sourceId != null)
   }
 
   // Photo payloads: every dataUrl is in the side map, keyed by photoId.
@@ -400,6 +462,121 @@ describe('flattenCar / joinCar round trip', () => {
     const joined = joinCar(flattenCar(car, { currency: 'USD', distanceUnit: 'mi' }))
     expect(joined.coverPhoto).toBeNull()
     expect(joined.issues[0]!.resolvedAt).toBeNull()
+  })
+})
+
+describe('new cells + tables (DEC-6/13/16/11) round trip + omission', () => {
+  it('round-trips vin, bannerPhoto, photo source/sourceId, and the mileage timeline', () => {
+    const car: Car = {
+      ...minimalCar({}),
+      id: 'car-x',
+      vin: '1HGCM82633A004352',
+      coverPhoto: 'p1',
+      bannerPhoto: 'p2',
+      photos: [
+        { id: 'p1', dataUrl: 'data:,a', caption: 'general', uploadedAt: 'x' }, // General (absent source)
+        {
+          id: 'p2',
+          dataUrl: 'data:,b',
+          caption: 'mod shot',
+          uploadedAt: 'y',
+          source: 'mod',
+          sourceId: 'mod-1',
+        },
+      ],
+      mileageLog: [
+        { id: 'ck1', value: '12,000', unit: 'km', date: '2024-01-01', source: 'manual', createdAt: 'a' },
+        { id: 'ck2', value: 'unknown', unit: 'mi', date: '2024-02-01', source: 'initial', createdAt: 'b' },
+      ],
+    }
+    const flat = flattenCar(car, { currency: 'USD', distanceUnit: 'mi' })
+    expect(joinCar(flat)).toEqual(car)
+
+    expect(flat.car.vin).toBe('1HGCM82633A004352')
+    expect(flat.car.bannerPhoto).toBe('p2')
+    // DEC-6: General photo has NO source/sourceId cell; item photo carries both.
+    expect('source' in flat.photos['p1']!).toBe(false)
+    expect('sourceId' in flat.photos['p1']!).toBe(false)
+    expect(flat.photos['p2']).toMatchObject({ source: 'mod', sourceId: 'mod-1' })
+    // DEC-16: the km check-in canonicalizes with ITS OWN frozen unit (×1.609344),
+    // not the device 'mi'; the non-parsing 'unknown' reading has no valueMiles.
+    expect(flat.mileage['ck1']!.valueMiles).toBe(12_000 / KM_PER_MILE)
+    expect(flat.mileage['ck1']!.unit).toBe('km')
+    expect('valueMiles' in flat.mileage['ck2']!).toBe(false)
+  })
+
+  it('omits the default/sentinel cells (vin "", source "car", null bannerPhoto, empty timeline)', () => {
+    const car: Car = {
+      ...minimalCar({}),
+      vin: '', // blank ⇒ no cell (absent ⇔ '')
+      bannerPhoto: null, // explicit null ⇒ no cell
+      photos: [{ id: 'p1', dataUrl: 'data:,a', caption: '', uploadedAt: 'x', source: 'car' }], // General
+      mileageLog: [],
+    }
+    const flat = flattenCar(car, { currency: 'USD', distanceUnit: 'mi' })
+    expect('vin' in flat.car).toBe(false)
+    expect('bannerPhoto' in flat.car).toBe(false)
+    expect('source' in flat.photos['p1']!).toBe(false) // 'car' is never materialized
+    expect(Object.keys(flat.mileage)).toHaveLength(0)
+
+    const joined = joinCar(flat)
+    expect('vin' in joined).toBe(false)
+    expect('bannerPhoto' in joined).toBe(false)
+    expect('mileageLog' in joined).toBe(false)
+    expect(joined.photos[0]!.source).toBeUndefined()
+  })
+
+  it('round-trips a SavedBuild, distinguishing null (never set) from "" (cleared) nickname', () => {
+    const build: SavedBuild = {
+      id: 'sha-abc',
+      token: 'rawtok',
+      savedAt: '2026-01-01',
+      nickname: '', // cleared — a REAL, distinct state
+      sortOrder: 0, // 0 is a real value
+      cachedYear: '1999',
+      cachedMake: 'Mazda',
+      cachedModel: 'Miata',
+      cachedNickname: null, // never set
+      cachedOwnerName: 'Alex',
+      cachedStatus: 'for-sale',
+      cachedMileageRaw: '90000',
+      cachedModsCount: 0,
+      cachedCoverPhotoId: 'cover-1',
+      cachedScope: 'listing',
+      lastRefreshedAt: '2026-01-02',
+      unavailableSince: null,
+    }
+    const row = flattenSavedBuild(build)
+    expect(joinSavedBuild('sha-abc', row)).toEqual(build)
+    // null cells are OMITTED; '' / 0 are written explicitly (strict null rule).
+    expect('cachedNickname' in row).toBe(false)
+    expect('unavailableSince' in row).toBe(false)
+    expect(row.nickname).toBe('')
+    expect(row.sortOrder).toBe(0)
+    expect(row.cachedModsCount).toBe(0)
+  })
+
+  it('joins an all-absent SavedBuild row back to all-null cached fields', () => {
+    const joined = joinSavedBuild('sha-xyz', { token: 't', savedAt: 's' })
+    expect(joined).toEqual({
+      id: 'sha-xyz',
+      token: 't',
+      savedAt: 's',
+      nickname: null,
+      sortOrder: null,
+      cachedYear: null,
+      cachedMake: null,
+      cachedModel: null,
+      cachedNickname: null,
+      cachedOwnerName: null,
+      cachedStatus: null,
+      cachedMileageRaw: null,
+      cachedModsCount: null,
+      cachedCoverPhotoId: null,
+      cachedScope: null,
+      lastRefreshedAt: null,
+      unavailableSince: null,
+    })
   })
 })
 

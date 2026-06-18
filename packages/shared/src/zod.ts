@@ -120,12 +120,12 @@ export type UploadFieldsInput = z.infer<typeof uploadFieldsSchema>
 // re-checks (DB CHECK expires_at > created_at) since "now" advances between
 // validation and insert. z.infer is assignable to CreateShareRequest
 // (cross-checked in zod.test.ts).
-// `scope` is the owner's per-link visibility choice ('curated' | 'full'),
-// validated as a closed enum. Absent → 'curated' (the safe default), so an old
-// client that never sends it keeps getting the showcase. The server stores the
-// parsed value on the row; the public route reads it from storage, never from
+// `scope` is the owner's per-link visibility choice ('curated' | 'listing' |
+// 'full'), validated as a closed enum. Absent → 'curated' (the safe default), so
+// an old client that never sends it keeps getting the showcase. The server stores
+// the parsed value on the row; the public route reads it from storage, never from
 // the viewer — so this is the ONLY place a client can influence scope, and only
-// the authenticated owner reaches it.
+// the authenticated owner reaches it. 'listing' (DEC-14) is the For-Sale preset.
 export const createShareRequestSchema = z.strictObject({
   expiresAt: z
     .number()
@@ -135,7 +135,7 @@ export const createShareRequestSchema = z.strictObject({
       message: 'expiresAt must be a future epoch-seconds timestamp',
     })
     .nullish(),
-  scope: z.enum(['curated', 'full']).default('curated'),
+  scope: z.enum(['curated', 'listing', 'full']).default('curated'),
 })
 
 export type CreateShareRequestInput = z.infer<typeof createShareRequestSchema>
