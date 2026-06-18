@@ -7,6 +7,7 @@ import ConfirmModal from '../ConfirmModal'
 import Badge from '../ui/Badge'
 import Button from '../ui/Button'
 import IconButton from '../ui/IconButton'
+import ItemPhotos from '../photos/ItemPhotos'
 import type { Car, Todo, TodoPriority, StatusRole } from '../../types'
 
 // Priority → status role. Orange stays reclaimed for action/alert: high is a
@@ -76,16 +77,19 @@ export default function TodoTab({ car }: TodoTabProps) {
                 // A11: checkbox + text live inside ONE <label> so the whole row
                 // (a ≥44px target) toggles and the text names the control. The
                 // priority badge + delete sit OUTSIDE the label so they don't toggle.
-                <div key={todo.id} className="card flex items-center gap-3 py-3">
-                  <label className="flex flex-1 items-center gap-3 cursor-pointer select-none min-w-0">
-                    <input type="checkbox" checked={false} onChange={() => toggleTodo(car.id, todo.id)}
-                      className="size-[18px] rounded-sm accent-accent cursor-pointer shrink-0" />
-                    <span className="flex-1 min-w-0 text-body text-text-primary">{todo.text}</span>
-                  </label>
-                  <Badge status={PRIORITY[todo.priority].role}>{PRIORITY[todo.priority].label}</Badge>
-                  <IconButton aria-label={`Delete task: ${todo.text}`} onClick={() => setConfirmTodo(todo)}>
-                    <Trash2 size={tokens.iconSize.sm} />
-                  </IconButton>
+                <div key={todo.id} className="card py-3">
+                  <div className="flex items-center gap-3">
+                    <label className="flex flex-1 items-center gap-3 cursor-pointer select-none min-w-0">
+                      <input type="checkbox" checked={false} onChange={() => toggleTodo(car.id, todo.id)}
+                        className="size-[18px] rounded-sm accent-accent cursor-pointer shrink-0" />
+                      <span className="flex-1 min-w-0 text-body text-text-primary">{todo.text}</span>
+                    </label>
+                    <Badge status={PRIORITY[todo.priority].role}>{PRIORITY[todo.priority].label}</Badge>
+                    <IconButton aria-label={`Delete task: ${todo.text}`} onClick={() => setConfirmTodo(todo)}>
+                      <Trash2 size={tokens.iconSize.sm} />
+                    </IconButton>
+                  </div>
+                  <ItemPhotos carId={car.id} source="todo" itemId={todo.id} photos={car.photos} itemLabel={todo.text || 'this task'} />
                 </div>
               ))}
             </div>

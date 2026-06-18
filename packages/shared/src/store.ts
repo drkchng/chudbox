@@ -49,6 +49,23 @@ export function carIdIndexId(childTableId: ChildTableId): string {
 }
 
 /**
+ * Client-only index id (DEC-6 §15.2): photos keyed by their `sourceId`, so the
+ * inline per-item gallery slice + count badge are O(1)
+ * (`getSliceRowIds(PHOTOS_BY_SOURCE_ID, modId)`). General photos carry no
+ * `sourceId` and fall into the empty-string slice — never queried by a real
+ * item id. The DO builds no indexes (its one-shot snapshot reads scan); this is
+ * a CLIENT read-model index only, adding one entry per photo that HAS a
+ * sourceId (General photos cost nothing).
+ */
+export const PHOTOS_BY_SOURCE_ID = 'photosBySourceId'
+
+/** Apply the DEC-6 photosBySourceId index to an existing Indexes object. */
+export function definePhotoSourceIndex(indexes: Indexes): Indexes {
+  indexes.setIndexDefinition(PHOTOS_BY_SOURCE_ID, 'photos', 'sourceId')
+  return indexes
+}
+
+/**
  * Apply the plan's carId Index definitions (one per child table) to an
  * existing Indexes object, so getCarSnapshot(carId) / the useCar(id) join are
  * O(rows-for-this-car), not O(whole garage). Callers that build Indexes
@@ -62,7 +79,8 @@ export function defineCarIdIndexes(indexes: Indexes): Indexes {
   return indexes
 }
 
-/** Convenience: create an Indexes object on `store` with all carId indexes defined. */
+/** Convenience: create an Indexes object on `store` with the carId indexes AND
+ * the DEC-6 photosBySourceId index defined. */
 export function createGarageIndexes(store: Store): Indexes {
-  return defineCarIdIndexes(createIndexes(store))
+  return definePhotoSourceIndex(defineCarIdIndexes(createIndexes(store)))
 }

@@ -5,7 +5,12 @@ import {
   GARAGE_TABLES_SCHEMA,
   GARAGE_VALUES_SCHEMA,
 } from './schema'
-import { carIdIndexId, createGarageIndexes, createGarageStore } from './store'
+import {
+  PHOTOS_BY_SOURCE_ID,
+  carIdIndexId,
+  createGarageIndexes,
+  createGarageStore,
+} from './store'
 import { newId } from './id'
 
 // The explicit nullable inventory from the plan: these cells must declare a
@@ -94,11 +99,11 @@ describe('createGarageStore', () => {
 })
 
 describe('carId indexes', () => {
-  it('defines one carId index per child table', () => {
+  it('defines one carId index per child table plus the photosBySourceId index', () => {
     const store = createGarageStore()
     const indexes = createGarageIndexes(store)
     expect(new Set(indexes.getIndexIds())).toEqual(
-      new Set(CHILD_TABLE_IDS.map((t) => carIdIndexId(t))),
+      new Set([...CHILD_TABLE_IDS.map((t) => carIdIndexId(t)), PHOTOS_BY_SOURCE_ID]),
     )
   })
 
@@ -112,6 +117,20 @@ describe('carId indexes', () => {
     expect(indexes.getSliceRowIds('photosByCarId', 'c2')).toEqual(['p2'])
     expect(indexes.getSliceRowIds('todosByCarId', 'c1')).toEqual(['t1'])
     expect(indexes.getSliceRowIds('todosByCarId', 'c2')).toEqual([])
+  })
+
+  it('photosBySourceId slices item-attached photos and ignores General photos (DEC-6)', () => {
+    const store = createGarageStore()
+    // Two photos attached to mod-1, one to mod-2, one General (no sourceId).
+    store.setRow('photos', 'p1', { carId: 'c1', caption: '', uploadedAt: '', source: 'mod', sourceId: 'mod-1' })
+    store.setRow('photos', 'p2', { carId: 'c1', caption: '', uploadedAt: '', source: 'mod', sourceId: 'mod-1' })
+    store.setRow('photos', 'p3', { carId: 'c1', caption: '', uploadedAt: '', source: 'mod', sourceId: 'mod-2' })
+    store.setRow('photos', 'pG', { carId: 'c1', caption: '', uploadedAt: '' })
+    const indexes = createGarageIndexes(store)
+    expect(new Set(indexes.getSliceRowIds(PHOTOS_BY_SOURCE_ID, 'mod-1'))).toEqual(new Set(['p1', 'p2']))
+    expect(indexes.getSliceRowIds(PHOTOS_BY_SOURCE_ID, 'mod-2')).toEqual(['p3'])
+    // General photo never appears under a real item id.
+    expect(indexes.getSliceRowIds(PHOTOS_BY_SOURCE_ID, 'mod-1')).not.toContain('pG')
   })
 })
 

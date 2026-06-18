@@ -11,6 +11,7 @@ import MileageText from '../MileageText'
 import Button from '../ui/Button'
 import IconButton from '../ui/IconButton'
 import Badge from '../ui/Badge'
+import ItemPhotos from '../photos/ItemPhotos'
 import type { MaintenanceRecord, StoredCar, StoredMaintenance, FieldChangeEvent } from '../../types'
 
 const SERVICES = ['Oil Change', 'Tire Rotation', 'Brake Pads', 'Brake Fluid', 'Coolant Flush', 'Transmission Fluid', 'Spark Plugs', 'Air Filter', 'Cabin Filter', 'Belt / Chain', 'Battery', 'Alignment', 'Tires', 'Inspection', 'Other']
@@ -233,6 +234,7 @@ export default function MaintenanceTab({ car }: MaintenanceTabProps) {
                     {formatMileage(rec.nextDueMileage, rec.nextDueMileageMiles, distanceUnit) ?? ''}
                   </p>
                 )}
+                <ItemPhotos carId={car.id} source="maintenance" itemId={rec.id} photos={car.photos} itemLabel={rec.service || 'this record'} />
               </div>
               <div className="flex gap-1 shrink-0">
                 <IconButton aria-label={`Edit "${rec.service}"`} title="Edit" onClick={() => startEdit(rec)}>

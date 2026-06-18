@@ -8,6 +8,7 @@ import ConfirmModal from '../ConfirmModal'
 import Badge from '../ui/Badge'
 import Button from '../ui/Button'
 import IconButton from '../ui/IconButton'
+import ItemPhotos from '../photos/ItemPhotos'
 import type { Car, Issue, IssueSeverity, IssueStatus, StatusRole, FieldChangeEvent } from '../../types'
 
 // Severity → status role. Orange stays reclaimed: critical is the danger token,
@@ -192,6 +193,7 @@ export default function IssuesTab({ car }: IssuesTabProps) {
                   </div>
                   {issue.description && <p className="text-meta text-text-secondary mt-1">{issue.description}</p>}
                   <p className="text-meta text-text-secondary mt-1">{new Date(issue.createdAt).toLocaleDateString()}{issue.resolvedAt ? ` · Resolved ${new Date(issue.resolvedAt).toLocaleDateString()}` : ''}</p>
+                  <ItemPhotos carId={car.id} source="issue" itemId={issue.id} photos={car.photos} itemLabel={issue.title || 'this issue'} />
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   <IconButton

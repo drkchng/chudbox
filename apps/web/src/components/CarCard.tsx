@@ -3,6 +3,7 @@ import { Car as CarIcon, CheckSquare, Wrench } from 'lucide-react'
 import { getCarStatus, STATUS_CONFIG } from '../utils/carStatus'
 import useGarageStore from '../store/useGarageStore'
 import { resolvePhotoSrc } from '../utils/image'
+import { resolveCoverPhoto } from '../utils/photoBuckets'
 import { CURRENCIES, formatCurrentMileage } from '../utils/units'
 import { carDueMaintenance } from '../utils/maintenanceDue'
 import Badge from './ui/Badge'
@@ -31,7 +32,8 @@ export default function CarCard({ car }: CarCardProps) {
   const sym          = CURRENCIES[currency]?.symbol ?? '$'
   // DEC-16: current mileage = the latest check-in (falls back to the scalar mirror).
   const mileageText  = formatCurrentMileage(car, car.mileageMiles, distanceUnit)
-  const coverPhoto   = car.photos.find((p) => p.id === car.coverPhoto) || car.photos[0]
+  // DEC-6: CarCard shows the COVER (coverPhoto → first → none); soft pointer.
+  const coverPhoto   = resolveCoverPhoto(car)
   const coverSrc     = coverPhoto ? resolvePhotoSrc(coverPhoto) : ''
   const openIssues   = car.issues.filter((i) => i.status !== 'resolved').length
   const pendingTodos = car.todos.filter((t) => !t.done).length

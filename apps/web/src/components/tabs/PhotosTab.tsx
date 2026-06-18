@@ -1,200 +1,191 @@
-import { useEffect, useRef, useState } from 'react'
-import type { ChangeEvent } from 'react'
-import { Upload, Star, Trash2, X, CloudOff } from 'lucide-react'
+/**
+ * PhotosTab (DEC-6) — ONE unified gallery of all the car's photos, filterable by
+ * source (General · Mods · Maintenance · Issues · Todos). Bucketing is by the
+ * RESOLVED parent (§15.2 coherence rule: `sourceId` resolution, never the raw
+ * `source` hint). Each tile is a real <button> with PERSISTENT cover/banner/
+ * delete actions (A3) and opens a keyboard-operable Lightbox (A15). The
+ * cover/banner pickers (DEC-6) let any photo become the CarCard cover or the
+ * CarHero banner.
+ */
+import { useMemo, useState } from 'react'
+import { Star, Image as ImageIcon, Trash2 } from 'lucide-react'
 import { tokens } from '@chudbox/shared'
+import type { PhotoSource } from '@chudbox/shared'
 import useGarageStore, { useSyncStatus } from '../../store/useGarageStore'
-import { hasCloudCopy, resolvePhotoSrc } from '../../utils/image'
+import { hasCloudCopy } from '../../utils/image'
+import {
+  SOURCE_BADGE,
+  SOURCE_LABEL,
+  buildItemKindMap,
+  resolvedSource,
+} from '../../utils/photoBuckets'
 import ConfirmModal from '../ConfirmModal'
 import Button from '../ui/Button'
-import IconButton from '../ui/IconButton'
-import type { Car, Photo } from '../../types'
+import PhotoTile from '../photos/PhotoTile'
+import PhotoUploader from '../photos/PhotoUploader'
+import Lightbox from '../photos/Lightbox'
+import type { Car } from '../../types'
+import type { StoredPhoto } from '../../utils/image'
 
 interface PhotosTabProps {
   car: Car
 }
 
+type Filter = 'all' | PhotoSource
+// General always shown; the item buckets appear as chips only when non-empty.
+const ITEM_FILTERS: PhotoSource[] = ['mod', 'maintenance', 'issue', 'todo']
+
 export default function PhotosTab({ car }: PhotosTabProps) {
   const addPhoto = useGarageStore((s) => s.addPhoto)
   const deletePhoto = useGarageStore((s) => s.deletePhoto)
   const setCoverPhoto = useGarageStore((s) => s.setCoverPhoto)
+  const setBannerPhoto = useGarageStore((s) => s.setBannerPhoto)
   // 'idle' ⇒ logged out; any other status ⇒ an account is active, so a photo
   // without an R2 copy yet is awaiting upload (vs. just being a local photo).
   const accountActive = useSyncStatus() !== 'idle'
-  const fileRef = useRef<HTMLInputElement | null>(null)
-  const [caption, setCaption] = useState('')
-  const [preview, setPreview] = useState<string | null>(null)
-  const [lightbox, setLightbox] = useState<Photo | null>(null)
-  const [confirmPhoto, setConfirmPhoto] = useState<Photo | null>(null)
 
-  // A3: the lightbox is a custom overlay (not the Modal primitive — a full-bleed
-  // image doesn't fit the dialog card). Give keyboard users an Escape path.
-  useEffect(() => {
-    if (!lightbox) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setLightbox(null) }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [lightbox])
+  const [filter, setFilter] = useState<Filter>('all')
+  const [lightbox, setLightbox] = useState<number | null>(null)
+  const [confirmPhoto, setConfirmPhoto] = useState<StoredPhoto | null>(null)
 
-  const handleFile = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      const result = ev.target?.result
-      if (typeof result === 'string') setPreview(result)
+  const photos = car.photos as StoredPhoto[]
+
+  // Resolve each photo's effective parent (§15.2) once, and tally per bucket.
+  const { bucketOf, counts } = useMemo(() => {
+    const kindMap = buildItemKindMap(car)
+    const bucketOf = new Map<string, PhotoSource>()
+    const counts: Record<PhotoSource, number> = { car: 0, mod: 0, maintenance: 0, issue: 0, todo: 0 }
+    for (const p of photos) {
+      const b = resolvedSource(p, kindMap)
+      bucketOf.set(p.id, b)
+      counts[b] += 1
     }
-    reader.readAsDataURL(file)
-    e.target.value = ''
+    return { bucketOf, counts }
+  }, [car, photos])
+
+  const filtered =
+    filter === 'all' ? photos : photos.filter((p) => bucketOf.get(p.id) === filter)
+
+  const selectFilter = (next: Filter) => {
+    setLightbox(null) // a stale index across a different list would mis-point
+    setFilter(next)
   }
 
-  const handleAdd = () => {
-    if (!preview) return
-    addPhoto(car.id, { dataUrl: preview, caption })
-    setPreview(null)
-    setCaption('')
+  const requestDelete = (photo: StoredPhoto) => {
+    setLightbox(null)
+    setConfirmPhoto(photo)
   }
+
+  // Chips: All + General always; item buckets only when they hold photos.
+  const chips: { id: Filter; label: string; count: number }[] = [
+    { id: 'all', label: 'All', count: photos.length },
+    { id: 'car', label: SOURCE_LABEL.car, count: counts.car },
+    ...ITEM_FILTERS.filter((s) => counts[s] > 0).map((s) => ({
+      id: s as Filter,
+      label: SOURCE_LABEL[s],
+      count: counts[s],
+    })),
+  ]
 
   return (
     <div>
-      {/* Upload area */}
+      {/* Add a General photo. */}
       <div className="card mb-6">
-        <h3 className="text-subhead font-semibold text-text-primary mb-4">Upload photo</h3>
-        {preview ? (
-          <div className="space-y-3">
-            <div className="relative rounded-lg overflow-hidden h-48 bg-surface-2">
-              <img src={preview} alt="" className="w-full h-full object-contain" />
-              <IconButton
-                aria-label="Discard photo"
-                onClick={() => setPreview(null)}
-                className="absolute top-2 right-2 bg-dark/70"
-              >
-                <X size={tokens.iconSize.sm} />
-              </IconButton>
-            </div>
-            <div>
-              <label htmlFor="photo-caption" className="label">Caption <span className="text-text-disabled">(optional)</span></label>
-              <input id="photo-caption" className="input" placeholder="Front three-quarter, fresh wrap…" value={caption} onChange={(e) => setCaption(e.target.value)} />
-            </div>
-            <div className="flex gap-2">
-              <Button variant="secondary" size="sm" onClick={() => setPreview(null)}>Cancel</Button>
-              <Button size="sm" onClick={handleAdd}>Save photo</Button>
-            </div>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => fileRef.current?.click()}
-            className="w-full h-32 border-2 border-dashed border-border rounded-lg flex flex-col items-center justify-center gap-2 text-text-secondary hover:border-accent/50 hover:text-accent transition-colors cursor-pointer focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
-          >
-            <Upload size={tokens.iconSize.lg} aria-hidden />
-            <span className="text-body">Click to upload a photo</span>
-          </button>
-        )}
-        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+        <h3 className="mb-4 text-subhead font-semibold text-text-primary">Add photo</h3>
+        <PhotoUploader idPrefix="general-photo" onSave={(dataUrl, caption) => addPhoto(car.id, { dataUrl, caption })} />
       </div>
 
-      {/* Photo grid */}
-      {car.photos.length === 0 ? (
-        <p className="text-center text-text-secondary py-10">No photos yet.</p>
+      {photos.length === 0 ? (
+        <p className="py-10 text-center text-text-secondary">No photos yet.</p>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-          {car.photos.map((photo) => {
-            const isCover = car.coverPhoto === photo.id
-            const isLocal = accountActive && !hasCloudCopy(photo)
-            return (
-              // A3: the tile is a real <button> (keyboard-openable lightbox) and
-              // the cover/delete actions are PERSISTENT siblings (no hover-gate),
-              // never nested in the button. alt="" — the button's aria-label names it.
-              <div key={photo.id} className="group relative aspect-square">
+        <>
+          {/* Source filter (only shown when there is something to filter). */}
+          {chips.length > 2 && (
+            <div role="group" aria-label="Filter photos by source" className="mb-4 flex flex-wrap gap-2">
+              {chips.map(({ id, label, count }) => (
                 <button
+                  key={id}
                   type="button"
-                  onClick={() => setLightbox(photo)}
-                  aria-label={photo.caption || 'Open photo'}
-                  className="absolute inset-0 overflow-hidden rounded-xl bg-surface-2 outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+                  onClick={() => selectFilter(id)}
+                  aria-pressed={filter === id}
+                  className={`tab-btn ${filter === id ? 'tab-active' : 'tab-inactive'}`}
                 >
-                  <img src={resolvePhotoSrc(photo)} alt="" className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
-                  {photo.caption && (
-                    <span className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-dark/80 to-transparent px-2 py-1.5 text-left">
-                      <span className="block truncate text-meta text-text-primary">{photo.caption}</span>
-                    </span>
-                  )}
+                  {label} ({count})
                 </button>
+              ))}
+            </div>
+          )}
 
-                {/* Persistent status indicators (top-left) */}
-                <div className="pointer-events-none absolute top-1.5 left-1.5 z-10 flex flex-col items-start gap-1">
-                  {isCover && (
-                    <span className="badge bg-accent text-on-accent">
-                      <Star size={tokens.iconSize.xs} fill="currentColor" aria-hidden className="mr-1" />Cover
-                    </span>
-                  )}
-                  {isLocal && (
-                    <span className="badge bg-dark/70 text-text-secondary border border-border" title="Uploading… stored locally until it reaches the cloud">
-                      <CloudOff size={tokens.iconSize.xs} aria-hidden className="mr-1" />Local
-                    </span>
-                  )}
-                </div>
+          {filtered.length === 0 ? (
+            <p className="py-10 text-center text-text-secondary">No photos in this category.</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+              {filtered.map((photo, i) => {
+                const bucket = bucketOf.get(photo.id) ?? 'car'
+                return (
+                  <PhotoTile
+                    key={photo.id}
+                    photo={photo}
+                    fallbackLabel={`Photo ${i + 1}`}
+                    onOpen={() => setLightbox(i)}
+                    isCover={car.coverPhoto === photo.id}
+                    isBanner={car.bannerPhoto === photo.id}
+                    isLocal={accountActive && !hasCloudCopy(photo)}
+                    attachBadge={bucket !== 'car' ? SOURCE_BADGE[bucket] : undefined}
+                    onSetCover={() => setCoverPhoto(car.id, photo.id)}
+                    onSetBanner={() => setBannerPhoto(car.id, photo.id)}
+                    onDelete={() => requestDelete(photo)}
+                  />
+                )
+              })}
+            </div>
+          )}
+        </>
+      )}
 
-                {/* Persistent actions (top-right) — always visible for touch + keyboard */}
-                <div className="absolute top-1.5 right-1.5 z-10 flex gap-0.5 rounded-lg bg-dark/70 p-0.5">
-                  <IconButton
-                    aria-label={isCover ? 'Current cover photo' : `Set ${photo.caption || 'photo'} as cover`}
-                    disabled={isCover}
-                    onClick={() => setCoverPhoto(car.id, photo.id)}
-                  >
-                    <Star size={tokens.iconSize.sm} fill={isCover ? 'currentColor' : 'none'} className={isCover ? 'text-accent' : undefined} />
-                  </IconButton>
-                  <IconButton
-                    aria-label={`Delete ${photo.caption || 'photo'}`}
-                    onClick={() => setConfirmPhoto(photo)}
-                  >
-                    <Trash2 size={tokens.iconSize.sm} />
-                  </IconButton>
-                </div>
-              </div>
-            )
-          })}
-        </div>
+      {lightbox != null && filtered[lightbox] && (
+        <Lightbox
+          photos={filtered}
+          index={lightbox}
+          onIndexChange={setLightbox}
+          onClose={() => setLightbox(null)}
+          actions={(photo) => (
+            <>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={car.coverPhoto === photo.id}
+                onClick={() => setCoverPhoto(car.id, photo.id)}
+              >
+                <Star size={tokens.iconSize.sm} /> {car.coverPhoto === photo.id ? 'Cover' : 'Set as cover'}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={car.bannerPhoto === photo.id}
+                onClick={() => setBannerPhoto(car.id, photo.id)}
+              >
+                <ImageIcon size={tokens.iconSize.sm} /> {car.bannerPhoto === photo.id ? 'Banner' : 'Set as banner'}
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => requestDelete(photo)}>
+                <Trash2 size={tokens.iconSize.sm} /> Delete
+              </Button>
+            </>
+          )}
+        />
       )}
 
       {confirmPhoto && (
         <ConfirmModal
           title="Delete photo?"
-          message={confirmPhoto.caption ? `"${confirmPhoto.caption}" will be permanently deleted.` : 'This photo will be permanently deleted.'}
+          message={
+            confirmPhoto.caption
+              ? `"${confirmPhoto.caption}" will be permanently deleted.`
+              : 'This photo will be permanently deleted.'
+          }
           onConfirm={() => deletePhoto(car.id, confirmPhoto.id)}
           onClose={() => setConfirmPhoto(null)}
         />
-      )}
-
-      {/* Lightbox */}
-      {lightbox && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label={lightbox.caption || 'Photo'}
-          className="fixed inset-0 z-50 bg-dark/90 flex items-center justify-center p-4"
-          onClick={() => setLightbox(null)}
-        >
-          <IconButton
-            aria-label="Close photo"
-            onClick={() => setLightbox(null)}
-            className="absolute top-4 right-4 bg-dark/70"
-          >
-            <X size={tokens.iconSize.lg} />
-          </IconButton>
-          <img src={resolvePhotoSrc(lightbox)} alt={lightbox.caption || ''} className="max-w-full max-h-full rounded-lg object-contain" onClick={(e) => e.stopPropagation()} />
-          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
-            {car.coverPhoto !== lightbox.id && (
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setCoverPhoto(car.id, lightbox.id)}
-              >
-                <Star size={tokens.iconSize.sm} /> Set as cover
-              </Button>
-            )}
-            {lightbox.caption && <p className="text-body text-text-primary">{lightbox.caption}</p>}
-          </div>
-        </div>
       )}
     </div>
   )

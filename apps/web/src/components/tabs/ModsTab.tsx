@@ -10,6 +10,7 @@ import Modal from '../ui/Modal'
 import Button from '../ui/Button'
 import IconButton from '../ui/IconButton'
 import { CATEGORIES } from '../../utils/categories'
+import ItemPhotos from '../photos/ItemPhotos'
 import type { Car, Mod, FieldChangeEvent } from '../../types'
 
 interface ModForm {
@@ -356,6 +357,7 @@ export default function ModsTab({ car, autoFocusAdd = false }: ModsTabProps) {
                           </a>
                         )}
                       </div>
+                      <ItemPhotos carId={car.id} source="mod" itemId={mod.id} photos={car.photos} itemLabel={mod.name || 'this mod'} />
                     </div>
                     <div className="flex gap-1 shrink-0">
                       <IconButton aria-label={`Log "${mod.name}" to maintenance`} title="Log to maintenance" onClick={() => setLogMod(mod)}>

@@ -58,6 +58,7 @@ import type {
   Mod,
   ModsRow,
   Photo,
+  PhotoSource,
   PhotosRow,
   Todo,
   TodoPriority,
@@ -96,7 +97,14 @@ export const PHOTOS_MIGRATED_VALUE = 'photosMigratedToR2'
 export const MILEAGE_BACKFILL_VERSION_VALUE = 'mileageBackfillVersion'
 
 // ── Input shapes for create actions (identical to the old store) ──
-type PhotoInput = Pick<Photo, 'dataUrl' | 'caption'>
+// DEC-6: addPhoto accepts an optional attach target. `source` defaults to 'car'
+// (General); `sourceId` is the parent loggable's rowId when attaching inline on
+// a mod/maintenance/issue/todo row. R2 keying is unchanged (source/sourceId are
+// metadata cells, not in the key), so the upload pipeline is untouched.
+type PhotoInput = Pick<Photo, 'dataUrl' | 'caption'> & {
+  source?: PhotoSource
+  sourceId?: string
+}
 /** DEC-16: a logged odometer reading. unit is the CURRENT distanceUnit (frozen at entry). */
 type LogMileageInput = { value: string; date?: string }
 type WishlistInput = Omit<WishlistItem, 'id' | 'status' | 'addedAt'>
@@ -129,6 +137,8 @@ export interface GarageState {
   addPhoto: (carId: string, photo: PhotoInput) => void
   deletePhoto: (carId: string, photoId: string) => void
   setCoverPhoto: (carId: string, photoId: string) => void
+  /** DEC-6: pick ANY photo as the hero banner (mirrors setCoverPhoto). */
+  setBannerPhoto: (carId: string, photoId: string) => void
 
   // Wishlist
   addWishlistItem: (carId: string, data: WishlistInput) => void
@@ -644,9 +654,17 @@ export function createGarageAdapter(
 
   const getCar = (id: string): Car | undefined => getState().cars.find((c) => c.id === id)
 
-  const addPhoto = (carId: string, { dataUrl, caption }: PhotoInput): void => {
+  const addPhoto = (carId: string, { dataUrl, caption, source, sourceId }: PhotoInput): void => {
     if (!hasCar(carId)) return
     const photo: Photo = { id: newId(), dataUrl, caption, uploadedAt: now() }
+    // DEC-6 (§15.2): attach to a loggable item iff a real sourceId is given AND
+    // the item belongs to THIS car (the immutability invariant — a photo never
+    // moves cars). `source` is the advisory hint; `sourceId` is the source of
+    // truth. flattenCar omits `source` for General and writes `sourceId` iff set.
+    if (source != null && source !== 'car' && sourceId != null && sourceId !== '') {
+      photo.source = source
+      photo.sourceId = sourceId
+    }
     const flat = flattenOne(carId, { photos: [photo] })
     // Optimistic local write first: the photo shows instantly as base64 and the
     // row listener's join already sees the payload. The upload (signed-in +
@@ -677,6 +695,16 @@ export function createGarageAdapter(
   const setCoverPhoto = (carId: string, photoId: string): void => {
     if (!hasCar(carId)) return
     store.setCell('cars', carId, 'coverPhoto', photoId)
+  }
+
+  // DEC-6: the hero banner is a per-car single-cell soft pointer, mirroring
+  // setCoverPhoto — "exactly one banner" for free under per-cell LWW. Only a
+  // photo that belongs to this car may be picked (the resolution chain is
+  // bannerPhoto → coverPhoto → first → none; a dangling pointer just falls
+  // through). deletePhoto already clears this cell (§15.10).
+  const setBannerPhoto = (carId: string, photoId: string): void => {
+    if (!childBelongs('photos', photoId, carId)) return
+    store.setCell('cars', carId, 'bannerPhoto', photoId)
   }
 
   const addWishlistItem = (carId: string, data: WishlistInput): void => {
@@ -875,6 +903,7 @@ export function createGarageAdapter(
     addPhoto,
     deletePhoto,
     setCoverPhoto,
+    setBannerPhoto,
     addWishlistItem,
     updateWishlistItem,
     deleteWishlistItem,

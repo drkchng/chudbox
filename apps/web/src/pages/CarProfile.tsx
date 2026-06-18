@@ -7,6 +7,7 @@ import useGarageStore from '../store/useGarageStore'
 import { authClient } from '../auth/client'
 import { getCarStatus, STATUS_CONFIG } from '../utils/carStatus'
 import { resolvePhotoSrc } from '../utils/image'
+import { resolveBannerPhoto } from '../utils/photoBuckets'
 import { formatCurrentMileage, formatMoney } from '../utils/units'
 import { carDueMaintenance } from '../utils/maintenanceDue'
 import { downloadMarkdown } from '../utils/exportMarkdown'
@@ -143,8 +144,10 @@ export default function CarProfile() {
     )
   }
 
-  const coverPhoto   = car.photos.find((p) => p.id === car.coverPhoto) || car.photos[0]
-  const coverSrc     = coverPhoto ? resolvePhotoSrc(coverPhoto) : ''
+  // DEC-6: the hero shows the BANNER (bannerPhoto → coverPhoto → first → none);
+  // both soft pointers may dangle, so resolution falls through with a fallback.
+  const bannerPhoto  = resolveBannerPhoto(car)
+  const coverSrc     = bannerPhoto ? resolvePhotoSrc(bannerPhoto) : ''
   const openIssues   = car.issues.filter((i) => i.status !== 'resolved').length
   const pendingTodos = car.todos.filter((t) => !t.done).length
   const status       = getCarStatus(car)

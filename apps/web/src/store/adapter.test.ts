@@ -3,7 +3,13 @@
 // no-rewrite settings semantics, delete cascades, and read-model caching.
 import { describe, expect, it, vi } from 'vitest'
 import { createMergeableStore, createStore } from 'tinybase'
-import { createGarageStore, currentCheckIn, KM_PER_MILE, mileagePrefill } from '@chudbox/shared'
+import {
+  PHOTOS_BY_SOURCE_ID,
+  createGarageStore,
+  currentCheckIn,
+  KM_PER_MILE,
+  mileagePrefill,
+} from '@chudbox/shared'
 import { PHOTO_PAYLOADS_TABLE, createGarageAdapter } from './adapter'
 import type { GarageAdapter, PhotoHooks } from './adapter'
 
@@ -364,6 +370,70 @@ describe('DEC-6 delete cascade (§15.10)', () => {
 
     adapter.getState().deletePhoto(carId, photoId)
     expect(adapter.store.hasCell('cars', carId, 'coverPhoto')).toBe(false)
+    expect(adapter.store.hasCell('cars', carId, 'bannerPhoto')).toBe(false)
+  })
+})
+
+describe('DEC-6 attach (addPhoto source/sourceId) + cover/banner pickers', () => {
+  it('addPhoto with source/sourceId writes the attach cells, joins them back, and indexes by sourceId', () => {
+    const adapter = makeAdapter()
+    const carId = addOneCar(adapter)
+    const state = adapter.getState()
+    state.addMod(carId, { name: 'coilovers', category: '', description: '', cost: null, installedDate: '', shop: '', link: '' })
+    const modId = adapter.store.getRowIds('mods')[0]
+
+    state.addPhoto(carId, { dataUrl: 'data:x', caption: 'install', source: 'mod', sourceId: modId })
+    const photoId = adapter.store.getRowIds('photos')[0]
+
+    // source is written (it is NOT 'car') and sourceId is the source of truth.
+    expect(adapter.store.getCell('photos', photoId, 'source')).toBe('mod')
+    expect(adapter.store.getCell('photos', photoId, 'sourceId')).toBe(modId)
+    // The joined Car photo carries the attach metadata.
+    const photo = adapter.getState().cars[0].photos[0]
+    expect(photo.source).toBe('mod')
+    expect(photo.sourceId).toBe(modId)
+    // O(1) inline slice: photosBySourceId lists it under the mod id.
+    expect(adapter.indexes.getSliceRowIds(PHOTOS_BY_SOURCE_ID, modId)).toEqual([photoId])
+  })
+
+  it('addPhoto for General omits source/sourceId and never enters a real item slice', () => {
+    const adapter = makeAdapter()
+    const carId = addOneCar(adapter)
+    adapter.getState().addPhoto(carId, { dataUrl: 'data:x', caption: '' })
+    const photoId = adapter.store.getRowIds('photos')[0]
+    expect(adapter.store.hasCell('photos', photoId, 'source')).toBe(false)
+    expect(adapter.store.hasCell('photos', photoId, 'sourceId')).toBe(false)
+    expect(adapter.indexes.getSliceRowIds(PHOTOS_BY_SOURCE_ID, 'any-item')).toEqual([])
+  })
+
+  it('addPhoto with a source but no sourceId stays General (sourceId is the source of truth)', () => {
+    const adapter = makeAdapter()
+    const carId = addOneCar(adapter)
+    adapter.getState().addPhoto(carId, { dataUrl: 'data:x', caption: '', source: 'issue' })
+    const photoId = adapter.store.getRowIds('photos')[0]
+    expect(adapter.store.hasCell('photos', photoId, 'sourceId')).toBe(false)
+    expect(adapter.store.hasCell('photos', photoId, 'source')).toBe(false)
+  })
+
+  it('setBannerPhoto sets the banner pointer independently of the cover (mirrors setCoverPhoto)', () => {
+    const adapter = makeAdapter()
+    const carId = addOneCar(adapter)
+    const state = adapter.getState()
+    state.addPhoto(carId, { dataUrl: 'a', caption: '' })
+    state.addPhoto(carId, { dataUrl: 'b', caption: '' })
+    const [p1, p2] = adapter.store.getRowIds('photos')
+
+    adapter.getState().setCoverPhoto(carId, p1)
+    adapter.getState().setBannerPhoto(carId, p2)
+    expect(adapter.store.getCell('cars', carId, 'coverPhoto')).toBe(p1)
+    expect(adapter.store.getCell('cars', carId, 'bannerPhoto')).toBe(p2)
+    expect(adapter.getState().cars[0].bannerPhoto).toBe(p2)
+  })
+
+  it('setBannerPhoto ignores a photo that does not belong to the car', () => {
+    const adapter = makeAdapter()
+    const carId = addOneCar(adapter)
+    adapter.getState().setBannerPhoto(carId, 'not-a-photo')
     expect(adapter.store.hasCell('cars', carId, 'bannerPhoto')).toBe(false)
   })
 })
