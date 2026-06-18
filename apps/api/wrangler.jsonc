@@ -8,14 +8,28 @@
   // Better Auth imports node:crypto / node:async_hooks.
   "compatibility_flags": ["nodejs_compat"],
 
+  // Non-secret production env. Secrets (BETTER_AUTH_SECRET, RESEND_API_KEY) are
+  // set via `wrangler secret put`, never committed here.
+  "vars": {
+    "BETTER_AUTH_URL": "https://chudbox.com",
+    // Until chudbox.com is verified as a Resend sending domain, this only
+    // delivers to the Resend account owner's address. Swap to noreply@chudbox.com
+    // after domain verification.
+    "AUTH_EMAIL_FROM": "onboarding@resend.dev"
+  },
+
+  // Serve the SPA + API on the apex domain (zone already active on Cloudflare).
+  "routes": [
+    { "pattern": "chudbox.com", "custom_domain": true }
+  ],
+
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "chudbox",
-      // Placeholder — replaced with the real database id at first deploy.
       // Local dev/tests (wrangler dev --local, vitest-pool-workers) emulate
-      // D1 and don't dial this id.
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      // D1 and don't dial this id; the real id is used on --remote/deploy.
+      "database_id": "40423aaf-0d07-41ba-9177-ea29912a741d",
       "migrations_dir": "drizzle"
     }
   ],
