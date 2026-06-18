@@ -6,12 +6,14 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   createShareLinkPath,
+  shareCardPath,
   shareRevokePath,
   shareSnapshotPath,
   shareViewPath,
 } from '@chudbox/shared'
 import type {
   CreateShareResponse,
+  ShareCardResponse,
   ShareLinkMeta,
   ShareSnapshotResponse,
 } from '@chudbox/shared'
@@ -19,6 +21,7 @@ import {
   copyToClipboard,
   createShareLink,
   expiryInputToEpochSeconds,
+  fetchShareCard,
   fetchShareSnapshot,
   formatViewCount,
   listShareLinks,
@@ -234,6 +237,51 @@ describe('fetchShareSnapshot — public, no auth, status mapping', () => {
     const { fetchImpl } = makeFetch(() => json({ car: SNAPSHOT.car, expiresAt: 'soon' }))
     const result = await fetchShareSnapshot('TOK', fetchImpl)
     expect(result.kind).toBe('error')
+  })
+})
+
+describe('fetchShareCard — background refetch (DEC-11, NEVER counts a view)', () => {
+  const CARD: ShareCardResponse = {
+    expiresAt: null,
+    card: {
+      year: '2020', make: 'Toyota', model: 'Supra', nickname: 'Track toy',
+      status: 'current', mileageRaw: '100000', mileageMiles: 100000, modsCount: 3,
+      coverPhotoId: 'photo-1', scope: 'curated', distanceUnit: 'mi',
+    },
+  }
+
+  it('GETs the ?view=card path WITHOUT credentials and NEVER hits the /view endpoint', async () => {
+    const { fetchImpl, calls } = makeFetch(() => json(CARD))
+    const result = await fetchShareCard('TOK', fetchImpl)
+    expect(result).toEqual({ kind: 'ok', card: CARD.card, expiresAt: null })
+    // Exactly one request — to the card projection, never the view counter.
+    expect(calls).toHaveLength(1)
+    expect(calls[0].url).toBe(shareCardPath('TOK'))
+    expect(calls[0].url).not.toBe(shareViewPath('TOK'))
+    expect(calls.some((c) => c.url === shareViewPath('TOK'))).toBe(false)
+    expect(calls[0].init?.method).toBe('GET')
+    expect(calls[0].init?.credentials).toBe('omit')
+  })
+
+  it('maps 404 AND 410 → a single "unavailable" outcome (dangled token)', async () => {
+    const notFound = makeFetch(() => json({ error: 'nf' }, 404))
+    expect(await fetchShareCard('TOK', notFound.fetchImpl)).toEqual({ kind: 'unavailable' })
+    const gone = makeFetch(() => json({ error: 'gone' }, 410))
+    expect(await fetchShareCard('TOK', gone.fetchImpl)).toEqual({ kind: 'unavailable' })
+  })
+
+  it('maps a schema-invalid card body (leaked money/VIN) → error (strict, never ok)', async () => {
+    const { fetchImpl } = makeFetch(
+      () => json({ card: { ...CARD.card, salePrice: '9000' }, expiresAt: null }),
+    )
+    expect((await fetchShareCard('TOK', fetchImpl)).kind).toBe('error')
+  })
+
+  it('maps a network throw → error (never throws)', async () => {
+    const fetchImpl = vi.fn<FetchLike>(async () => {
+      throw new TypeError('offline')
+    })
+    expect((await fetchShareCard('TOK', fetchImpl)).kind).toBe('error')
   })
 })
 

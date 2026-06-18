@@ -10,6 +10,8 @@
 export const ROUTES = {
   garage: '/',
   car: '/car/:id',
+  /** DEC-11 follow/save — the follower's saved-builds "Watching" list. */
+  watching: '/watching',
   /** Public, read-only shared build (no account required). */
   share: '/share/:token',
   /** Email landing: password reset. */

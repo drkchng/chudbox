@@ -20,6 +20,12 @@ describe('clean-URL routes resolve', () => {
     expect(m?.params.token).toBe('abc123')
   })
 
+  it('matches the Watching list (DEC-11)', () => {
+    expect(matchPath(ROUTES.watching, '/watching')).not.toBeNull()
+    // …and does not cross-match onto the car or share routes.
+    expect(matchPath(ROUTES.car, '/watching')).toBeNull()
+  })
+
   it('matches the clean auth landing paths', () => {
     expect(matchPath(ROUTES.authReset, '/auth/reset')).not.toBeNull()
     expect(matchPath(ROUTES.authVerified, '/auth/verified')).not.toBeNull()

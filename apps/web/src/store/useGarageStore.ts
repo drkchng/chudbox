@@ -35,6 +35,8 @@ import type { BackupV2, ParsedBackup } from './backup'
 import { createSyncController } from './sync'
 import type { SyncStatus } from './sync'
 import { createPhotoSyncController } from './photoUpload'
+import { createSavedBuildsController } from './savedBuilds'
+import type { SavedBuild } from '@chudbox/shared'
 
 export type { GarageState }
 export type { ParsedBackup }
@@ -64,6 +66,15 @@ export const syncController = createSyncController({
   // Negotiation must never read a half-loaded store (see sync.ts).
   ready: () => initGarageStore(),
 })
+
+/**
+ * DEC-11 follow/save controller — the durable Watching state + offline caches,
+ * over the SAME two stores. It rides the existing local-first + CRDT-sync stack
+ * (the `savedBuilds` table is in GARAGE_TABLE_IDS, so it seeds/merges to the DO
+ * with the garage on sign-in) with zero new infra. TanStack Query owns ONLY the
+ * network refetch lifecycle for the share/follow read surface — never this state.
+ */
+export const savedBuildsController = createSavedBuildsController({ store, localStore })
 
 // ── Bootstrap (browser only; tests inject their own stores) ─
 let initPromise: Promise<void> | null = null
@@ -137,4 +148,17 @@ export function importBackup(backup: ParsedBackup): void {
   syncController.replaceLocalData(() => {
     applyBackupImport({ store, localStore, backup })
   })
+}
+
+// ── DEC-11 Watching (follow/save) hooks ─────────────────────
+/** The whole Watching list (joined + sorted). Reactive via TinyBase listeners. */
+export function useSavedBuilds(): SavedBuild[] {
+  return useSyncExternalStore(savedBuildsController.subscribe, savedBuildsController.list)
+}
+
+/** The SavedBuild for a token (or null), for the share-view Save toggle. */
+export function useSavedBuild(token: string | undefined): SavedBuild | null {
+  return useSyncExternalStore(savedBuildsController.subscribe, () =>
+    token ? savedBuildsController.getByToken(token) : null,
+  )
 }

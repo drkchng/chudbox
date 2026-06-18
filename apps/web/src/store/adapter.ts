@@ -73,6 +73,14 @@ import type { StoredCar, StoredMaintenance } from '../types'
 // ── Local-only side store layout (never synced) ─────────────
 /** photoId → { dataUrl } rows. */
 export const PHOTO_PAYLOADS_TABLE = 'photoPayloads'
+/**
+ * DEC-11 (§12.3 / §15.4): the local-only cache of the full CURATED snapshot per
+ * followed build, keyed by the SAME rowId as the synced `savedBuilds` row
+ * (= sha256(token)). One JSON-blob cell `{ snapshot, fetchedAt }`, mirroring how
+ * PHOTO_PAYLOADS_TABLE holds one base64 string — it is the #268 pressure-relief
+ * valve (re-fetchable, never synced) so the Watching list/detail paints offline.
+ */
+export const SAVED_BUILD_SNAPSHOTS_TABLE = 'savedBuildSnapshots'
 /** Per-device migration sentinel: the legacy Zustand blob was imported. */
 export const IDB_MIGRATED_VALUE = 'idbMigrated'
 /** Per-device units-backfill sentinel (guards re-tagging). */

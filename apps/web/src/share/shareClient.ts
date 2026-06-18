@@ -13,6 +13,8 @@
 // prefix id, no token, no url). The "copy it now" UX rests on that fact.
 import {
   createShareLinkPath,
+  shareCardPath,
+  shareCardResponseSchema,
   shareRevokePath,
   shareSnapshotPath,
   shareSnapshotResponseSchema,
@@ -21,6 +23,7 @@ import {
 import type {
   CreateShareRequest,
   CreateShareResponse,
+  ShareCardSnapshot,
   ShareLinkListResponse,
   ShareLinkMeta,
   ShareScope,
@@ -167,6 +170,57 @@ export async function fetchShareSnapshot(
     return { kind: 'error', message: 'The server returned an unexpected response.' }
   }
   return { kind: 'ok', data: parsed.data }
+}
+
+// ── Curated card refetch (DEC-11 Watching list, NO view counted) ────────────
+
+/**
+ * Result of refetching a followed build's curated card (`?view=card`). `404`/`410`
+ * collapse to a single `unavailable` outcome (revoked / expired / car gone → the
+ * follower's row gets `unavailableSince`). Mirrors SnapshotResult, minus the
+ * scope discriminant (the card is ALWAYS curated).
+ */
+export type CardResult =
+  | { kind: 'ok'; card: ShareCardSnapshot; expiresAt: number | null }
+  | { kind: 'unavailable' }
+  | { kind: 'error'; message: string }
+
+/**
+ * GET a followed build's curated card by token (`/api/share/<token>?view=card`).
+ *
+ * CRITICAL (§15.11 #8): this is the BACKGROUND/auto refetch path, so it hits the
+ * card projection ONLY — it must NEVER POST `shareViewPath` (a view is counted
+ * solely on a real human page open, in SharePage). This function makes exactly
+ * one GET; it never reaches the view endpoint. Sends NO credentials (public,
+ * works logged-out) and never throws — every failure maps to a CardResult.
+ */
+export async function fetchShareCard(
+  token: string,
+  fetchImpl: FetchLike = fetch,
+): Promise<CardResult> {
+  let res: Response
+  try {
+    res = await fetchImpl(shareCardPath(token), { method: 'GET', credentials: 'omit' })
+  } catch {
+    return { kind: 'error', message: 'Could not reach the server. Check your connection and try again.' }
+  }
+  // 404 (unknown) and 410 (revoked/expired/lazy-revoked) both mean the token has
+  // dangled — one "unavailable" outcome the Watching list surfaces + offers Remove.
+  if (res.status === 404 || res.status === 410) return { kind: 'unavailable' }
+  if (!res.ok) return { kind: 'error', message: await readError(res) }
+  let json: unknown
+  try {
+    json = await res.json()
+  } catch {
+    return { kind: 'error', message: 'The server returned an unexpected response.' }
+  }
+  // Strict, deny-by-default: a server change that started leaking money/VIN/notes
+  // into the card fails validation here rather than reaching the follower's cache.
+  const parsed = shareCardResponseSchema.safeParse(json)
+  if (!parsed.success) {
+    return { kind: 'error', message: 'The server returned an unexpected response.' }
+  }
+  return { kind: 'ok', card: parsed.data.card, expiresAt: parsed.data.expiresAt }
 }
 
 // ── Record a view (public, no session, fire-and-forget) ─────

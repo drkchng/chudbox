@@ -90,6 +90,9 @@ importers:
       '@fontsource/jetbrains-mono':
         specifier: ^5.2.8
         version: 5.2.8
+      '@tanstack/react-query':
+        specifier: ^5.101.0
+        version: 5.101.0(react@19.2.7)
       better-auth:
         specifier: 1.6.18
         version: 1.6.18(@cloudflare/workers-types@4.20260611.1)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@cloudflare/workers-types@4.20260611.1)(kysely@0.29.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(vitest@4.1.8(@types/node@25.9.3)(vite@8.0.16(@types/node@25.9.3)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)))
@@ -1833,6 +1836,14 @@ packages:
     resolution: {integrity: sha512-hItDHuIIlEV61R+faXu66s1K36aTurO/Qw0e45Vskz57gXl9pWOT6eg3zmcEui6CZXddbN7zd41bwmvag4JGwQ==}
     peerDependencies:
       vite: ^5.2.0 || ^6 || ^7 || ^8
+
+  '@tanstack/query-core@5.101.0':
+    resolution: {integrity: sha512-cQetA74EB+seWySv1TTKr828TnP0u39m6LykwDXIo84SNortpDkp30TMEjkqtYCNP9c40uT/iwl6MLiufEt0Ow==}
+
+  '@tanstack/react-query@5.101.0':
+    resolution: {integrity: sha512-rLlJXSpkqfizLWgkR5+eLeIk0MvTx/meEIR7LRjxic+qxiQP8zVjq7BqQkiCMNLQBlLfuOLqqr6KO5GtrDlmSg==}
+    peerDependencies:
+      react: ^18 || ^19
 
   '@turbo/darwin-64@2.9.18':
     resolution: {integrity: sha512-9f27peFu16ur8c0v9nUFUEyBnbKuuFsUTjHFWfmwGfzySBXbHwzU44QhZon6Mznz0cHsIr3984NQj/bVrnGSRw==}
@@ -4306,6 +4317,13 @@ snapshots:
       '@tailwindcss/oxide': 4.3.1
       tailwindcss: 4.3.1
       vite: 8.0.16(@types/node@25.9.3)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)
+
+  '@tanstack/query-core@5.101.0': {}
+
+  '@tanstack/react-query@5.101.0(react@19.2.7)':
+    dependencies:
+      '@tanstack/query-core': 5.101.0
+      react: 19.2.7
 
   '@turbo/darwin-64@2.9.18':
     optional: true

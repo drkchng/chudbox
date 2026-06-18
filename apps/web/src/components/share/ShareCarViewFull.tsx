@@ -32,6 +32,7 @@ import MileageText from '../MileageText'
 import Badge from '../ui/Badge'
 import { DetailTabBar, EmptyState, ExternalLinkA, PhotoGrid, ShareShell } from './ShareCarView'
 import type { ShareTab } from './ShareCarView'
+import SaveBuildButton from './SaveBuildButton'
 
 /**
  * Car status → design-system status role (canonical map, matches CarCard /
@@ -340,6 +341,11 @@ export default function ShareCarViewFull({ car, token }: ShareCarViewFullProps) 
             <Badge status="neutral" icon={Eye}>
               Read-only shared build (full)
             </Badge>
+          </div>
+        }
+        actions={
+          <div className="absolute right-4 top-4">
+            <SaveBuildButton token={token} car={car} scope="full" />
           </div>
         }
         meta={

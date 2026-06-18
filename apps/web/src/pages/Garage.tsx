@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Plus, Car, Settings } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Plus, Car, Eye, Settings } from 'lucide-react'
 import useGarageStore from '../store/useGarageStore'
 import CarCard from '../components/CarCard'
 import AddCarModal from '../components/AddCarModal'
@@ -25,6 +26,14 @@ export default function Garage() {
           </div>
           {/* Backup/import moved to Settings → Backup & data (DEC-12). */}
           <div className="flex items-center gap-2">
+            {/* DEC-11: the follower's saved-builds "Watching" list. */}
+            <Link
+              to="/watching"
+              aria-label="Watching"
+              className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border px-3 text-meta font-medium text-text-primary outline-hidden transition-colors hover:border-accent/50 hover:text-accent focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+            >
+              <Eye size={16} aria-hidden /> Watching
+            </Link>
             <IconButton aria-label="Settings" variant="ghost" onClick={() => setShowSettings(true)}>
               <Settings size={18} />
             </IconButton>

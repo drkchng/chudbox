@@ -32,12 +32,15 @@ import { Hono } from 'hono'
 import { and, eq, sql } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/d1'
 import {
+  SHARE_CARD_VIEW,
   SHARE_CREATE_PATH,
   SHARE_IMG_ROUTE,
   SHARE_LIST_PATH,
   SHARE_PUBLIC_PATH,
   SHARE_REVOKE_PATH,
+  SHARE_VIEW_PARAM,
   SHARE_VIEW_PATH,
+  buildShareCard,
   contentTypeForExt,
   createShareRequestSchema,
   parsePhotoKey,
@@ -48,6 +51,7 @@ import type {
   ListingCarSnapshot,
   PublicCarSnapshot,
   RecordShareViewResponse,
+  ShareCardResponse,
   ShareLinkListResponse,
   ShareLinkMeta,
   ShareScope,
@@ -343,11 +347,18 @@ shareApi.get(SHARE_PUBLIC_PATH, async (c) => {
     return c.json({ error: 'This share link is no longer available' }, 410)
   }
 
+  // DEC-11 (§15.11 #8): the Watching list's background refetch requests the
+  // lightweight CURATED card via `?view=card`. It is a plain GET (so it counts
+  // NO view — only a real human page open POSTs SHARE_VIEW_PATH) and IGNORES the
+  // link's stored scope: a follower holding a listing/full link still gets only
+  // curated header fields, so their local cache never holds another owner's
+  // money/VIN/notes (§12.7). The card is built from the curated scope ALWAYS.
+  const isCard = c.req.query(SHARE_VIEW_PARAM) === SHARE_CARD_VIEW
+
   // Owner + car + SCOPE all derived SERVER-SIDE from the stored row (never the
-  // request): no query param, body, or header can change which view is served.
-  // The DO builds the curated showcase or the full read-only view accordingly;
-  // raw private cells only leave the DO when the row itself says 'full'.
-  const scope = normalizeScope(row.scope)
+  // request): no query param, body, or header can WIDEN the view. The `?view=card`
+  // param only ever NARROWS to curated; it can never select listing/full.
+  const scope: ShareScope = isCard ? 'curated' : normalizeScope(row.scope)
   const snapshot = await garageStub(c.env, row.userId).getCarSnapshot(row.carId, scope)
   if (!snapshot) {
     // Lazy-revoke: the car is gone from the owner's DO. Tombstone the link so
@@ -364,6 +375,16 @@ shareApi.get(SHARE_PUBLIC_PATH, async (c) => {
   // listing nudges but never overrides this master consent.
   const ownerName = await resolveOwnerName(c.env, row.userId)
   if (ownerName !== undefined) snapshot.ownerName = ownerName
+
+  if (isCard) {
+    // Project the curated snapshot down to the bounded card. `scope` here is the
+    // link's STORED scope — an informational badge only; the card content stays
+    // curated (built above at the curated scope). Leak-safe by construction.
+    const card = buildShareCard(snapshot as PublicCarSnapshot, normalizeScope(row.scope))
+    const cardBody: ShareCardResponse = { card, expiresAt: row.expiresAt }
+    c.header('Cache-Control', shareCacheControl(row.expiresAt, now))
+    return c.json(cardBody)
+  }
 
   // The snapshot carries photoIds (no URLs); the viewer composes the
   // token-scoped image URL via shareImgPath(token, photoId), served below. The

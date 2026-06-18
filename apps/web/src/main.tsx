@@ -11,8 +11,10 @@ import '@fontsource/inter/700.css'
 import '@fontsource/jetbrains-mono/400.css'
 import '@fontsource/jetbrains-mono/500.css'
 import './index.css'
+import { QueryClientProvider } from '@tanstack/react-query'
 import App from './App.tsx'
 import { initGarageStore } from './store/useGarageStore.ts'
+import { queryClient } from './share/queryClient.ts'
 import { legacyHashToCleanUrl } from './router/legacyHash.ts'
 
 // Backward-compat: rewrite any legacy HashRouter URL (`/#/<path>`, incl. old
@@ -29,6 +31,10 @@ void initGarageStore()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    {/* TanStack Query (DEC-11/DEC-15): scoped to the share/follow READ surface
+        only — the garage stays on TinyBase. */}
+    <QueryClientProvider client={queryClient}>
+      <App />
+    </QueryClientProvider>
   </StrictMode>,
 )

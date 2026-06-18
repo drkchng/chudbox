@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, useParams } from 'react-router-dom'
 import Garage from './pages/Garage'
 import CarProfile from './pages/CarProfile'
+import Watching from './pages/Watching'
 import AuthReset from './pages/AuthReset'
 import AuthVerified from './pages/AuthVerified'
 import SharePage from './pages/SharePage'
@@ -39,6 +40,8 @@ export default function App() {
       <Routes>
         <Route path={ROUTES.garage} element={<Garage />} />
         <Route path={ROUTES.car}    element={<CarProfile />} />
+        {/* DEC-11 — the follower's "Watching" saved-builds list. */}
+        <Route path={ROUTES.watching} element={<Watching />} />
         {/* Public, read-only shared build (no account required). */}
         <Route path={ROUTES.share} element={<SharePageRoute />} />
         {/* Email landing routes: password reset + post-verification notice */}

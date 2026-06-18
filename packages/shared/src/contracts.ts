@@ -9,6 +9,7 @@ import type {
   FullCarSnapshot,
   ListingCarSnapshot,
   PublicCarSnapshot,
+  ShareCardSnapshot,
   ShareScope,
 } from './publicSnapshot'
 
@@ -238,6 +239,16 @@ export const SHARE_IMG_ROUTE = `${SHARE_ROUTE_PREFIX}/:token/img/:photoId`
  */
 export const SHARE_VIEW_PATH = `${SHARE_ROUTE_PREFIX}/:token/view`
 
+/**
+ * DEC-11 follow/save (§12.8 #1, §15.11 #8): a PUBLIC, session-less `?view=card`
+ * mode on the snapshot GET (SHARE_PUBLIC_PATH) returns the lightweight, ALWAYS-
+ * CURATED `ShareCardSnapshot` (regardless of the link's stored scope), for the
+ * Watching list's background live-refetch. It is a plain GET — it NEVER touches
+ * the `view_count` (only a real human page open POSTs SHARE_VIEW_PATH).
+ */
+export const SHARE_VIEW_PARAM = 'view'
+export const SHARE_CARD_VIEW = 'card'
+
 /** DELETE here to revoke one share link (`id` = ShareLinkMeta.id). */
 export function shareRevokePath(carId: string, id: string): string {
   return `${createShareLinkPath(carId)}/${encodeURIComponent(id)}`
@@ -263,6 +274,16 @@ export function shareImgPath(token: string, photoId: string): string {
  */
 export function shareViewPath(token: string): string {
   return `${SHARE_ROUTE_PREFIX}/${encodeURIComponent(token)}/view`
+}
+
+/**
+ * Public CURATED card URL: `/api/share/<token>?view=card`. The Watching list's
+ * background refetch hits this (a plain GET) — guaranteed-curated + lightweight,
+ * and crucially it does NOT count a view (no POST to shareViewPath). Token is
+ * percent-encoded (URL-safe base64 needs none, but stay defensive).
+ */
+export function shareCardPath(token: string): string {
+  return `${SHARE_ROUTE_PREFIX}/${encodeURIComponent(token)}?${SHARE_VIEW_PARAM}=${SHARE_CARD_VIEW}`
 }
 
 /**
@@ -404,6 +425,18 @@ export type ShareSnapshotResponse =
       /** Epoch seconds; null = no expiry. */
       expiresAt: number | null
     }
+
+/**
+ * Public GET `?view=card` response (DEC-11). The `card` is ALWAYS the curated
+ * `ShareCardSnapshot` — the server builds it from the curated scope regardless of
+ * the link's stored scope, so a follower never caches another owner's money/VIN/
+ * notes (§12.7). Validated by `shareCardResponseSchema` (strict) before use.
+ */
+export interface ShareCardResponse {
+  card: ShareCardSnapshot
+  /** Epoch seconds; null = no expiry. */
+  expiresAt: number | null
+}
 
 // ── Public snapshot RESPONSE validator (M4 polish) ──────────
 // The public viewer fetches this body over the network with NO session and
@@ -632,3 +665,31 @@ export const shareSnapshotResponseSchema = z.discriminatedUnion('scope', [
     expiresAt: z.number().nullable(),
   }),
 ])
+
+/**
+ * Validates a ShareCardSnapshot — strict (deny-by-default): the curated card the
+ * Watching list refetches via `?view=card`. NO money/VIN/notes key is named, so a
+ * server change that started leaking one into the card fails validation rather
+ * than reaching the follower's cache. `scope` is the informational badge only.
+ */
+const shareCardSnapshotSchema = z.strictObject({
+  year: z.string(),
+  make: z.string(),
+  model: z.string(),
+  nickname: z.string(),
+  ownerName: z.string().optional(),
+  status: z.enum(PUBLIC_CAR_STATUSES),
+  mileageRaw: z.string(),
+  mileageMiles: z.number().optional(),
+  modsCount: z.number(),
+  coverPhotoId: z.string().optional(),
+  scope: z.enum(['curated', 'listing', 'full']),
+  distanceUnit: z.enum(['mi', 'km']),
+})
+
+/** Validates the public GET `?view=card` body (ShareCardResponse) — strict. */
+export const shareCardResponseSchema = z.strictObject({
+  card: shareCardSnapshotSchema,
+  /** Epoch seconds; null = no expiry. */
+  expiresAt: z.number().nullable(),
+})

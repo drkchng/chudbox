@@ -28,6 +28,7 @@ import CarHero from '../CarHero'
 import MileageText from '../MileageText'
 import Badge from '../ui/Badge'
 import IconButton from '../ui/IconButton'
+import SaveBuildButton from './SaveBuildButton'
 
 /**
  * Read-only public build viewer. Driven ENTIRELY by the allowlisted
@@ -393,6 +394,11 @@ export default function ShareCarView({ car, token }: ShareCarViewProps) {
             <Badge status="neutral" icon={Eye}>
               Read-only shared build
             </Badge>
+          </div>
+        }
+        actions={
+          <div className="absolute right-4 top-4">
+            <SaveBuildButton token={token} car={car} scope="curated" />
           </div>
         }
         meta={

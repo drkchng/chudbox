@@ -38,10 +38,46 @@ test('curated + "Everything" share links render read-only for a logged-out visit
   const curatedToken = await createShareLink(page, 'curated')
   await assertCuratedView(browser, curatedToken)
 
+  // --- DEC-11: a LOGGED-OUT visitor saves + watches the curated build ---
+  // Reuses the same owner/token (no extra account) so the shared dev server's
+  // per-IP auth rate limit is untouched.
+  await assertSaveAndWatch(browser, curatedToken)
+
   // --- "Everything" link → adds the private sections (still read-only) ---
   const fullToken = await createShareLink(page, 'full')
   await assertFullView(browser, fullToken)
 })
+
+/**
+ * DEC-11 follow/save: a fresh logged-out visitor opens the shared build, taps
+ * "Save / Watch this build", and finds it in the local-first /watching list
+ * (no account needed) — then Removes it. The background card refetch the list
+ * fires hits `?view=card` only and never the /view counter.
+ */
+async function assertSaveAndWatch(browser: Browser, token: string): Promise<void> {
+  const context = await browser.newContext() // fresh, logged-out
+  try {
+    const guest = await context.newPage()
+    await guest.goto(`/share/${token}`)
+    await expect(guest.getByRole('heading', { name: '2020 Toyota Supra' })).toBeVisible()
+
+    // Save → the toggle flips to "Watching".
+    await guest.getByRole('button', { name: /Save \/ Watch this build/ }).click()
+    await expect(guest.getByRole('button', { name: 'Watching' })).toBeVisible()
+
+    // It now appears in the local-first Watching list.
+    await guest.goto('/watching')
+    await expect(guest.getByRole('heading', { name: 'Watching 1 build' })).toBeVisible()
+    await expect(guest.getByText('2020 Toyota Supra', { exact: true })).toBeVisible()
+    await expect(guest.getByRole('link', { name: 'View build' })).toBeVisible()
+
+    // Remove takes it back out of the list.
+    await guest.getByRole('button', { name: 'Remove' }).click()
+    await expect(guest.getByRole('heading', { name: 'Not watching anything yet' })).toBeVisible()
+  } finally {
+    await context.close()
+  }
+}
 
 /** Open the Share dialog, create a link of `scope`, return its token, close the dialog. */
 async function createShareLink(page: Page, scope: 'curated' | 'full'): Promise<string> {

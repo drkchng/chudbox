@@ -528,3 +528,127 @@ export function buildShareOgProjection(
   if (ownerName !== undefined && ownerName !== '') out.ownerName = ownerName
   return out
 }
+
+// ── DEC-11 follow/save: curated card projection (§12.8 #1, §15.11 #8) ────────
+// The Watching list (DEC-11) live-refetches a LIGHTWEIGHT, ALWAYS-CURATED "card"
+// of a followed build (`?view=card`). Two leak-safety guarantees, both
+// structural (not renderer discipline):
+//
+//  1. `toCuratedSnapshot` narrows ANY scope's response snapshot back to a strict
+//     curated `PublicCarSnapshot` — a key-by-key allowlist (deny-by-default), so
+//     a follower who holds a `listing`/`full` link never caches another owner's
+//     money / VIN / notes / wishlist into their own store (§12.7). It reads ONLY
+//     curated keys; listing/full-only fields are absent by construction.
+//  2. `buildShareCard` reads ONLY a curated snapshot and emits the bounded card
+//     header the synced `savedBuilds.cached*` cells mirror (§12.2). `scope` is the
+//     link's STORED scope — an informational badge only; it NEVER widens the
+//     content (the card is curated even for a `listing`/`full` link).
+
+/** The bounded curated card the Watching list paints from (mirrors the synced
+ * `savedBuilds.cached*` header cells, §12.2). ALWAYS curated content. */
+export interface ShareCardSnapshot {
+  year: string
+  make: string
+  model: string
+  /** The build's OWN nickname (the owner's); '' when none. Distinct from the
+   * follower's personal `savedBuilds.nickname`. */
+  nickname: string
+  /** DEC-10 owner display name, consent-gated + route-injected. Absent ⇒ none. */
+  ownerName?: string
+  status: CarStatus
+  mileageRaw: string
+  /** Present iff mileageRaw parses numerically (for unit conversion in the card). */
+  mileageMiles?: number
+  modsCount: number
+  /** Resolved cover photoId (cover → first → none); image via shareImgPath(token, id). */
+  coverPhotoId?: string
+  /** The link's STORED scope — informational badge ONLY; never widens the content. */
+  scope: ShareScope
+  /** Distance unit for rendering the card's mileage. */
+  distanceUnit: GarageValues['distanceUnit']
+}
+
+/**
+ * Narrow ANY scope's snapshot back to a strict curated `PublicCarSnapshot`. A
+ * key-by-key allowlist (deny-by-default): listing-only (salePrice/tradeFor/vin)
+ * and full-only (cost/shop/notes, wishlist/todos/issues, currency) fields are
+ * never read, so they cannot survive into a follower's local cache (§12.7). The
+ * curated base is idempotent under this (a curated snapshot maps to itself).
+ */
+export function toCuratedSnapshot(
+  snapshot: PublicCarSnapshot | ListingCarSnapshot | FullCarSnapshot,
+): PublicCarSnapshot {
+  const curated: PublicCarSnapshot = {
+    year: snapshot.year,
+    make: snapshot.make,
+    model: snapshot.model,
+    trim: snapshot.trim,
+    color: snapshot.color,
+    nickname: snapshot.nickname,
+    mileageRaw: snapshot.mileageRaw,
+    status: snapshot.status,
+    createdAt: snapshot.createdAt,
+    photos: snapshot.photos.map((p) => {
+      const out: PublicPhoto = { photoId: p.photoId, caption: p.caption }
+      if (p.width !== undefined) out.width = p.width
+      if (p.height !== undefined) out.height = p.height
+      return out
+    }),
+    mods: snapshot.mods.map((m) => ({
+      name: m.name,
+      category: m.category,
+      description: m.description,
+      installedDate: m.installedDate,
+      link: m.link,
+      addedAt: m.addedAt,
+    })),
+    maintenance: snapshot.maintenance.map((r) => {
+      const out: PublicMaintenance = { service: r.service, date: r.date, createdAt: r.createdAt }
+      if (r.mileageRaw !== undefined) out.mileageRaw = r.mileageRaw
+      if (r.mileageMiles !== undefined) out.mileageMiles = r.mileageMiles
+      if (r.nextDueDate !== undefined) out.nextDueDate = r.nextDueDate
+      if (r.nextDueMileageRaw !== undefined) out.nextDueMileageRaw = r.nextDueMileageRaw
+      if (r.nextDueMileageMiles !== undefined) out.nextDueMileageMiles = r.nextDueMileageMiles
+      return out
+    }),
+    settings: {
+      themeId: snapshot.settings.themeId,
+      distanceUnit: snapshot.settings.distanceUnit,
+    },
+  }
+  if (snapshot.settings.customAccent !== undefined) {
+    curated.settings.customAccent = snapshot.settings.customAccent
+  }
+  if (snapshot.ownerName !== undefined) curated.ownerName = snapshot.ownerName
+  if (snapshot.plate !== undefined) curated.plate = snapshot.plate
+  if (snapshot.mileageMiles !== undefined) curated.mileageMiles = snapshot.mileageMiles
+  if (snapshot.purchaseDate !== undefined) curated.purchaseDate = snapshot.purchaseDate
+  if (snapshot.saleDate !== undefined) curated.saleDate = snapshot.saleDate
+  if (snapshot.coverPhotoId !== undefined) curated.coverPhotoId = snapshot.coverPhotoId
+  return curated
+}
+
+/**
+ * Down-project a CURATED snapshot to the bounded Watching card. Reads ONLY
+ * curated fields (the input is already vin-/price-free), plus the link's stored
+ * `scope` for the informational badge. The card NEVER carries another owner's
+ * private data — that is structural (the input is curated, and only curated keys
+ * are read).
+ */
+export function buildShareCard(snapshot: PublicCarSnapshot, scope: ShareScope): ShareCardSnapshot {
+  const card: ShareCardSnapshot = {
+    year: snapshot.year,
+    make: snapshot.make,
+    model: snapshot.model,
+    nickname: snapshot.nickname,
+    status: snapshot.status,
+    mileageRaw: snapshot.mileageRaw,
+    modsCount: snapshot.mods.length,
+    scope,
+    distanceUnit: snapshot.settings.distanceUnit,
+  }
+  if (snapshot.ownerName !== undefined && snapshot.ownerName !== '') card.ownerName = snapshot.ownerName
+  if (snapshot.mileageMiles !== undefined) card.mileageMiles = snapshot.mileageMiles
+  if (snapshot.coverPhotoId !== undefined) card.coverPhotoId = snapshot.coverPhotoId
+  return card
+}

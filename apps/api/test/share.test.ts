@@ -20,6 +20,7 @@ import {
   createShareLinkPath,
   encodeSeedChunk,
   flattenCar,
+  shareCardPath,
   shareImgPath,
   shareRevokePath,
   shareSnapshotPath,
@@ -28,6 +29,7 @@ import {
 import type {
   Car,
   CreateShareResponse,
+  ShareCardResponse,
   ShareLinkListResponse,
   ShareSnapshotResponse,
   UploadResponse,
@@ -839,6 +841,98 @@ describe('record view', () => {
     expect(list.links[0].viewCount).toBe(3)
     // The list still leaks no raw token / full hash.
     expect(JSON.stringify(list)).not.toContain(link.token)
+  })
+})
+
+// ── Curated card projection (DEC-11 ?view=card) ─────────────
+// The Watching list's background refetch hits ?view=card: ALWAYS curated (even
+// for a listing/full link, so a follower never caches another owner's money/VIN/
+// notes) and it must NOT count a view (only a real human page open does).
+describe('GET public snapshot — ?view=card projection', () => {
+  async function createScopedLink(
+    carId: string,
+    scope: 'curated' | 'listing' | 'full',
+  ): Promise<CreateShareResponse> {
+    const res = await SELF.fetch(`${BASE}${createShareLinkPath(carId)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', cookie: session.cookie },
+      body: JSON.stringify({ scope }),
+    })
+    expect(res.status).toBe(200)
+    return (await res.json()) as CreateShareResponse
+  }
+
+  it('returns a bounded curated card with the cached header fields', async () => {
+    const ids = freshIds()
+    await uploadAndSeedCar(ids)
+    const link = await createLink(ids.carId)
+
+    const res = await SELF.fetch(`${BASE}${shareCardPath(link.token)}`)
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as ShareCardResponse
+    expect(body.card.make).toBe('KEEP_make')
+    expect(body.card.nickname).toBe('KEEP_nick')
+    expect(body.card.status).toBe('for-sale')
+    expect(body.card.mileageRaw).toBe('50000')
+    expect(body.card.modsCount).toBe(1)
+    expect(body.card.coverPhotoId).toBe(ids.photoId)
+    expect(body.card.scope).toBe('curated')
+    expect(body.card.distanceUnit).toBe('mi')
+    // DEC-10 owner name (consent default ON) rides the card too.
+    expect(body.card.ownerName).toBe('Share Tester')
+  })
+
+  it('stays CURATED for a listing/full link (scope badge only) — no money/VIN/notes', async () => {
+    for (const scope of ['listing', 'full'] as const) {
+      const ids = freshIds()
+      const { r2Key } = await uploadAndSeedCar(ids)
+      const link = await createScopedLink(ids.carId, scope)
+
+      const res = await SELF.fetch(`${BASE}${shareCardPath(link.token)}`)
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as ShareCardResponse
+      // The badge reflects the STORED scope…
+      expect(body.card.scope).toBe(scope)
+      // …but the content is curated: no private field is anywhere in the body.
+      const serialized = JSON.stringify(body)
+      expect(serialized, `${scope} card leaked the VIN`).not.toContain(SHARE_VIN)
+      for (const secret of SECRET_STRINGS) {
+        expect(serialized, `${scope} card leaked: ${secret}`).not.toContain(secret)
+      }
+      for (const amount of SECRET_NUMBERS) {
+        expect(serialized, `${scope} card leaked amount: ${amount}`).not.toContain(String(amount))
+      }
+      expect(serialized).not.toContain(r2Key)
+      expect(serialized).not.toContain(session.userId)
+    }
+  })
+
+  it('does NOT increment the view counter (background refetch ≠ a real page open)', async () => {
+    const ids = freshIds()
+    await uploadAndSeedCar(ids)
+    const link = await createLink(ids.carId)
+    expect(await viewCountFor(link.token)).toBe(0)
+
+    // Several card refetches…
+    for (let i = 0; i < 3; i++) {
+      const res = await SELF.fetch(`${BASE}${shareCardPath(link.token)}`)
+      expect(res.status).toBe(200)
+    }
+    // …leave the view_count untouched (only POST /view bumps it).
+    expect(await viewCountFor(link.token)).toBe(0)
+  })
+
+  it('404s an unknown token and 410s a revoked/expired link', async () => {
+    expect((await SELF.fetch(`${BASE}${shareCardPath('totally-unknown')}`)).status).toBe(404)
+
+    const rawToken = `card-expired-${crypto.randomUUID()}`
+    const now = nowSeconds()
+    await env.DB.prepare(
+      'INSERT INTO share_links (token_hash, user_id, car_id, created_at, expires_at, revoked_at) VALUES (?,?,?,?,?,?)',
+    )
+      .bind(await sha256Hex(rawToken), session.userId, crypto.randomUUID(), now - 100, now - 10, null)
+      .run()
+    expect((await SELF.fetch(`${BASE}${shareCardPath(rawToken)}`)).status).toBe(410)
   })
 })
 

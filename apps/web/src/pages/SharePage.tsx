@@ -3,9 +3,10 @@ import type { ReactNode } from 'react'
 import { useParams } from 'react-router-dom'
 import { Loader2, LinkIcon, Ban, WifiOff } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { tokens } from '@chudbox/shared'
+import { buildShareCard, toCuratedSnapshot, tokens } from '@chudbox/shared'
 import { fetchShareSnapshot, recordShareView } from '../share/shareClient'
 import type { SnapshotResult } from '../share/shareClient'
+import { savedBuildsController } from '../store/useGarageStore'
 import { applyThemeFromSettings, captureThemeVars, restoreThemeVars } from '../utils/themes'
 import ShareCarView, { ShareShell } from '../components/share/ShareCarView'
 import ShareCarViewFull from '../components/share/ShareCarViewFull'
@@ -75,6 +76,19 @@ export default function SharePage() {
       cancelled = true
     }
   }, [token])
+
+  // DEC-11: if this build is already being WATCHED, a real page open refreshes
+  // its cached header + offline snapshot (this is a genuine human open — the view
+  // ping above already counted it). It NEVER creates a follow (guarded on
+  // getByToken), and toCuratedSnapshot strips any listing/full private fields
+  // before caching, so the follow row stays curated (§12.7).
+  useEffect(() => {
+    if (state.phase !== 'done' || state.result.kind !== 'ok' || !token) return
+    if (savedBuildsController.getByToken(token) == null) return
+    const { scope, car } = state.result.data
+    const curated = toCuratedSnapshot(car)
+    void savedBuildsController.saveBuild(token, { card: buildShareCard(curated, scope), snapshot: curated })
+  }, [state, token])
 
   // Honor the curated display theme while on the share page, but RESTORE the
   // prior theme on unmount / navigation so a shared car's theme never persists

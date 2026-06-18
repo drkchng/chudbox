@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import fc from 'fast-check'
 import {
   IMG_PATH_PREFIX,
+  SHARE_CARD_VIEW,
   SHARE_CREATE_PATH,
   SHARE_IMG_ROUTE,
   SHARE_LINK_ID_MIN_LEN,
@@ -9,6 +10,7 @@ import {
   SHARE_PUBLIC_PATH,
   SHARE_REVOKE_PATH,
   SHARE_ROUTE_PREFIX,
+  SHARE_VIEW_PARAM,
   UPLOAD_PATH,
   buildPhotoKey,
   createShareLinkPath,
@@ -17,14 +19,22 @@ import {
   fullCarSnapshotSchema,
   listingCarSnapshotSchema,
   publicCarSnapshotSchema,
+  shareCardPath,
+  shareCardResponseSchema,
   shareImgPath,
   shareRevokePath,
   shareSnapshotPath,
   shareSnapshotResponseSchema,
 } from './contracts'
-import type { ShareSnapshotResponse } from './contracts'
+import type { ShareCardResponse, ShareSnapshotResponse } from './contracts'
 import type { PhotoExt } from './imagePolicy'
-import { buildFullSnapshot, buildListingSnapshot, buildPublicSnapshot } from './publicSnapshot'
+import {
+  buildFullSnapshot,
+  buildListingSnapshot,
+  buildPublicSnapshot,
+  buildShareCard,
+  toCuratedSnapshot,
+} from './publicSnapshot'
 import type { SnapshotCarInput } from './publicSnapshot'
 import type { GarageValues } from './schema'
 
@@ -382,6 +392,49 @@ describe('shareSnapshotResponseSchema — listing scope (DEC-14/DEC-13)', () => 
     expect(publicCarSnapshotSchema.safeParse({ ...curated, ownerName: 'Alex' }).success).toBe(true)
     expect(listingCarSnapshotSchema.safeParse({ ...listingCar, ownerName: 'Alex' }).success).toBe(true)
     expect(fullCarSnapshotSchema.safeParse({ ...full, ownerName: 'Alex' }).success).toBe(true)
+  })
+})
+
+describe('shareCardPath + shareCardResponseSchema (DEC-11 ?view=card)', () => {
+  it('builds the curated-card URL with the view query param', () => {
+    expect(shareCardPath('tok-1')).toBe(`${SHARE_ROUTE_PREFIX}/tok-1?${SHARE_VIEW_PARAM}=${SHARE_CARD_VIEW}`)
+    // The card URL is a plain GET — it must NOT touch the /view counter path.
+    expect(shareCardPath('tok-1')).not.toContain('/view')
+  })
+
+  it('accepts a valid card body and infers to the contract type', () => {
+    const curated = buildPublicSnapshot(sampleSnapshotInput(), snapshotSettings)
+    const card = buildShareCard(curated, 'listing')
+    const body = { card, expiresAt: null } satisfies ShareCardResponse
+    const parsed = shareCardResponseSchema.safeParse(body)
+    expect(parsed.success).toBe(true)
+    if (parsed.success) {
+      const typed: ShareCardResponse = parsed.data
+      expect(typed.card.scope).toBe('listing')
+      expect(typed.card.modsCount).toBe(curated.mods.length)
+    }
+  })
+
+  it('is STRICT: a leaked money/VIN key fails validation (deny-by-default)', () => {
+    const curated = buildPublicSnapshot(sampleSnapshotInput(), snapshotSettings)
+    const card = buildShareCard(curated, 'curated')
+    expect(shareCardResponseSchema.safeParse({ card: { ...card, vin: 'X' }, expiresAt: null }).success).toBe(false)
+    expect(
+      shareCardResponseSchema.safeParse({ card: { ...card, salePrice: '9000' }, expiresAt: null }).success,
+    ).toBe(false)
+  })
+
+  it('a card built from a LISTING/FULL link is curated-only (no money/VIN reaches the wire)', () => {
+    const listingCurated = toCuratedSnapshot(
+      buildListingSnapshot(
+        { ...sampleSnapshotInput(), salePrice: '8500', salePriceCurrency: 'JPY', vin: 'JT000' },
+        snapshotSettings,
+      ),
+    )
+    const card = buildShareCard(listingCurated, 'listing')
+    const serialized = JSON.stringify(card)
+    expect(serialized).not.toContain('8500')
+    expect(serialized).not.toContain('JT000')
   })
 })
 

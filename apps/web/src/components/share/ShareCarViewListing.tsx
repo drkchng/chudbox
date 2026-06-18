@@ -14,6 +14,7 @@ import {
   ShareShell,
 } from './ShareCarView'
 import type { ShareTab } from './ShareCarView'
+import SaveBuildButton from './SaveBuildButton'
 
 /**
  * Read-only FOR-SALE LISTING viewer ('listing' scope — DEC-14). Driven ENTIRELY
@@ -84,6 +85,11 @@ export default function ShareCarViewListing({ car, token }: ShareCarViewListingP
             <Badge status="success" icon={Tag}>
               For sale
             </Badge>
+          </div>
+        }
+        actions={
+          <div className="absolute right-4 top-4">
+            <SaveBuildButton token={token} car={car} scope="listing" />
           </div>
         }
         meta={

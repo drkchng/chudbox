@@ -3,7 +3,9 @@ import {
   buildFullSnapshot,
   buildListingSnapshot,
   buildPublicSnapshot,
+  buildShareCard,
   buildShareOgProjection,
+  toCuratedSnapshot,
 } from './publicSnapshot'
 import type { SnapshotCarInput } from './publicSnapshot'
 import type { GarageValues } from './schema'
@@ -588,5 +590,80 @@ describe('buildShareOgProjection — minimal, vin-free by construction', () => {
     // Default (no extra): no price surfaces.
     const noPrice = buildShareOgProjection(curated)
     expect((noPrice as unknown as Record<string, unknown>).salePrice).toBeUndefined()
+  })
+})
+
+// ── DEC-11 follow/save: card projection is curated-only (leak test) ──────────
+describe('toCuratedSnapshot — narrows ANY scope back to curated (leak-safe)', () => {
+  const full = buildFullSnapshot(fullyPopulatedCar(), settings)
+  const listing = buildListingSnapshot(fullyPopulatedCar(), settings)
+
+  it('strips full-only fields → emits ONLY curated allowlisted keys', () => {
+    const curated = toCuratedSnapshot(full)
+    const keys = new Set<string>()
+    collectKeys(curated, keys)
+    const leaked = [...keys].filter((key) => !ALLOWED_KEYS.has(key))
+    expect(leaked, `leaked keys: ${leaked.join(', ')}`).toEqual([])
+  })
+
+  it('strips every secret string/number from a FULL snapshot', () => {
+    const serialized = JSON.stringify(toCuratedSnapshot(full))
+    for (const secret of SECRET_STRINGS) expect(serialized, secret).not.toContain(secret)
+    for (const amount of SECRET_NUMBERS) expect(serialized).not.toContain(String(amount))
+  })
+
+  it('strips listing-only fields (salePrice/tradeFor/vin) from a LISTING snapshot', () => {
+    const curated = toCuratedSnapshot(listing) as unknown as Record<string, unknown>
+    expect(curated.salePrice).toBeUndefined()
+    expect(curated.salePriceCurrency).toBeUndefined()
+    expect(curated.tradeFor).toBeUndefined()
+    expect(curated.vin).toBeUndefined()
+  })
+
+  it('preserves the curated header + photos/mods/maintenance (no currency)', () => {
+    const curated = toCuratedSnapshot(full)
+    expect(curated.year).toBe('1991')
+    expect(curated.make).toBe('KEEP_make_Nissan')
+    expect(curated.coverPhotoId).toBe('photo-1')
+    expect(curated.photos.map((p) => p.photoId)).toEqual(['photo-1', 'photo-2'])
+    expect(curated.mods[0].name).toBe('KEEP_mod_name')
+    expect(curated.settings.distanceUnit).toBe('mi')
+    expect((curated.settings as unknown as Record<string, unknown>).currency).toBeUndefined()
+  })
+
+  it('is idempotent on an already-curated snapshot', () => {
+    const curated = buildPublicSnapshot(fullyPopulatedCar(), settings)
+    expect(toCuratedSnapshot(curated)).toEqual(curated)
+  })
+})
+
+describe('buildShareCard — bounded curated card (ALWAYS curated)', () => {
+  it('projects a curated snapshot to the card header + scope badge', () => {
+    const curated = buildPublicSnapshot(fullyPopulatedCar(), settings)
+    const card = buildShareCard(curated, 'curated')
+    expect(card.year).toBe('1991')
+    expect(card.make).toBe('KEEP_make_Nissan')
+    expect(card.nickname).toBe('KEEP_nickname')
+    expect(card.status).toBe('for-sale')
+    expect(card.mileageRaw).toBe('50000')
+    expect(card.mileageMiles).toBe(50000)
+    expect(card.modsCount).toBe(curated.mods.length)
+    expect(card.coverPhotoId).toBe('photo-1')
+    expect(card.scope).toBe('curated')
+    expect(card.distanceUnit).toBe('mi')
+  })
+
+  it('tags the link scope as an INFORMATIONAL badge WITHOUT widening content', () => {
+    // Even for a listing link, the card is built from the curated narrowing, so
+    // no money/VIN ever reaches it — only the scope label changes.
+    const curated = toCuratedSnapshot(buildListingSnapshot(fullyPopulatedCar(), settings))
+    const card = buildShareCard(curated, 'listing')
+    expect(card.scope).toBe('listing')
+    const serialized = JSON.stringify(card)
+    for (const secret of SECRET_STRINGS) expect(serialized, secret).not.toContain(secret)
+    for (const amount of SECRET_NUMBERS) expect(serialized).not.toContain(String(amount))
+    const loose = card as unknown as Record<string, unknown>
+    expect(loose.salePrice).toBeUndefined()
+    expect(loose.vin).toBeUndefined()
   })
 })
