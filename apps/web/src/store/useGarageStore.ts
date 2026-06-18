@@ -29,6 +29,7 @@ import { applyBackupImport, buildBackupV2, parseBackup } from './backup'
 import type { BackupV2, ParsedBackup } from './backup'
 import { createSyncController } from './sync'
 import type { SyncStatus } from './sync'
+import { createPhotoSyncController } from './photoUpload'
 
 export type { GarageState }
 export type { ParsedBackup }
@@ -39,7 +40,18 @@ const LOCAL_DB_NAME = 'chudbox-local'
 
 const store = createGarageStore()
 const localStore = createStore()
-const adapter = createGarageAdapter(store, localStore)
+
+/**
+ * R2 photo side-effects (M3). The controller learns about the session through
+ * SyncGate (photoSync.setUser) and gates every network call on signed-in +
+ * online, so the logged-out app stays purely local. The adapter fires the
+ * hooks but owns no upload logic.
+ */
+export const photoSync = createPhotoSyncController({ store, localStore })
+const adapter = createGarageAdapter(store, localStore, {
+  onPhotoAdded: photoSync.handleNewPhoto,
+  onPhotosDeleted: photoSync.handleDeletedPhotos,
+})
 
 export const syncController = createSyncController({
   store,

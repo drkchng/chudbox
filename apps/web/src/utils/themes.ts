@@ -87,14 +87,66 @@ export const THEMES: Theme[] = [
 
 export const DEFAULT_THEME_ID = 'garage'
 
-export function applyTheme(theme: ThemeColors): void {
-  const root = document.documentElement
-  root.style.setProperty('--accent',     theme.accent)
-  root.style.setProperty('--accent-dim', theme.accentDim)
-  root.style.setProperty('--dark',       theme.dark)
-  root.style.setProperty('--surface',    theme.surface)
-  root.style.setProperty('--surface-2',  theme.surface2)
-  root.style.setProperty('--border',     theme.border)
+/** The CSS custom properties a theme drives (the only vars apply/capture touch). */
+export const THEME_VAR_NAMES = [
+  '--accent',
+  '--accent-dim',
+  '--dark',
+  '--surface',
+  '--surface-2',
+  '--border',
+] as const
+
+/**
+ * The subset of CSSStyleDeclaration the theme helpers use. Declared as a seam so
+ * the pure capture/restore logic is unit-testable without a DOM (the web test
+ * runner is `node`): tests pass a plain in-memory map of var → value.
+ */
+export type ThemeStyleTarget = Pick<
+  CSSStyleDeclaration,
+  'getPropertyValue' | 'setProperty' | 'removeProperty'
+>
+
+function documentRootStyle(): ThemeStyleTarget {
+  return document.documentElement.style
+}
+
+export function applyTheme(theme: ThemeColors, style: ThemeStyleTarget = documentRootStyle()): void {
+  style.setProperty('--accent',     theme.accent)
+  style.setProperty('--accent-dim', theme.accentDim)
+  style.setProperty('--dark',       theme.dark)
+  style.setProperty('--surface',    theme.surface)
+  style.setProperty('--surface-2',  theme.surface2)
+  style.setProperty('--border',     theme.border)
+}
+
+/**
+ * Snapshot the current theme CSS variables so a transient theme change (e.g. the
+ * public share viewer honoring the shared car's theme) can be UNDONE on the way
+ * out. Captures the inline value of each var ('' when none is set).
+ */
+export function captureThemeVars(
+  style: ThemeStyleTarget = documentRootStyle(),
+): Record<string, string> {
+  const snapshot: Record<string, string> = {}
+  for (const name of THEME_VAR_NAMES) snapshot[name] = style.getPropertyValue(name)
+  return snapshot
+}
+
+/**
+ * Restore a snapshot from captureThemeVars: re-set each var to its prior inline
+ * value, or remove it when it had none (so the document is left exactly as it
+ * was before the transient apply, never pinned to a stale theme).
+ */
+export function restoreThemeVars(
+  snapshot: Record<string, string>,
+  style: ThemeStyleTarget = documentRootStyle(),
+): void {
+  for (const name of THEME_VAR_NAMES) {
+    const value = snapshot[name]
+    if (value) style.setProperty(name, value)
+    else style.removeProperty(name)
+  }
 }
 
 // Convert a hex color (#rrggbb) to space-separated RGB channels
@@ -110,4 +162,30 @@ export function hexToRgbChannels(hex: string): string {
 export function darkenChannels(channels: string, amount = 20): string {
   const [r, g, b] = channels.split(' ').map(Number)
   return `${Math.max(0, r - amount)} ${Math.max(0, g - amount)} ${Math.max(0, b - amount)}`
+}
+
+/**
+ * Resolve + apply a theme from stored settings (a built-in theme id, or
+ * `'custom'` + an accent hex). Shared by the App-level effect and the public
+ * share viewer so both honor the same theming rules.
+ */
+export function applyThemeFromSettings(
+  themeId: string,
+  customAccent?: string | null,
+  style: ThemeStyleTarget = documentRootStyle(),
+): void {
+  if (themeId === 'custom' && customAccent) {
+    const accent    = hexToRgbChannels(customAccent)
+    const accentDim = darkenChannels(accent, 25)
+    applyTheme({
+      accent, accentDim,
+      dark:     '15 15 15',
+      surface:  '26 26 26',
+      surface2: '36 36 36',
+      border:   '45 45 45',
+    }, style)
+  } else {
+    const theme = THEMES.find((t) => t.id === themeId) ?? THEMES[0]
+    applyTheme(theme, style)
+  }
 }

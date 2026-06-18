@@ -74,3 +74,61 @@ export const seedChunkRequestSchema = z
 export const clearGarageRequestSchema = z.strictObject({
   maxCellsPerChunk: z.number().int().min(1).max(MAX_SEED_CHUNK_CELLS).optional(),
 })
+
+// ── Image upload form-fields (M3) ───────────────────────────
+// The non-file fields of a multipart UPLOAD_PATH request (the image Blob rides
+// in UPLOAD_FILE_FIELD and is validated separately). width/height arrive as
+// FormData strings, so they are coerced to positive integers. z.infer is
+// assignable to the UploadFormFields contract (cross-checked in zod.test.ts).
+
+/** Generous upper bound — decoupled from the FREE policy's maxEdgePx so a future
+ * paid tier raising the cap needs no schema change. */
+const MAX_IMAGE_EDGE_PX = 100_000
+
+/**
+ * carId/photoId must each be a SINGLE URL-safe path segment so the built R2 key
+ * always round-trips through parsePhotoKey (buildPhotoKey/parsePhotoKey stay
+ * provably inverse). The client mints these with crypto.randomUUID() via
+ * newId(); this charset — ASCII letters, digits, '-' and '_' — covers that and
+ * rejects everything that would corrupt the key or strand the object:
+ * '/' (extra segments), '.'/'..'/leading dots (path traversal, parse failure),
+ * and NUL/control bytes. Bounded length keeps a key well under R2 limits.
+ */
+const photoKeySegmentSchema = z
+  .string()
+  .min(1)
+  .max(128)
+  .regex(/^[A-Za-z0-9_-]+$/, 'must be a URL-safe id segment (A-Z a-z 0-9 - _)')
+
+/** Body (form fields) of POST /api/uploads (UploadFormFields). */
+export const uploadFieldsSchema = z.strictObject({
+  carId: photoKeySegmentSchema,
+  photoId: photoKeySegmentSchema,
+  /** Intended stored dimensions from computeTargetSize; arrive as form strings. */
+  width: z.coerce.number().int().min(1).max(MAX_IMAGE_EDGE_PX),
+  height: z.coerce.number().int().min(1).max(MAX_IMAGE_EDGE_PX),
+  caption: z.string().max(2000).optional(),
+})
+
+export type UploadFieldsInput = z.infer<typeof uploadFieldsSchema>
+
+// ── Share link create body (M4) ─────────────────────────────
+// expiresAt is OPTIONAL — absent/null means NO expiry (the default; revoke is
+// always available). When present it must be a positive integer epoch-SECONDS
+// strictly in the FUTURE: this rejects zero, negatives, non-integers and any
+// already-elapsed timestamp at validation time. The server independently
+// re-checks (DB CHECK expires_at > created_at) since "now" advances between
+// validation and insert. z.infer is assignable to CreateShareRequest
+// (cross-checked in zod.test.ts).
+export const createShareRequestSchema = z.strictObject({
+  expiresAt: z
+    .number()
+    .int()
+    .positive()
+    .refine((seconds) => seconds > Math.floor(Date.now() / 1000), {
+      message: 'expiresAt must be a future epoch-seconds timestamp',
+    })
+    .nullish(),
+})
+
+export type CreateShareRequestInput = z.infer<typeof createShareRequestSchema>

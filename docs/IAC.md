@@ -55,3 +55,10 @@ Wrangler is purely imperative: no `destroy`, no state file, no drift detection. 
 5. The CF zone and the Registrar domain registration survive independently — remove in dash if desired.
 
 Back up D1/R2/DO data before deleting: DO SQLite data dies with the Worker, and there is no reconciliation pass to catch what the checklist misses.
+
+## M3 image pipeline — checked 2026-06-17 (live CF docs + caniuse/MDN)
+
+Two posture clarifications from the M3 research:
+
+- **Image Transformations (`/cdn-cgi/image`) are NOT a required dependency.** They *are* on the **Free** plan (5,000 unique transformations/zone/month, then `9422` — fails closed, never auto-bills), and R2-origin transforms on the same zone are metered against that same free allowance (no exemption, not paid-gated). But they require a **proxied (orange-cloud) zone** *and* a per-zone **Enable transformations** toggle. M3 serves stored objects directly via `/img/<key>`; `/cdn-cgi/image` is optional progressive enhancement (thumbnails / `format=auto`). ⇒ zone-glue item #1 (the transformations toggle) is **optional/deferred**, not a deploy prerequisite. Refs: developers.cloudflare.com/images/pricing , /images/transform-images/ , /fundamentals/reference/cdn-cgi-endpoint/
+- **Uploads proxy through the Worker R2 binding (`env.BUCKET.put()`), not presigned S3 PUT** (corrects the locked decision-table wording; the plan's image-pipeline section already offered this as the simpler path). Safe at our sizes: Worker request-body cap is **100 MB on Free** (gated by *account* plan — Free/Pro 100, Business 200, Ent 500 — not Workers plan), and streaming a few-MB body to R2 is I/O not compute so it stays under the Free **10 ms** CPU limit. ⇒ **no R2 S3 API token secret and no bucket CORS** in the deploy posture (both needed only for presigned). Presigned only becomes necessary approaching the 100 MB body cap / direct-to-R2 at scale — irrelevant here. Refs: developers.cloudflare.com/workers/platform/limits/

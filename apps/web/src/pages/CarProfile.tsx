@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import type { LucideIcon } from 'lucide-react'
-import { ArrowLeft, Car, Pencil, Trash2, Camera, ShoppingCart, Wrench, ClipboardList, CheckSquare, AlertTriangle, Settings, FileDown, DollarSign } from 'lucide-react'
+import { ArrowLeft, Pencil, Trash2, Camera, ShoppingCart, Wrench, ClipboardList, CheckSquare, AlertTriangle, Settings, FileDown, DollarSign, Share2 } from 'lucide-react'
 import useGarageStore from '../store/useGarageStore'
+import { authClient } from '../auth/client'
 import { getCarStatus, STATUS_CONFIG } from '../utils/carStatus'
+import { resolvePhotoSrc } from '../utils/image'
 import { CURRENCIES, DISTANCE_UNITS } from '../utils/units'
 import { downloadMarkdown } from '../utils/exportMarkdown'
 import PhotosTab from '../components/tabs/PhotosTab'
@@ -16,6 +18,8 @@ import EditCarModal from '../components/EditCarModal'
 import MarkAsSoldModal from '../components/MarkAsSoldModal'
 import SettingsPanel from '../components/SettingsPanel'
 import ConfirmModal from '../components/ConfirmModal'
+import CarHero from '../components/CarHero'
+import ShareDialog from '../components/ShareDialog'
 
 type TabId = 'photos' | 'wishlist' | 'mods' | 'maintenance' | 'todos' | 'issues'
 
@@ -43,11 +47,17 @@ export default function CarProfile() {
   const distanceUnit = useGarageStore((s) => s.distanceUnit)
   const sym          = CURRENCIES[currency]?.symbol ?? '$'
   const distShort    = DISTANCE_UNITS[distanceUnit]?.short ?? 'mi'
+  // Sharing requires the car to live in the owner's DO, so it is offered only
+  // when signed in. The probe never gates rendering — logged out simply hides
+  // the button (the app stays fully local-first).
+  const { data: session } = authClient.useSession()
+  const signedIn = Boolean(session?.user)
   const [tab, setTab] = useState<TabId>('photos')
   const [editing, setEditing]             = useState(false)
   const [showSettings, setShowSettings]   = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [showSell, setShowSell]           = useState(false)
+  const [showShare, setShowShare]         = useState(false)
 
   if (!car) {
     return (
@@ -61,6 +71,7 @@ export default function CarProfile() {
   }
 
   const coverPhoto  = car.photos.find((p) => p.id === car.coverPhoto) || car.photos[0]
+  const coverSrc    = coverPhoto ? resolvePhotoSrc(coverPhoto) : ''
   const openIssues  = car.issues.filter((i) => i.status !== 'resolved').length
   const pendingTodos = car.todos.filter((t) => !t.done).length
   const status      = getCarStatus(car)
@@ -75,51 +86,47 @@ export default function CarProfile() {
   return (
     <div className="min-h-screen bg-dark">
       {/* Hero banner */}
-      <div className="relative h-56 bg-surface-2 overflow-hidden">
-        {coverPhoto ? (
-          <img src={coverPhoto.dataUrl} alt="cover" className="w-full h-full object-cover opacity-60" />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <Car size={64} className="text-gray-700" />
-          </div>
-        )}
-        <div className="absolute inset-0 bg-gradient-to-t from-dark via-dark/60 to-transparent" />
-
-        {/* Back button */}
-        <button
-          onClick={() => navigate('/')}
-          className="absolute top-4 left-4 btn-outline bg-dark/90 border-white/10 text-white hover:text-accent"
-        >
-          <ArrowLeft size={14} /> Garage
-        </button>
-
-        {/* Actions */}
-        <div className="absolute top-4 right-4 flex gap-2">
-          <button onClick={() => downloadMarkdown(car)} className="btn-outline bg-dark/90 border-white/10 text-white hover:text-accent" title="Export to Markdown">
-            <FileDown size={14} />
+      <CarHero
+        coverSrc={coverSrc}
+        topLeft={
+          <button
+            onClick={() => navigate('/')}
+            className="absolute top-4 left-4 btn-outline bg-dark/90 border-white/10 text-white hover:text-accent"
+          >
+            <ArrowLeft size={14} /> Garage
           </button>
-          <button onClick={() => setShowSettings(true)} className="btn-outline bg-dark/90 border-white/10 text-white hover:text-accent" title="Settings">
-            <Settings size={14} />
-          </button>
-          {status === 'for-sale' && (
-            <button
-              onClick={() => setShowSell(true)}
-              className="btn-outline bg-dark/90 border-green-700/50 text-green-400 hover:text-green-300 hover:border-green-500/60"
-            >
-              <DollarSign size={14} /> Sold
+        }
+        actions={
+          <div className="absolute top-4 right-4 flex gap-2">
+            <button onClick={() => downloadMarkdown(car)} className="btn-outline bg-dark/90 border-white/10 text-white hover:text-accent" title="Export to Markdown">
+              <FileDown size={14} />
             </button>
-          )}
-          <button onClick={() => setEditing(true)} className="btn-outline bg-dark/90 border-white/10 text-white hover:text-accent">
-            <Pencil size={14} /> Edit
-          </button>
-          <button onClick={() => setConfirmDelete(true)} className="btn-outline bg-dark/90 border-red-900/40 text-red-400 hover:text-red-300 hover:border-red-500/50">
-            <Trash2 size={14} />
-          </button>
-        </div>
-
-        {/* Car info */}
-        <div className="absolute bottom-5 left-6">
-          <div className="flex items-center gap-2 mb-1.5">
+            <button onClick={() => setShowSettings(true)} className="btn-outline bg-dark/90 border-white/10 text-white hover:text-accent" title="Settings">
+              <Settings size={14} />
+            </button>
+            {signedIn && (
+              <button onClick={() => setShowShare(true)} className="btn-outline bg-dark/90 border-white/10 text-white hover:text-accent" title="Share this build">
+                <Share2 size={14} /> Share
+              </button>
+            )}
+            {status === 'for-sale' && (
+              <button
+                onClick={() => setShowSell(true)}
+                className="btn-outline bg-dark/90 border-green-700/50 text-green-400 hover:text-green-300 hover:border-green-500/60"
+              >
+                <DollarSign size={14} /> Sold
+              </button>
+            )}
+            <button onClick={() => setEditing(true)} className="btn-outline bg-dark/90 border-white/10 text-white hover:text-accent">
+              <Pencil size={14} /> Edit
+            </button>
+            <button onClick={() => setConfirmDelete(true)} className="btn-outline bg-dark/90 border-red-900/40 text-red-400 hover:text-red-300 hover:border-red-500/50">
+              <Trash2 size={14} />
+            </button>
+          </div>
+        }
+        meta={
+          <>
             <span className={`badge border text-xs ${statusCfg.class}`}>
               {statusCfg.label}
               {status === 'for-sale' && car.salePrice ? ` · ${sym}${Number(car.salePrice).toLocaleString()}` : ''}
@@ -134,37 +141,41 @@ export default function CarProfile() {
                 Sold {new Date(car.saleDate + 'T12:00:00').toLocaleDateString()}
               </span>
             )}
-          </div>
-          <h1 className="text-3xl font-bold text-white leading-tight">
-            {car.year} {car.make} {car.model}
-          </h1>
-          <div className="flex items-center gap-3 mt-1 flex-wrap">
+          </>
+        }
+        title={<>{car.year} {car.make} {car.model}</>}
+        subline={
+          <>
             {car.trim && <span className="text-sm text-gray-300">{car.trim}</span>}
             {car.color && <span className="text-sm text-gray-400">· {car.color}</span>}
             {car.mileage && <span className="text-sm text-gray-400">· {Number(car.mileage).toLocaleString()} {distShort}</span>}
             {car.nickname && <span className="text-sm text-accent font-medium">· "{car.nickname}"</span>}
-          </div>
-          {status === 'for-trade' && car.tradeFor && (
+          </>
+        }
+        belowTitle={
+          status === 'for-trade' && car.tradeFor ? (
             <p className="text-xs text-blue-400 mt-1.5 max-w-xs">
               Trade for: {car.tradeFor.split('\n').filter(Boolean).join(', ')}
             </p>
-          )}
-        </div>
-
-        {/* Quick stats badges */}
-        <div className="absolute bottom-5 right-6 flex gap-2 flex-wrap justify-end">
-          {openIssues > 0 && (
-            <span className="badge bg-red-900/60 text-red-300 border border-red-700/40">
-              {openIssues} issue{openIssues > 1 ? 's' : ''}
-            </span>
-          )}
-          {pendingTodos > 0 && (
-            <span className="badge bg-orange-900/60 text-orange-300 border border-orange-700/40">
-              {pendingTodos} todo{pendingTodos > 1 ? 's' : ''}
-            </span>
-          )}
-        </div>
-      </div>
+          ) : undefined
+        }
+        bottomRight={
+          openIssues > 0 || pendingTodos > 0 ? (
+            <>
+              {openIssues > 0 && (
+                <span className="badge bg-red-900/60 text-red-300 border border-red-700/40">
+                  {openIssues} issue{openIssues > 1 ? 's' : ''}
+                </span>
+              )}
+              {pendingTodos > 0 && (
+                <span className="badge bg-orange-900/60 text-orange-300 border border-orange-700/40">
+                  {pendingTodos} todo{pendingTodos > 1 ? 's' : ''}
+                </span>
+              )}
+            </>
+          ) : undefined
+        }
+      />
 
       {/* Tab bar */}
       <div className="border-b border-border bg-surface/30 sticky top-0 z-10">
@@ -207,6 +218,13 @@ export default function CarProfile() {
       {showSell     && <MarkAsSoldModal car={car} onClose={() => setShowSell(false)} />}
       {editing      && <EditCarModal car={car} onClose={() => setEditing(false)} />}
       {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
+      {showShare && (
+        <ShareDialog
+          carId={car.id}
+          carLabel={`${car.year} ${car.make} ${car.model}`}
+          onClose={() => setShowShare(false)}
+        />
+      )}
       {confirmDelete && (
         <ConfirmModal
           title={`Delete ${car.year} ${car.make} ${car.model}?`}

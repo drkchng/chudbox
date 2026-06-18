@@ -46,13 +46,27 @@ import {
   DEFAULT_SEED_CHUNK_CELLS,
   GARAGE_TABLE_IDS,
   MAX_SEED_CHUNK_CELLS,
+  buildPublicSnapshot,
   countSeedChunkCells,
   decodeSeedChunk,
+  joinCar,
 } from '@chudbox/shared'
 import type {
+  CarsRow,
+  ChildTableId,
   ClearGarageRequest,
   ClearGarageResponse,
+  FlattenedCar,
+  GarageValues,
+  IssuesRow,
+  MaintenanceRow,
+  ModsRow,
+  PhotosRow,
+  PublicCarSnapshot,
+  SnapshotPhotoInput,
   SyncMetaResponse,
+  TodosRow,
+  WishlistRow,
 } from '@chudbox/shared'
 
 /**
@@ -64,12 +78,6 @@ import type {
 export type GarageSeedResult =
   | { applied: true; /** Cell + value stamps the chunk carried. */ cells: number }
   | { applied: false; error: string }
-
-/**
- * Read-only snapshot of a single car (for the M4 share-link route).
- * TODO(M4): replace with a @chudbox/shared contract type when implemented.
- */
-export type CarSnapshot = Record<string, unknown>
 
 export class GarageDO extends WsServerDurableObject<Env> {
   /** Assigned in createPersister — see module docblock for why `declare`. */
@@ -224,10 +232,95 @@ export class GarageDO extends WsServerDurableObject<Env> {
   }
 
   /**
-   * M4 (stub): read-only, carId-indexed snapshot of one car for share links.
-   * Returns null when the car does not exist (callers lazy-revoke the link).
+   * M4: read-only, curated public snapshot of one car for the share-link
+   * route. The curation (the EXPLICIT allowlist) happens DO-side via
+   * buildPublicSnapshot, so raw private cells (money, shop, notes, tradeFor,
+   * salePrice, r2Key, the whole wishlist/issues/todos tables) NEVER leave the
+   * DO — only the showcase fields cross the RPC boundary.
+   *
+   * Returns null when the car does not exist (row absent, or fully tombstoned:
+   * a DO restart resurrects tombstoned cells as live `null`s — see getMeta —
+   * so "no non-null cell" is the not-found test). The share route lazy-revokes
+   * and serves 410 on null.
+   *
+   * No writes. The DO store is schema-less, so child rows are gathered by
+   * filtering each child table on its `carId` cell rather than via a TinyBase
+   * Index (a one-shot read builds no index cheaper than it scans); joinCar
+   * reassembles the nested Car, then the per-photo downscaled dimensions
+   * (which joinCar drops) are re-attached from the rows for the snapshot.
    */
-  getCarSnapshot(_carId: string): Promise<CarSnapshot | null> {
-    throw new Error('GarageDO.getCarSnapshot is not implemented until M4')
+  getCarSnapshot(carId: string): PublicCarSnapshot | null {
+    const store = this.getStore()
+    const carRow = store.getRow('cars', carId)
+    if (!Object.values(carRow).some((cell) => cell !== null)) {
+      return null
+    }
+    const flat: FlattenedCar = {
+      carId,
+      car: carRow as unknown as CarsRow,
+      photos: this.collectChildRows<PhotosRow>('photos', carId),
+      wishlist: this.collectChildRows<WishlistRow>('wishlist', carId),
+      mods: this.collectChildRows<ModsRow>('mods', carId),
+      maintenance: this.collectChildRows<MaintenanceRow>('maintenance', carId),
+      todos: this.collectChildRows<TodosRow>('todos', carId),
+      issues: this.collectChildRows<IssuesRow>('issues', carId),
+      photoPayloads: {},
+    }
+    const car = joinCar(flat)
+    const photos: SnapshotPhotoInput[] = car.photos.map((photo) => ({
+      ...photo,
+      width: flat.photos[photo.id]?.width,
+      height: flat.photos[photo.id]?.height,
+    }))
+    return buildPublicSnapshot({ ...car, photos }, this.readSettings())
+  }
+
+  /**
+   * M4: resolve the R2 key for a token-scoped public image — ONLY if the photo
+   * row exists under THIS carId AND already carries an r2Key (uploaded to R2;
+   * a not-yet-uploaded photo has none). Returns null otherwise, so the share
+   * image route serves 404 without ever exposing the raw key to the client.
+   */
+  resolveSharePhotoKey(carId: string, photoId: string): string | null {
+    const store = this.getStore()
+    if (store.getCell('photos', photoId, 'carId') !== carId) return null
+    const r2Key = store.getCell('photos', photoId, 'r2Key')
+    return typeof r2Key === 'string' && r2Key !== '' ? r2Key : null
+  }
+
+  /** Child rows whose `carId` cell equals `carId` (tombstoned rows resurrect
+   * with a null carId, so they never match). */
+  private collectChildRows<T>(
+    tableId: ChildTableId,
+    carId: string,
+  ): Record<string, T> {
+    const store = this.getStore()
+    const rows: Record<string, T> = {}
+    for (const rowId of store.getRowIds(tableId)) {
+      if (store.getCell(tableId, rowId, 'carId') === carId) {
+        rows[rowId] = store.getRow(tableId, rowId) as unknown as T
+      }
+    }
+    return rows
+  }
+
+  /** Read the synced display settings, applying the schema defaults for any
+   * the DO has never received (the DO store is deliberately schema-less, so it
+   * fabricates no defaults of its own). currency is read but never reaches the
+   * snapshot (no money is ever shown). */
+  private readSettings(): GarageValues {
+    const store = this.getStore()
+    const readString = (valueId: string): string | undefined => {
+      const value = store.getValue(valueId)
+      return typeof value === 'string' && value !== '' ? value : undefined
+    }
+    const settings: GarageValues = {
+      themeId: readString('themeId') ?? 'garage',
+      currency: readString('currency') ?? 'USD',
+      distanceUnit: store.getValue('distanceUnit') === 'km' ? 'km' : 'mi',
+    }
+    const customAccent = readString('customAccent')
+    if (customAccent !== undefined) settings.customAccent = customAccent
+    return settings
   }
 }

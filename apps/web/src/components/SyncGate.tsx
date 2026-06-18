@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { authClient } from '../auth/client'
-import { syncController, useSyncStatus } from '../store/useGarageStore'
+import { photoSync, syncController, useSyncStatus } from '../store/useGarageStore'
 import SyncMergeModal from './SyncMergeModal'
 
 /**
@@ -17,9 +17,17 @@ export default function SyncGate() {
   const userId = session?.user.id
 
   useEffect(() => {
+    photoSync.setUser(userId ?? null)
     if (userId) syncController.start(userId)
     else syncController.stop()
   }, [userId])
+
+  // Post-sign-in base64 → R2 backlog sweep. Runs once sync has attached
+  // ('syncing'); photos are not part of the #268 path, so after-attach is fine.
+  // Idempotent + sentinel-gated, so re-running on status changes is cheap.
+  useEffect(() => {
+    if (userId && status === 'syncing') void photoSync.migrate()
+  }, [userId, status])
 
   return status === 'awaiting-choice' ? <SyncMergeModal /> : null
 }

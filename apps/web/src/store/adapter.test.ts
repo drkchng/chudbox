@@ -1,11 +1,11 @@
 // Action/selector parity for the TinyBase-backed adapter (M2 verification
 // (a)/(d) support): strict-null cell writes, currency-tagging rules, the
 // no-rewrite settings semantics, delete cascades, and read-model caching.
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createStore } from 'tinybase'
 import { createGarageStore, KM_PER_MILE } from '@chudbox/shared'
 import { PHOTO_PAYLOADS_TABLE, createGarageAdapter } from './adapter'
-import type { GarageAdapter } from './adapter'
+import type { GarageAdapter, PhotoHooks } from './adapter'
 
 const CAR_DETAILS = {
   year: '1999',
@@ -236,6 +236,69 @@ describe('photos and cascades', () => {
     expect(adapter.store.getRowIds('todos')).toHaveLength(1) // the other car's
     expect(adapter.localStore.getRowIds(PHOTO_PAYLOADS_TABLE)).toHaveLength(0)
     expect(adapter.getState().cars.map((c) => c.make)).toEqual(['Honda'])
+  })
+})
+
+describe('R2 photo hooks (M3)', () => {
+  function makeAdapterWithHooks(hooks: PhotoHooks): GarageAdapter {
+    return createGarageAdapter(createGarageStore(), createStore(), hooks)
+  }
+
+  it('addPhoto fires onPhotoAdded after the optimistic local write', () => {
+    const onPhotoAdded = vi.fn()
+    const adapter = makeAdapterWithHooks({ onPhotoAdded })
+    const carId = addOneCar(adapter)
+    adapter.getState().addPhoto(carId, { dataUrl: 'data:image/png;base64,AAAA', caption: 'hi' })
+    const photoId = adapter.store.getRowIds('photos')[0]
+    // Local write happened first (base64 parked, metadata row present)...
+    expect(adapter.localStore.getCell(PHOTO_PAYLOADS_TABLE, photoId, 'dataUrl')).toBe(
+      'data:image/png;base64,AAAA',
+    )
+    // ...then the hook fired with the new photo's identity + payload.
+    expect(onPhotoAdded).toHaveBeenCalledWith(carId, photoId, 'data:image/png;base64,AAAA', 'hi')
+  })
+
+  it('resolvePhotoSrc reads the r2Key the join copies off the row', () => {
+    const adapter = makeAdapterWithHooks({})
+    const carId = addOneCar(adapter)
+    adapter.getState().addPhoto(carId, { dataUrl: 'data:x', caption: '' })
+    const photoId = adapter.store.getRowIds('photos')[0]
+    adapter.store.setCell('photos', photoId, 'r2Key', 'u/user/car/p.webp')
+    adapter.store.setCell('photos', photoId, 'width', 1600)
+    const photo = adapter.getState().cars[0].photos[0] as { r2Key?: string; width?: number }
+    expect(photo.r2Key).toBe('u/user/car/p.webp')
+    expect(photo.width).toBe(1600)
+  })
+
+  it('deletePhoto / deleteCar report the deleted r2Keys (and only uploaded ones)', () => {
+    const onPhotosDeleted = vi.fn()
+    const adapter = makeAdapterWithHooks({ onPhotosDeleted })
+    const carId = addOneCar(adapter)
+    const state = adapter.getState()
+    state.addPhoto(carId, { dataUrl: 'data:a', caption: '' })
+    state.addPhoto(carId, { dataUrl: 'data:b', caption: '' })
+    const [uploaded, localOnly] = adapter.store.getRowIds('photos')
+    adapter.store.setCell('photos', uploaded, 'r2Key', 'u/user/car/uploaded.webp')
+
+    adapter.getState().deletePhoto(carId, localOnly) // no r2Key → no hook
+    expect(onPhotosDeleted).not.toHaveBeenCalled()
+
+    adapter.getState().deletePhoto(carId, uploaded)
+    expect(onPhotosDeleted).toHaveBeenCalledWith(['u/user/car/uploaded.webp'])
+
+    // deleteCar reports any remaining uploaded photos.
+    onPhotosDeleted.mockClear()
+    const carId2 = (() => {
+      adapter.getState().addCar({ ...CAR_DETAILS, make: 'Honda' })
+      return adapter.store.getRowIds('cars').find((id) => id !== carId) as string
+    })()
+    adapter.getState().addPhoto(carId2, { dataUrl: 'data:c', caption: '' })
+    const p = adapter.store.getRowIds('photos').find(
+      (id) => adapter.store.getCell('photos', id, 'carId') === carId2,
+    ) as string
+    adapter.store.setCell('photos', p, 'r2Key', 'u/user/car2/c.jpg')
+    adapter.getState().deleteCar(carId2)
+    expect(onPhotosDeleted).toHaveBeenCalledWith(['u/user/car2/c.jpg'])
   })
 })
 

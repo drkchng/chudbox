@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import { Car, AlertTriangle, CheckSquare, Wrench } from 'lucide-react'
 import { getCarStatus, STATUS_CONFIG } from '../utils/carStatus'
 import useGarageStore from '../store/useGarageStore'
+import { resolvePhotoSrc } from '../utils/image'
 import { CURRENCIES, DISTANCE_UNITS } from '../utils/units'
 import type { Car as CarType } from '../types'
 
@@ -16,6 +17,7 @@ export default function CarCard({ car }: CarCardProps) {
   const sym          = CURRENCIES[currency]?.symbol ?? '$'
   const distShort    = DISTANCE_UNITS[distanceUnit]?.short ?? 'mi'
   const coverPhoto   = car.photos.find((p) => p.id === car.coverPhoto) || car.photos[0]
+  const coverSrc     = coverPhoto ? resolvePhotoSrc(coverPhoto) : ''
   const openIssues   = car.issues.filter((i) => i.status !== 'resolved').length
   const pendingTodos = car.todos.filter((t) => !t.done).length
   const status       = getCarStatus(car)
@@ -28,7 +30,7 @@ export default function CarCard({ car }: CarCardProps) {
     >
       {/* Image section */}
       <div className="h-48 bg-surface overflow-hidden relative">
-        {coverPhoto ? (
+        {coverSrc ? (
           <>
             {/*
               The transform lives on this wrapper, NOT on the img.
@@ -40,7 +42,7 @@ export default function CarCard({ car }: CarCardProps) {
             */}
             <div className="absolute inset-0">
               <img
-                src={coverPhoto.dataUrl}
+                src={coverSrc}
                 alt={`${car.year} ${car.make} ${car.model}`}
                 className="w-full h-full object-cover"
               />

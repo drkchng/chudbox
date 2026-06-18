@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
-import { Upload, Star, Trash2, X } from 'lucide-react'
-import useGarageStore from '../../store/useGarageStore'
+import { Upload, Star, Trash2, X, CloudOff } from 'lucide-react'
+import useGarageStore, { useSyncStatus } from '../../store/useGarageStore'
+import { hasCloudCopy, resolvePhotoSrc } from '../../utils/image'
 import ConfirmModal from '../ConfirmModal'
 import type { Car, Photo } from '../../types'
 
@@ -13,6 +14,9 @@ export default function PhotosTab({ car }: PhotosTabProps) {
   const addPhoto = useGarageStore((s) => s.addPhoto)
   const deletePhoto = useGarageStore((s) => s.deletePhoto)
   const setCoverPhoto = useGarageStore((s) => s.setCoverPhoto)
+  // 'idle' ⇒ logged out; any other status ⇒ an account is active, so a photo
+  // without an R2 copy yet is awaiting upload (vs. just being a local photo).
+  const accountActive = useSyncStatus() !== 'idle'
   const fileRef = useRef<HTMLInputElement | null>(null)
   const [caption, setCaption] = useState('')
   const [preview, setPreview] = useState<string | null>(null)
@@ -78,9 +82,14 @@ export default function PhotosTab({ car }: PhotosTabProps) {
             <div key={photo.id} className="relative group rounded-xl overflow-hidden bg-surface-2 aspect-square cursor-pointer"
               onClick={() => setLightbox(photo)}
             >
-              <img src={photo.dataUrl} alt={photo.caption} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+              <img src={resolvePhotoSrc(photo)} alt={photo.caption} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
               {car.coverPhoto === photo.id && (
                 <span className="absolute top-2 left-2 badge bg-accent/90 text-white text-xs"><Star size={10} className="mr-1" fill="currentColor" />Cover</span>
+              )}
+              {accountActive && !hasCloudCopy(photo) && (
+                <span className="absolute top-2 right-2 badge bg-black/60 text-gray-300 text-xs" title="Uploading… stored locally until it reaches the cloud">
+                  <CloudOff size={10} className="mr-1" />Local
+                </span>
               )}
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/50 transition-colors flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
                 <button onClick={(e) => { e.stopPropagation(); setCoverPhoto(car.id, photo.id) }}
@@ -115,7 +124,7 @@ export default function PhotosTab({ car }: PhotosTabProps) {
       {lightbox && (
         <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" onClick={() => setLightbox(null)}>
           <button className="absolute top-4 right-4 text-white hover:text-gray-300"><X size={24} /></button>
-          <img src={lightbox.dataUrl} alt={lightbox.caption} className="max-w-full max-h-full rounded-lg object-contain" onClick={(e) => e.stopPropagation()} />
+          <img src={resolvePhotoSrc(lightbox)} alt={lightbox.caption} className="max-w-full max-h-full rounded-lg object-contain" onClick={(e) => e.stopPropagation()} />
           {lightbox.caption && <p className="absolute bottom-6 text-white text-sm">{lightbox.caption}</p>}
         </div>
       )}

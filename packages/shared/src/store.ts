@@ -12,6 +12,30 @@ import type { ChildTableId } from './schema'
  * Create the shared garage MergeableStore with the source-of-truth schema
  * applied. `uniqueId` seeds the store's HLC client id — pass a stable id per
  * device/DO when you need deterministic provenance; omit for a random one.
+ *
+ * PERSISTENCE + SYNC ARE CALLER-INJECTED. This function wires NEITHER a
+ * persister NOR a synchronizer — both are platform-specific and imported by the
+ * consumer, so nothing here breaks RN/Metro (see docs/MOBILE.md). Each platform
+ * attaches its own after creation:
+ *
+ * @example
+ * // Web (apps/web): IndexedDB persistence + WebSocket sync.
+ * import { createIndexedDbPersister } from 'tinybase/persisters/persister-indexed-db'
+ * import { createWsSynchronizer } from 'tinybase/synchronizers/synchronizer-ws-client'
+ * const store = createGarageStore()
+ * await createIndexedDbPersister(store, 'chudbox').startAutoLoad()
+ * await createWsSynchronizer(store, new WebSocket(SYNC_URL)).startSync()
+ *
+ * @example
+ * // React Native / Expo (future apps/mobile): expo-sqlite persistence + the
+ * // SAME ws synchronizer. @chudbox/shared imports none of these — the RN app
+ * // owns them, so this core stays platform-agnostic.
+ * import { createExpoSqlitePersister } from 'tinybase/persisters/persister-expo-sqlite'
+ * import { createWsSynchronizer } from 'tinybase/synchronizers/synchronizer-ws-client'
+ * import * as SQLite from 'expo-sqlite'
+ * const store = createGarageStore()
+ * await createExpoSqlitePersister(store, SQLite.openDatabaseSync('chudbox.db')).startAutoLoad()
+ * await createWsSynchronizer(store, new WebSocket(SYNC_URL)).startSync()
  */
 export function createGarageStore(uniqueId?: Id): MergeableStore {
   return createMergeableStore(uniqueId)
