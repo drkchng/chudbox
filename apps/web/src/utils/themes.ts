@@ -111,7 +111,7 @@ function documentRootStyle(): ThemeStyleTarget {
   return document.documentElement.style
 }
 
-export function applyTheme(theme: ThemeColors, style: ThemeStyleTarget = documentRootStyle()): void {
+function applyTheme(theme: ThemeColors, style: ThemeStyleTarget = documentRootStyle()): void {
   style.setProperty('--accent',     theme.accent)
   style.setProperty('--accent-dim', theme.accentDim)
   style.setProperty('--dark',       theme.dark)
@@ -150,7 +150,7 @@ export function restoreThemeVars(
 }
 
 // Convert a hex color (#rrggbb) to space-separated RGB channels
-export function hexToRgbChannels(hex: string): string {
+function hexToRgbChannels(hex: string): string {
   const clean = hex.replace('#', '')
   const r = parseInt(clean.slice(0, 2), 16)
   const g = parseInt(clean.slice(2, 4), 16)
@@ -159,7 +159,7 @@ export function hexToRgbChannels(hex: string): string {
 }
 
 // Slightly darken an RGB channels string for the dim variant
-export function darkenChannels(channels: string, amount = 20): string {
+function darkenChannels(channels: string, amount = 20): string {
   const [r, g, b] = channels.split(' ').map(Number)
   return `${Math.max(0, r - amount)} ${Math.max(0, g - amount)} ${Math.max(0, b - amount)}`
 }

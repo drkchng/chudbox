@@ -37,8 +37,6 @@ import {
 } from '@chudbox/shared'
 import type { ImageContentType, ImageDimensions, ImagePolicy, Photo } from '@chudbox/shared'
 
-export { FREE_IMAGE_POLICY }
-
 // ── Encode pipeline ─────────────────────────────────────────
 
 export interface EncodeResult {

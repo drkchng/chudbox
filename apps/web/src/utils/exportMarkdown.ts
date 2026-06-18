@@ -27,7 +27,7 @@ function table(headers: string[], rows: string[][]): string {
   return ['| ' + header + ' |', '| ' + divider + ' |', ...body.map((r) => '| ' + r + ' |')].join('\n') + '\n'
 }
 
-export function generateMarkdown(car: StoredCar, distanceUnit: DistanceUnitCode): string {
+function generateMarkdown(car: StoredCar, distanceUnit: DistanceUnitCode): string {
   const status      = getCarStatus(car)
   const statusLabel = STATUS_CONFIG[status]?.label ?? status
   const title       = `${car.year} ${car.make} ${car.model}${car.trim ? ' ' + car.trim : ''}`

@@ -5,7 +5,7 @@
 // ids so a flatten → join round trip is deep-equal to the input.
 import type { Car } from '@chudbox/shared'
 
-export function isoAt(offsetSeconds: number): string {
+function isoAt(offsetSeconds: number): string {
   return new Date(Date.UTC(2026, 0, 1, 0, 0, offsetSeconds)).toISOString()
 }
 

@@ -124,13 +124,13 @@ export function decideSyncPlan(input: SyncPlanInput): SyncDecision {
 // ── Step primitives (pure over injected stores) ─────────────
 
 /** Drop local VALUE stamps, keep table stamps verbatim (cloud-wins Values). */
-export function resetLocalValueStamps(store: MergeableStore): void {
+function resetLocalValueStamps(store: MergeableStore): void {
   const [tables] = store.getMergeableContent()
   store.setMergeableContent([tables, [{}, '', 0]] as unknown as MergeableContent)
 }
 
 /** Wholesale local reset: data AND stamp map (keep-cloud — no tombstones). */
-export function resetLocalStore(store: MergeableStore, localStore: Store): void {
+function resetLocalStore(store: MergeableStore, localStore: Store): void {
   store.setMergeableContent(emptyMergeableContent())
   // Cloud photos have no local payloads until M3; orphaned blobs go too.
   // Sentinels (values) are intentionally untouched.
@@ -138,7 +138,7 @@ export function resetLocalStore(store: MergeableStore, localStore: Store): void 
 }
 
 /** Re-mint every local stamp at "now" (post-clear seeds must out-stamp tombstones). */
-export function restampLocalStore(store: MergeableStore): void {
+function restampLocalStore(store: MergeableStore): void {
   const content = store.getContent()
   store.setMergeableContent(emptyMergeableContent())
   store.setContent(content)
@@ -152,7 +152,7 @@ export function localRowCounts(store: MergeableStore): Record<string, number> {
   return counts
 }
 
-export function localHasRows(store: MergeableStore): boolean {
+function localHasRows(store: MergeableStore): boolean {
   return GARAGE_TABLE_IDS.some((tableId) => store.getRowIds(tableId).length > 0)
 }
 
