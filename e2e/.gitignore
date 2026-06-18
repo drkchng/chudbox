@@ -1,0 +1,7 @@
+# Harness runtime scratch (isolated wrangler state, dev-vars, teed log)
+.tmp/
+
+# Playwright outputs
+/test-results/
+/playwright-report/
+/.playwright/

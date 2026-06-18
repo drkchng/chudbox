@@ -10,9 +10,14 @@
     "lint": "turbo run lint",
     "test": "turbo run test",
     "dev": "turbo run dev",
-    "test:all": "vitest run"
+    "test:all": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:typecheck": "tsc -p e2e/tsconfig.json"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.0",
+    "@types/node": "^25.9.3",
     "turbo": "^2.9.18",
     "typescript": "^6.0.3",
     "vitest": "^4.1.8"
