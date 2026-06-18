@@ -199,6 +199,40 @@ export class GarageDO extends WsServerDurableObject<Env> {
   }
 
   /**
+   * G4 / Law-25 account-deletion purge. HARD-wipes ALL persisted state for this
+   * user's garage and returns once nothing is left. IDEMPOTENT (a retry after a
+   * partial failure, or a double-call, is a safe no-op).
+   *
+   * Two layers, because the DO instance can stay warm (with an attached /sync
+   * synchronizer + the auto-save listener) right through the delete:
+   *  1. Empty the IN-MEMORY MergeableStore (delTables + delValues). After this no
+   *     live cell or Value remains in the store an attached synchronizer could
+   *     push back to a client, and the per-transaction auto-save persists the
+   *     now-empty state.
+   *  2. ctx.storage.deleteAll() — drop EVERY DO SQLite row: the fragmented
+   *     persister's one-row-per-cell-stamp tables (cars, photos incl. r2Key,
+   *     mileage, savedBuilds incl. the bearer `token`, …) AND any persister
+   *     bookkeeping. The next load() rehydrates an empty store.
+   *
+   * Unlike clearGarage (which TOMBSTONES rows so deletions CRDT-propagate to
+   * other still-syncing devices), purgeAll is an erasure: the account is going
+   * away, so we drop the store and its persisted stamps outright rather than
+   * leaving tombstones at rest. Caller (the delete route) purges this BEFORE the
+   * D1 user row is deleted, so no orphaned garage survives a row-delete race.
+   */
+  async purgeAll(): Promise<{ purged: true }> {
+    const store = this.getStore()
+    store.transaction(() => {
+      store.delTables()
+      store.delValues()
+    })
+    // Drop the fragmented persister's SQLite rows (and everything else this DO
+    // ever stored). Awaited so the RPC only resolves once at-rest state is gone.
+    await this.ctx.storage.deleteAll()
+    return { purged: true }
+  }
+
+  /**
    * M2: live-row counts per table + emptiness (tombstones don't count).
    *
    * Null-awareness (upstream quirk, verified in the installed fragmented

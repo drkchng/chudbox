@@ -5,6 +5,7 @@ import useGarageStore, { exportBackup, importBackup, parseBackupFile } from '../
 import type { ParsedBackup } from '../store/useGarageStore'
 import AccountSection from './auth/AccountSection'
 import ShareIdentitySection from './auth/ShareIdentitySection'
+import DeleteAccountSection from './auth/DeleteAccountSection'
 import IconButton from './ui/IconButton'
 import Button from './ui/Button'
 import Modal from './ui/Modal'
@@ -294,6 +295,10 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
               </div>
             )}
           </section>
+
+          {/* G4 / Law-25 — Danger zone: irreversible account deletion. Renders
+              only when signed in; placed last by danger-zone convention. */}
+          <DeleteAccountSection />
         </div>
       </div>
 

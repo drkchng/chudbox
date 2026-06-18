@@ -46,11 +46,11 @@ export const uploadsApi = new Hono<{ Bindings: Env }>()
  * can't do reference-based GC). Path is derived from UPLOAD_PATH so it stays in
  * sync; the client targets `${UPLOAD_PATH}/delete`.
  *
- * DEFERRED (do NOT build here, documented gap — BACKEND_PLAN.md Risk #8 /
- * db/schema.md §3): a periodic reconciliation sweep for orphans this hook
- * misses (e.g. a tab that crashes between row-delete and delete-call), and an
- * account-deletion prefix purge of `u/<userId>/`. Both are cron/lifecycle work
- * outside M3.
+ * The account-deletion prefix purge of `u/<userId>/` now lives in routes/
+ * account.ts (purgeUserImages, called by POST /api/account/delete — G4). Still
+ * DEFERRED (do NOT build here): a periodic reconciliation sweep for orphans this
+ * hook misses (e.g. a tab that crashes between row-delete and delete-call) —
+ * cron/lifecycle work outside M3 (BACKEND_PLAN.md Risk #8 / db/schema.md §3).
  */
 export const UPLOAD_DELETE_PATH = `${UPLOAD_PATH}/delete`
 

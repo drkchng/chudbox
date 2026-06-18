@@ -388,6 +388,23 @@ export interface UpdateAccountDisplayRequest {
   showOwnerName?: boolean
 }
 
+// ── Account deletion / right-to-erasure (gap G4 · Law 25) ───
+// Session-authed, OWN-ACCOUNT-ONLY destructive purge of EVERY store the user
+// touches: the D1 `user` row (FK ON DELETE CASCADE removes session/account/
+// share_links), the user's Durable Object garage (MergeableStore + its SQLite),
+// and every R2 image under `u/<userId>/`. The target userId is taken ONLY from
+// the validated session — the request carries NO body that could select another
+// user (no IDOR). The non-cascading stores (DO + R2) are purged BEFORE the D1
+// row delete (purge-first → no orphans even if the row-delete races).
+
+/** POST — irreversibly delete the CALLER's own account + all their data (G4). */
+export const ACCOUNT_DELETE_PATH = '/api/account/delete'
+
+/** ACCOUNT_DELETE_PATH success body. `deleted` is always true on a 200. */
+export interface AccountDeleteResponse {
+  deleted: true
+}
+
 /**
  * Public GET response — a DISCRIMINATED UNION on the server-authoritative
  * `scope`. The viewer turns each photo's photoId into an image via
