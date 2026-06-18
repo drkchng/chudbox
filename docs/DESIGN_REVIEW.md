@@ -114,6 +114,11 @@ Counts after dedup: **6 Critical · 22 High · 22 Medium · 23 Low** (73 finding
   (weaker, esp. iOS Safari). INFRA fits the stack: a Cloudflare **Cron Trigger** on the Worker computes
   due reminders + sends pushes; needs stored schedules + synced device push tokens. Downstream of DEC-16
   + accounts/sync.
+- **DEC-19 — License plate field on the car** (owner). Optional Car field. PRIVATE by default in shares
+  (plates enable lookups/identification), but with an OWNER opt-in "show my plate" toggle — roughly the
+  INVERSE of VIN (DEC-13): sellers typically HIDE plates on for-sale listings, while enthusiasts want to
+  FLAUNT vanity/custom plates on a showcase. So plate exposure is OWNER-CHOICE (a toggle), not
+  purpose-gated. Uses the same private-field snapshot-exposure mechanism as VIN/owner-name (DEC-13/10).
 
 ## Constrained (a real limit, design around it)
 
