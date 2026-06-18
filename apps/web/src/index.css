@@ -1,14 +1,36 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
-:root {
-  --accent:     249 115 22;
-  --accent-dim: 234 88 12;
-  --dark:       15 15 15;
-  --surface:    26 26 26;
-  --surface-2:  36 36 36;
-  --border:     45 45 45;
+/* ---------------------------------------------------------------------------
+ * Design tokens — GENERATED from the @chudbox/shared SSOT (DEC-15 / DEC-17).
+ * This is the entire Tailwind v4 @theme + the runtime-swappable :root channels.
+ * NEVER hand-edit token values here or in the generated file: change
+ * packages/shared/src/tokens.ts and run `pnpm gen:theme`.
+ * ------------------------------------------------------------------------- */
+@import "./theme.generated.css";
+
+/* ---------------------------------------------------------------------------
+ * v3 -> v4 preflight compatibility. v4 changed three defaults; restore the v3
+ * behavior so this stays a pure engine swap (no visual change):
+ *   - default border color:    v3 gray-200   -> v4 currentColor
+ *   - input placeholder color:  v3 gray-400   -> v4 currentColor @ 50%
+ *   - button cursor:            v3 pointer    -> v4 default
+ * ------------------------------------------------------------------------- */
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentColor);
+  }
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-gray-400);
+  }
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
 }
 
 @layer base {
@@ -16,8 +38,8 @@
   html { scroll-behavior: smooth; }
   body {
     background-color: rgb(var(--dark));
-    color: #e5e5e5;
-    font-family: 'Inter', system-ui, sans-serif;
+    color: rgb(var(--text-primary));
+    font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     margin: 0;
   }
@@ -25,24 +47,43 @@
     background-color: rgb(var(--accent) / 0.25);
     color: rgb(var(--accent));
   }
+
+  /* Global visible focus baseline (A7). `:where()` keeps specificity at 0 so a
+   * component's own focus styling always wins; scoped to interactive elements
+   * so keyboard focus is always visible without ringing inert containers. */
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    @apply outline-hidden ring-2 ring-accent ring-offset-2 ring-offset-surface;
+  }
 }
 
 @layer components {
-  /* Card — only animate what changes */
-  .card {
-    @apply bg-surface border border-border rounded-xl p-5;
-    transition: border-color 200ms ease-out, box-shadow 200ms ease-out;
-  }
-  @media (hover: hover) and (pointer: fine) {
-    .card:hover {
-      border-color: rgb(var(--accent) / 0.3);
-      box-shadow: 0 24px 40px -8px rgb(0 0 0 / 0.45);
-    }
+  /* Reusable focus ring for custom/composite controls (A7). Same ring as the
+   * global :focus-visible baseline; opt in where the focusable node isn't a
+   * native interactive element. */
+  .focus-ring {
+    @apply outline-hidden ring-2 ring-accent ring-offset-2 ring-offset-surface;
   }
 
-  /* Buttons */
+  /* Surface density primitives (V10): one card padding (p-5), one row (px-4
+   * py-3). Elevation = border ring + the single minimal --shadow-elevation;
+   * hover lift is border-color -> accent/30 only (no soft-shadow stacks, V2). */
+  .card {
+    @apply bg-surface border border-border rounded-lg p-5 shadow-elevation;
+    transition: border-color 200ms ease-out;
+  }
+  .card-row {
+    @apply bg-surface border border-border rounded-lg px-4 py-3;
+    transition: border-color 200ms ease-out;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .card:hover,
+    .card-row:hover { border-color: rgb(var(--accent) / 0.3); }
+  }
+
+  /* Buttons — DEC-2: dark label on the orange fill (white-on-orange fails AA);
+   * the label color is the derived --on-accent token. */
   .btn-primary {
-    @apply inline-flex items-center gap-2 bg-accent text-white font-semibold px-4 py-2 rounded-lg text-sm;
+    @apply inline-flex items-center gap-2 bg-accent text-on-accent font-semibold px-4 py-2 rounded-lg text-sm;
     transition: background-color 150ms ease-out, box-shadow 150ms ease-out, transform 80ms ease-out;
   }
   @media (hover: hover) and (pointer: fine) {
@@ -66,18 +107,35 @@
   .btn-outline:active { transform: scale(0.97); }
 
   .btn-ghost {
-    @apply inline-flex items-center gap-2 text-gray-500 px-2 py-1 rounded text-sm;
+    @apply inline-flex items-center gap-2 text-gray-500 px-2 py-1 rounded-sm text-sm;
     transition: color 150ms ease-out;
   }
   .btn-ghost:hover { color: #e5e5e5; }
 
   .input {
-    @apply w-full bg-surface-2 border border-border rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-accent/40 focus:border-accent/60;
+    @apply w-full bg-surface-2 border border-border rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-hidden focus:ring-1 focus:ring-accent/40 focus:border-accent/60;
     transition: border-color 150ms ease-out;
   }
 
   .label { @apply block text-xs text-gray-400 mb-1.5 font-medium; }
-  .badge { @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium; }
+  .badge { @apply inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium; }
+
+  /* Semantic status chips (V3/V4) — one bg/text/border triple per role, each
+   * AA-paired, all sourced from the status tokens. Self-contained: a single
+   * `.badge-danger` (etc.) is enough. Sold -> neutral, status-orange ->
+   * warning. */
+  .badge-danger,
+  .badge-warning,
+  .badge-success,
+  .badge-info,
+  .badge-neutral {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-xs font-medium border;
+  }
+  .badge-danger  { @apply bg-danger  text-danger-fg  border-danger-border; }
+  .badge-warning { @apply bg-warning text-warning-fg border-warning-border; }
+  .badge-success { @apply bg-success text-success-fg border-success-border; }
+  .badge-info    { @apply bg-info    text-info-fg    border-info-border; }
+  .badge-neutral { @apply bg-neutral text-neutral-fg border-neutral-border; }
 
   .btn-danger {
     @apply inline-flex items-center gap-2 bg-red-600 text-white font-semibold px-4 py-2 rounded-lg text-sm;

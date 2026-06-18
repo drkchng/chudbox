@@ -149,15 +149,18 @@ function LinkField({ value, onChange }: LinkFieldProps) {
 
 interface ModsTabProps {
   car: Car
+  /** DEC-4 (U1) log-first: open the add-mod form and focus its first field on
+   *  mount — set when the user just created this car and landed here. */
+  autoFocusAdd?: boolean
 }
 
-export default function ModsTab({ car }: ModsTabProps) {
+export default function ModsTab({ car, autoFocusAdd = false }: ModsTabProps) {
   const addMod    = useGarageStore((s) => s.addMod)
   const updateMod = useGarageStore((s) => s.updateMod)
   const deleteMod = useGarageStore((s) => s.deleteMod)
   const currency  = useGarageStore((s) => s.currency)
   const sym       = CURRENCIES[currency]?.symbol ?? '$'
-  const [showForm, setShowForm]   = useState(false)
+  const [showForm, setShowForm]   = useState(autoFocusAdd)
   const [form, setForm]           = useState<ModForm>(emptyForm)
   const [editId, setEditId]       = useState<string | null>(null)
   const [editForm, setEditForm]   = useState<ModForm>(emptyForm)
@@ -225,7 +228,8 @@ export default function ModsTab({ car }: ModsTabProps) {
           <div className="grid sm:grid-cols-2 gap-3">
             <div>
               <label className="label">Name *</label>
-              <input className="input" placeholder="Coilover Kit" value={form.name} onChange={set('name')} required />
+              {/* autoFocus fires on mount — the log-first focus target (U1). */}
+              <input className="input" placeholder="Coilover Kit" value={form.name} onChange={set('name')} required autoFocus={autoFocusAdd} />
             </div>
             <div>
               <label className="label">Category</label>

@@ -69,7 +69,7 @@ export default function TodoTab({ car }: TodoTabProps) {
               {pending.map((todo) => (
                 <div key={todo.id} className="card flex items-center gap-3 hover:border-accent/20 py-3">
                   <input type="checkbox" checked={false} onChange={() => toggleTodo(car.id, todo.id)}
-                    className="w-4 h-4 rounded border-border accent-accent cursor-pointer shrink-0" />
+                    className="w-4 h-4 rounded-sm border-border accent-accent cursor-pointer shrink-0" />
                   <span className="flex-1 text-sm text-gray-200">{todo.text}</span>
                   <span className={`badge border text-xs ${PRIORITY[todo.priority].class}`}>{PRIORITY[todo.priority].label}</span>
                   <button onClick={() => setConfirmTodo(todo)} className="btn-ghost text-red-500 hover:text-red-400"><Trash2 size={14} /></button>

@@ -84,7 +84,7 @@ export default function DateInput({ value = '', onChange, className = '' }: Date
     }
   }
 
-  const seg = 'bg-transparent text-center text-sm text-gray-200 focus:outline-none focus:text-accent placeholder-gray-600 caret-accent'
+  const seg = 'bg-transparent text-center text-sm text-gray-200 focus:outline-hidden focus:text-accent placeholder-gray-600 caret-accent'
 
   return (
     <div className={`flex items-center bg-surface-2 border border-border rounded-lg px-3 py-2 gap-1 focus-within:border-accent/60 transition-colors ${className}`}>

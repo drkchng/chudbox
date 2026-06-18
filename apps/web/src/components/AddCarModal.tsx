@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
-import { X } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import useGarageStore from '../store/useGarageStore'
 import { DISTANCE_UNITS } from '../utils/units'
-import { useModalDismiss } from '../hooks/useModalDismiss'
 import DateInput from './DateInput'
+import Modal from './ui/Modal'
+import Button from './ui/Button'
 import type { CarDetails, CarStoredStatus, FieldChangeEvent } from '../types'
 
 const today = new Date().toISOString().slice(0, 10)
@@ -14,16 +15,21 @@ const empty: CarDetails = {
   purchaseDate: '', saleDate: '', status: 'current', salePrice: '', tradeFor: '',
 }
 
+// The form lives in the Modal body; the action buttons live in the Modal footer.
+// A shared id wires the footer's submit <Button> to this form (HTML form
+// association is document-wide, so it works across the Base UI portal).
+const FORM_ID = 'add-car-form'
+
 interface AddCarModalProps {
   onClose: () => void
 }
 
 export default function AddCarModal({ onClose }: AddCarModalProps) {
-  const addCar = useGarageStore((s) => s.addCar)
+  const navigate     = useNavigate()
+  const addCar       = useGarageStore((s) => s.addCar)
   const distanceUnit = useGarageStore((s) => s.distanceUnit)
-  const distShort = DISTANCE_UNITS[distanceUnit]?.short ?? 'mi'
+  const distShort    = DISTANCE_UNITS[distanceUnit]?.short ?? 'mi'
   const [form, setForm] = useState<CarDetails>(empty)
-  const onBackdropClick = useModalDismiss(onClose)
 
   const set =
     <K extends keyof CarDetails>(key: K) =>
@@ -44,102 +50,127 @@ export default function AddCarModal({ onClose }: AddCarModalProps) {
   const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!form.year || !form.make || !form.model) return
-    addCar(form)
-    onClose()
+    // DEC-4 (U1) log-first: create, then land straight on the new car's profile
+    // (which defaults to the Mods tab) with the add-mod form focused, ready to
+    // log the first mod. `addCar` returns the freshly-minted id.
+    const id = addCar(form)
+    navigate(`/car/${id}`, { state: { focusLog: true } })
   }
 
   return (
-    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80" onClick={onBackdropClick}>
-      <div className="modal-content bg-surface border border-border rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
-          <h2 className="text-lg font-semibold text-white">Add car</h2>
-          <button onClick={onClose} className="btn-ghost"><X size={18} /></button>
+    <Modal
+      open
+      onOpenChange={(o) => { if (!o) onClose() }}
+      title="Add car"
+      size="lg"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button type="submit" form={FORM_ID}>Add car</Button>
+        </>
+      }
+    >
+      <form id={FORM_ID} onSubmit={handleSubmit} className="space-y-4">
+        {/* Basic info */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label htmlFor="add-car-year" className="label">Year *</label>
+            <input id="add-car-year" className="input" placeholder="2020" value={form.year} onChange={set('year')} required />
+          </div>
+          <div>
+            <label htmlFor="add-car-make" className="label">Make *</label>
+            <input id="add-car-make" className="input" placeholder="Toyota" value={form.make} onChange={set('make')} required />
+          </div>
+        </div>
+        <div>
+          <label htmlFor="add-car-model" className="label">Model *</label>
+          <input id="add-car-model" className="input" placeholder="Supra" value={form.model} onChange={set('model')} required />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label htmlFor="add-car-trim" className="label">Trim</label>
+            <input id="add-car-trim" className="input" placeholder="GR" value={form.trim} onChange={set('trim')} />
+          </div>
+          <div>
+            <label htmlFor="add-car-color" className="label">Color</label>
+            <input id="add-car-color" className="input" placeholder="Matte Black" value={form.color} onChange={set('color')} />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label htmlFor="add-car-mileage" className="label">Mileage ({distShort})</label>
+            <input id="add-car-mileage" className="input" type="number" placeholder="45000" value={form.mileage} onChange={set('mileage')} />
+          </div>
+          <div>
+            <label htmlFor="add-car-nickname" className="label">Nickname</label>
+            <input id="add-car-nickname" className="input" placeholder="Project S" value={form.nickname} onChange={set('nickname')} />
+          </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="overflow-y-auto px-5 py-4 space-y-4">
-          {/* Basic info */}
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="label">Year *</label><input className="input" placeholder="2020" value={form.year} onChange={set('year')} required /></div>
-            <div><label className="label">Make *</label><input className="input" placeholder="Toyota" value={form.make} onChange={set('make')} required /></div>
-          </div>
-          <div><label className="label">Model *</label><input className="input" placeholder="Supra" value={form.model} onChange={set('model')} required /></div>
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="label">Trim</label><input className="input" placeholder="GR" value={form.trim} onChange={set('trim')} /></div>
-            <div><label className="label">Color</label><input className="input" placeholder="Matte Black" value={form.color} onChange={set('color')} /></div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="label">Mileage ({distShort})</label><input className="input" type="number" placeholder="45000" value={form.mileage} onChange={set('mileage')} /></div>
-            <div><label className="label">Nickname</label><input className="input" placeholder="Project S" value={form.nickname} onChange={set('nickname')} /></div>
+        {/* Ownership */}
+        <div className="border-t border-border pt-4 space-y-3">
+          <p className="text-xs font-semibold text-text-tertiary uppercase tracking-widest">Ownership</p>
+
+          {/* DateInput is a composite (3 segments) → group it under its label. */}
+          <div role="group" aria-labelledby="add-car-purchase-label">
+            <span id="add-car-purchase-label" className="label">Purchase date</span>
+            <DateInput value={form.purchaseDate} onChange={set('purchaseDate')} />
           </div>
 
-          {/* Ownership */}
-          <div className="border-t border-border pt-4 space-y-3">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest">Ownership</p>
+          <div>
+            <label htmlFor="add-car-status" className="label">Status</label>
+            <select id="add-car-status" className="input" value={form.status} onChange={setStatus}>
+              <option value="current">Current</option>
+              <option value="for-sale">For Sale</option>
+              <option value="for-trade">For Trade</option>
+              <option value="sold">Sold (Archive)</option>
+              <option value="totaled">Totaled</option>
+            </select>
+          </div>
 
-            <div>
-              <label className="label">Purchase date</label>
-              <DateInput value={form.purchaseDate} onChange={set('purchaseDate')} />
-            </div>
-
-            <div>
-              <label className="label">Status</label>
-              <select className="input" value={form.status} onChange={setStatus}>
-                <option value="current">Current</option>
-                <option value="for-sale">For Sale</option>
-                <option value="for-trade">For Trade</option>
-                <option value="sold">Sold (Archive)</option>
-                <option value="totaled">Totaled</option>
-              </select>
-            </div>
-
-            {form.status === 'sold' && (
-              <>
-                <div>
-                  <label className="label">Sale date <span className="text-gray-600">(optional)</span></label>
-                  <div onFocus={() => { if (!form.saleDate) set('saleDate')(today) }}>
-                    <DateInput value={form.saleDate} onChange={set('saleDate')} />
-                  </div>
+          {form.status === 'sold' && (
+            <>
+              <div role="group" aria-labelledby="add-car-saledate-label">
+                <span id="add-car-saledate-label" className="label">Sale date <span className="text-text-disabled">(optional)</span></span>
+                <div onFocus={() => { if (!form.saleDate) set('saleDate')(today) }}>
+                  <DateInput value={form.saleDate} onChange={set('saleDate')} />
                 </div>
-                <div>
-                  <label className="label">Final sale price <span className="text-gray-600">(optional)</span></label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm pointer-events-none">$</span>
-                    <input className="input pl-7" type="number" step="0.01" placeholder="25000" value={form.salePrice} onChange={set('salePrice')} />
-                  </div>
-                </div>
-              </>
-            )}
-
-            {form.status === 'for-sale' && (
+              </div>
               <div>
-                <label className="label">Asking price <span className="text-gray-600">(optional)</span></label>
+                <label htmlFor="add-car-saleprice" className="label">Final sale price <span className="text-text-disabled">(optional)</span></label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm pointer-events-none">$</span>
-                  <input className="input pl-7" type="number" step="0.01" placeholder="25000" value={form.salePrice} onChange={set('salePrice')} />
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary text-sm pointer-events-none">$</span>
+                  <input id="add-car-saleprice" className="input pl-7" type="number" step="0.01" placeholder="25000" value={form.salePrice} onChange={set('salePrice')} />
                 </div>
               </div>
-            )}
+            </>
+          )}
 
-            {form.status === 'for-trade' && (
-              <div>
-                <label className="label">Will trade for</label>
-                <textarea
-                  className="input resize-none"
-                  rows={3}
-                  placeholder={"e.g.\n2022 Subaru WRX\n1999 Mazda MX-5 Miata"}
-                  value={form.tradeFor}
-                  onChange={set('tradeFor')}
-                />
+          {form.status === 'for-sale' && (
+            <div>
+              <label htmlFor="add-car-askingprice" className="label">Asking price <span className="text-text-disabled">(optional)</span></label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary text-sm pointer-events-none">$</span>
+                <input id="add-car-askingprice" className="input pl-7" type="number" step="0.01" placeholder="25000" value={form.salePrice} onChange={set('salePrice')} />
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
-          <div className="flex gap-3 pt-1 pb-1">
-            <button type="button" onClick={onClose} className="btn-outline flex-1 justify-center">Cancel</button>
-            <button type="submit" className="btn-primary flex-1 justify-center">Add car</button>
-          </div>
-        </form>
-      </div>
-    </div>
+          {form.status === 'for-trade' && (
+            <div>
+              <label htmlFor="add-car-tradefor" className="label">Will trade for</label>
+              <textarea
+                id="add-car-tradefor"
+                className="input resize-none"
+                rows={3}
+                placeholder={"e.g.\n2022 Subaru WRX\n1999 Mazda MX-5 Miata"}
+                value={form.tradeFor}
+                onChange={set('tradeFor')}
+              />
+            </div>
+          )}
+        </div>
+      </form>
+    </Modal>
   )
 }

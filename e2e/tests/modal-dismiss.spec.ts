@@ -1,6 +1,6 @@
 /**
- * Flow 4 — modal dismissal (AddCarModal, via the shared useModalDismiss hook):
- * Escape and an OUTSIDE (backdrop) click close it; an INSIDE click does not.
+ * Flow 4 — modal dismissal (AddCarModal, now built on the Base UI <Modal>):
+ * Escape and an OUTSIDE click close it; an INSIDE click does not.
  */
 import { expect, test } from '@playwright/test'
 
@@ -20,13 +20,13 @@ test('Escape closes the Add Car modal', async ({ page }) => {
   await expect(heading(page)).toBeHidden()
 })
 
-test('a backdrop click closes the Add Car modal', async ({ page }) => {
+test('an outside click closes the Add Car modal', async ({ page }) => {
   await page.goto('/')
   await openAddCar(page)
 
-  // Click the backdrop's top-left corner — clear of the centered modal content,
-  // so the dismiss handler fires (event.target === the backdrop).
-  await page.locator('.modal-backdrop').click({ position: { x: 5, y: 5 } })
+  // Click the top-left corner — clear of the centered dialog popup — so Base UI's
+  // outside-press dismissal fires. The popup is centered and never reaches there.
+  await page.mouse.click(5, 5)
   await expect(heading(page)).toBeHidden()
 })
 

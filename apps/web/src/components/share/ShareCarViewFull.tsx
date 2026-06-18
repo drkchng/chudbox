@@ -204,7 +204,7 @@ function WishList({ items, currency }: { items: FullWishlistItem[]; currency: st
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-medium text-white">{item.name}</span>
               {item.category && (
-                <span className="text-xs text-gray-500 border border-border rounded px-1.5 py-0.5">{item.category}</span>
+                <span className="text-xs text-gray-500 border border-border rounded-sm px-1.5 py-0.5">{item.category}</span>
               )}
               <span className={`badge border ${WISHLIST_STATUS[item.status].class}`}>
                 {WISHLIST_STATUS[item.status].label}
@@ -251,7 +251,7 @@ function TodoList({ todos }: { todos: FullTodo[] }) {
         <div className="space-y-2">
           {pending.map((todo, i) => (
             <div key={`p-${i}`} className="card flex items-center gap-3 py-3">
-              <span className="w-4 h-4 rounded border border-border shrink-0" aria-hidden />
+              <span className="w-4 h-4 rounded-sm border border-border shrink-0" aria-hidden />
               <span className="flex-1 text-sm text-gray-200">{todo.text}</span>
               <span className={`badge border text-xs ${TODO_PRIORITY[todo.priority].class}`}>
                 {TODO_PRIORITY[todo.priority].label}

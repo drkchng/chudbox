@@ -122,7 +122,7 @@ function MoveToModsModal({ item, carId, onClose }: MoveToModsModalProps) {
               type="checkbox"
               checked={removeFromWishlist}
               onChange={(e) => setRemoveFromWishlist(e.target.checked)}
-              className="w-4 h-4 rounded accent-accent"
+              className="w-4 h-4 rounded-sm accent-accent"
             />
             <span className="text-sm text-gray-300">Remove from wishlist after moving</span>
           </label>
@@ -240,7 +240,7 @@ export default function WishlistTab({ car }: WishlistTabProps) {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-medium text-white">{item.name}</span>
-                  {item.category && <span className="text-xs text-gray-500 border border-border rounded px-1.5 py-0.5">{item.category}</span>}
+                  {item.category && <span className="text-xs text-gray-500 border border-border rounded-sm px-1.5 py-0.5">{item.category}</span>}
                   <span className={`badge border ${STATUS_STYLES[item.status].class}`}>{STATUS_STYLES[item.status].label}</span>
                 </div>
                 {item.notes && <p className="text-xs text-gray-500 mt-1">{item.notes}</p>}

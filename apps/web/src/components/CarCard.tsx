@@ -1,17 +1,29 @@
-import { useNavigate } from 'react-router-dom'
-import { Car, AlertTriangle, CheckSquare, Wrench } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Car as CarIcon, CheckSquare, Wrench } from 'lucide-react'
 import { getCarStatus, STATUS_CONFIG } from '../utils/carStatus'
 import useGarageStore from '../store/useGarageStore'
 import { resolvePhotoSrc } from '../utils/image'
 import { CURRENCIES, formatMileage } from '../utils/units'
-import type { StoredCar } from '../types'
+import Badge from './ui/Badge'
+import type { CarStatus, StatusRole, StoredCar } from '../types'
 
 interface CarCardProps {
   car: StoredCar
 }
 
+// Car status → the design-system status role (V3/V4/V5). The five ad-hoc colour
+// maps converge on the named status tokens: sale = success, trade = info,
+// totaled = warning (status-orange), current/sold = neutral. Orange is reclaimed
+// for action/alert only — the open-issues count is the lone alert here (danger).
+const STATUS_ROLE: Record<CarStatus, StatusRole> = {
+  current: 'neutral',
+  'for-sale': 'success',
+  'for-trade': 'info',
+  sold: 'neutral',
+  totaled: 'warning',
+}
+
 export default function CarCard({ car }: CarCardProps) {
-  const navigate     = useNavigate()
   const currency     = useGarageStore((s) => s.currency)
   const distanceUnit = useGarageStore((s) => s.distanceUnit)
   const sym          = CURRENCIES[currency]?.symbol ?? '$'
@@ -22,121 +34,95 @@ export default function CarCard({ car }: CarCardProps) {
   const pendingTodos = car.todos.filter((t) => !t.done).length
   const status       = getCarStatus(car)
   const statusCfg    = STATUS_CONFIG[status]
+  const askingPrice  =
+    status === 'for-sale' && car.salePrice ? `${sym}${Number(car.salePrice).toLocaleString()}` : ''
 
   return (
-    <div
-      onClick={() => navigate(`/car/${car.id}`)}
-      className="card p-0 overflow-hidden cursor-pointer group"
+    // A2: a real focusable control (native <a> via react-router Link) with a
+    // keyboard path — Enter activates, the visible focus-ring shows on
+    // focus-visible. `.card` carries the density + elevation baseline.
+    <Link
+      to={`/car/${car.id}`}
+      aria-label={`${car.year} ${car.make} ${car.model}${car.nickname ? ` — “${car.nickname}”` : ''}`}
+      className="card group block p-0 overflow-hidden rounded-lg outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
     >
-      {/* Image section */}
-      <div className="h-48 bg-surface overflow-hidden relative">
+      {/* Image */}
+      <div className="relative h-44 overflow-hidden bg-surface">
         {coverSrc ? (
-          <>
-            {/*
-              The transform lives on this wrapper, NOT on the img.
-              Putting image + gradient in the same scaled element means they share
-              one compositor layer — no inter-layer seam is possible mid-animation.
-              Previously the img was on its own GPU layer (promoted by transform)
-              while the gradient lived on the parent layer; they composited at
-              different times per frame, revealing a 1px gap at the clip edge.
-            */}
-            <div className="absolute inset-0">
-              <img
-                src={coverSrc}
-                alt={`${car.year} ${car.make} ${car.model}`}
-                className="w-full h-full object-cover"
-              />
-              {/*
-                Solid stop at 12px before the fade begins.
-                At 1.05× scale the clip boundary falls ~4.6px from the wrapper's
-                logical bottom — safely inside the 12px solid zone at every
-                intermediate scale during both zoom-in and zoom-out.
-              */}
-              <div
-                className="absolute inset-x-0 bottom-0 pointer-events-none"
-                style={{
-                  height: '80px',
-                  background: 'linear-gradient(to top, rgb(var(--surface)) 12px, rgb(var(--surface) / 0) 80px)',
-                }}
-              />
-            </div>
-
-            {/* Badges sit outside the scaled wrapper so they don't zoom */}
-            <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between">
-              <span className={`badge border text-xs ${statusCfg.class}`}>
-                {statusCfg.label}
-                {status === 'for-sale' && car.salePrice ? ` · ${sym}${Number(car.salePrice).toLocaleString()}` : ''}
-              </span>
-              {openIssues > 0 && (
-                <span className="badge bg-red-900/80 text-red-300 border border-red-700/40 gap-1">
-                  <AlertTriangle size={10} /> {openIssues}
-                </span>
-              )}
-            </div>
-          </>
+          <div className="absolute inset-0">
+            <img src={coverSrc} alt="" className="h-full w-full object-cover" />
+            {/* Solid stop at 12px before the fade begins (gradient seam fix). */}
+            <div
+              className="pointer-events-none absolute inset-x-0 bottom-0"
+              style={{
+                height: '80px',
+                background: 'linear-gradient(to top, rgb(var(--surface)) 12px, rgb(var(--surface) / 0) 80px)',
+              }}
+            />
+          </div>
         ) : (
-          <>
-            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-surface to-surface-2">
-              <Car size={40} className="text-gray-700" />
-            </div>
-            <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between">
-              <span className={`badge border text-xs ${statusCfg.class}`}>
-                {statusCfg.label}
-                {status === 'for-sale' && car.salePrice ? ` · ${sym}${Number(car.salePrice).toLocaleString()}` : ''}
-              </span>
-              {openIssues > 0 && (
-                <span className="badge bg-red-900/80 text-red-300 border border-red-700/40 gap-1">
-                  <AlertTriangle size={10} /> {openIssues}
-                </span>
-              )}
-            </div>
-          </>
+          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-surface to-surface-2">
+            <CarIcon size={40} className="text-text-disabled" />
+          </div>
         )}
+
+        {/* Status (neutral/role-coloured) + the one alert: open issues (danger). */}
+        <div className="absolute inset-x-2.5 top-2.5 flex items-center justify-between gap-2">
+          <Badge status={STATUS_ROLE[status]}>{statusCfg.label}</Badge>
+          {openIssues > 0 && (
+            <Badge status="danger" title={`${openIssues} open issue${openIssues > 1 ? 's' : ''}`}>
+              {openIssues}
+            </Badge>
+          )}
+        </div>
       </div>
 
       {/* Info */}
       <div className="p-4">
-        <div className="flex items-start justify-between gap-2 mb-3">
+        <div className="mb-3 flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <p className="text-xs text-gray-500 font-mono mb-0.5">{car.year}</p>
-            <h3 className="font-semibold text-white group-hover:text-accent transition-colors truncate">
+            <p className="mb-0.5 font-mono text-meta text-text-secondary">{car.year}</p>
+            <h3 className="truncate font-semibold text-text-primary transition-colors group-hover:text-accent">
               {car.make} {car.model}
             </h3>
+            {/* V5: nickname = identity, not action → italic text-secondary (not orange). */}
             {car.nickname && (
-              <p className="text-xs text-accent/80 italic mt-0.5 truncate">"{car.nickname}"</p>
+              <p className="mt-0.5 truncate text-meta italic text-text-secondary">“{car.nickname}”</p>
             )}
           </div>
           {car.color && (
-            <span className="text-xs text-gray-500 border border-border rounded px-2 py-0.5 shrink-0 mt-0.5">
+            <span className="mt-0.5 shrink-0 rounded-sm border border-border px-2 py-0.5 text-meta text-text-secondary">
               {car.color}
             </span>
           )}
         </div>
 
+        {/* V5: price = passive data → text-primary weight (not orange). */}
+        {askingPrice && (
+          <p className="mb-3 text-subhead font-semibold text-text-primary">{askingPrice}</p>
+        )}
+
         {status === 'for-trade' && car.tradeFor && (
-          <p className="text-xs text-blue-400 mb-3 leading-relaxed line-clamp-2">
+          <p className="mb-3 line-clamp-2 text-meta leading-relaxed text-text-secondary">
             Trade for: {car.tradeFor.split('\n').filter(Boolean).join(', ')}
           </p>
         )}
 
-        <div className="flex items-center gap-3 pt-3 border-t border-border text-xs text-gray-500">
+        {/* Passive counts stay neutral — orange is reserved for action/alert. */}
+        <div className="flex items-center gap-3 border-t border-border pt-3 text-meta text-text-secondary">
           <span className="flex items-center gap-1.5">
-            <Wrench size={11} className="text-gray-600" />
+            <Wrench size={12} className="text-text-tertiary" />
             {car.mods.length} mods
           </span>
           {pendingTodos > 0 && (
-            <span className="flex items-center gap-1.5 text-accent/70">
-              <CheckSquare size={11} />
+            <span className="flex items-center gap-1.5">
+              <CheckSquare size={12} className="text-text-tertiary" />
               {pendingTodos} to-do
             </span>
           )}
-          {mileageText && (
-            <span className="ml-auto font-mono text-gray-600">
-              {mileageText}
-            </span>
-          )}
+          {mileageText && <span className="ml-auto font-mono text-text-secondary">{mileageText}</span>}
         </div>
       </div>
-    </div>
+    </Link>
   )
 }

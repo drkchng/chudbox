@@ -3,9 +3,9 @@
  * / labels / placeholders (no brittle CSS), matching what a user sees. The few
  * `.modal-backdrop` class hooks are existing, stable app affordances.
  *
- * Field-locator note: the auth modals (SignUp/SignIn) associate <label> with
- * <input> via htmlFor/id, so getByLabel works there; AddCarModal does NOT, so
- * its fields are located by their (unique-per-modal) placeholders.
+ * Field-locator note: the modals associate <label> with <input> via htmlFor/id;
+ * AddCarModal's fields are still located by their (unique-per-modal)
+ * placeholders here, which keeps these helpers resilient to label-copy tweaks.
  */
 import { expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
@@ -44,6 +44,10 @@ export async function closeSettings(page: Page): Promise<void> {
  * Add a car from the Garage via AddCarModal. The header trigger is "Add Car"
  * and the form submit is "Add car" — exact (case-sensitive) names keep them
  * distinct (Playwright role-name matching is case-insensitive by default).
+ *
+ * DEC-4 (U1) log-first: creating a car now navigates STRAIGHT to its profile
+ * (/car/:id, Mods tab) — the modal is gone and we're on the new car when this
+ * resolves. (No separate `openCar` is needed after `addCar`.)
  */
 export async function addCar(page: Page, car: NewCar): Promise<void> {
   await page.getByRole('button', { name: 'Add Car', exact: true }).click()
@@ -53,20 +57,33 @@ export async function addCar(page: Page, car: NewCar): Promise<void> {
   await page.getByPlaceholder('Supra').fill(car.model)
   if (car.mileage !== undefined) await page.getByPlaceholder('45000').fill(car.mileage)
   await page.getByRole('button', { name: 'Add car', exact: true }).click()
+  // Auto-nav lands on the new car's profile and unmounts the modal.
+  await expect(page).toHaveURL(/\/car\/[^/]+$/)
   await expect(page.getByRole('heading', { name: 'Add car' })).toBeHidden()
 }
 
-/** Open a car's profile from its garage card; resolves once on /car/:id. */
+/**
+ * Ensure we're viewing this car's profile. After DEC-4 auto-nav, `addCar`
+ * already lands here, so this is a no-op assertion when we're already on a
+ * /car/:id route; otherwise it opens the car from its garage card.
+ */
 export async function openCar(page: Page, car: NewCar): Promise<void> {
-  await page.getByRole('heading', { name: `${car.make} ${car.model}`, exact: true }).click()
+  if (!/\/car\//.test(new URL(page.url()).pathname)) {
+    await page.getByRole('heading', { name: `${car.make} ${car.model}`, exact: true }).click()
+  }
   await expect(page).toHaveURL(/\/car\/[^/]+$/)
 }
 
 /** Log a mod on the open Car profile and wait for it to appear in the list. */
 export async function addMod(page: Page, name: string): Promise<void> {
   await page.getByRole('button', { name: 'Mods', exact: true }).click()
-  await page.getByRole('button', { name: 'Add Mod', exact: true }).click()
   const nameField = page.getByPlaceholder('Coilover Kit')
+  // The add-mod form may already be open + focused (DEC-4 log-first auto-opens
+  // it right after a car is created). Only toggle it open if it isn't showing,
+  // so we never accidentally collapse an already-open form.
+  if (!(await nameField.isVisible())) {
+    await page.getByRole('button', { name: 'Add Mod', exact: true }).click()
+  }
   await nameField.fill(name)
   // Submit via Enter to avoid the toggle/submit "Add Mod" ambiguity once the form is open.
   await nameField.press('Enter')

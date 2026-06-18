@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import type { LucideIcon } from 'lucide-react'
 import { ArrowLeft, Pencil, Trash2, Camera, ShoppingCart, Wrench, ClipboardList, CheckSquare, AlertTriangle, Settings, FileDown, DollarSign, Share2 } from 'lucide-react'
 import useGarageStore from '../store/useGarageStore'
@@ -41,6 +41,13 @@ const TABS: TabDef[] = [
 export default function CarProfile() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
+  // DEC-4 (U1) log-first: AddCarModal navigates here with `focusLog` right after
+  // a car is created, signalling the Mods tab to open + focus its add-mod form.
+  // Read once at mount (frozen) so it doesn't re-fire on every render.
+  const [autoFocusAdd] = useState(
+    () => Boolean((location.state as { focusLog?: boolean } | null)?.focusLog),
+  )
   const car          = useGarageStore((s) => s.cars.find((c) => c.id === id))
   const deleteCar    = useGarageStore((s) => s.deleteCar)
   const currency     = useGarageStore((s) => s.currency)
@@ -51,7 +58,7 @@ export default function CarProfile() {
   // the button (the app stays fully local-first).
   const { data: session } = authClient.useSession()
   const signedIn = Boolean(session?.user)
-  const [tab, setTab] = useState<TabId>('photos')
+  const [tab, setTab] = useState<TabId>('mods')
   const [editing, setEditing]             = useState(false)
   const [showSettings, setShowSettings]   = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -210,7 +217,7 @@ export default function CarProfile() {
       <div className="max-w-7xl mx-auto px-6 py-8">
         {tab === 'photos'      && <PhotosTab car={car} />}
         {tab === 'wishlist'    && <WishlistTab car={car} />}
-        {tab === 'mods'        && <ModsTab car={car} />}
+        {tab === 'mods'        && <ModsTab car={car} autoFocusAdd={autoFocusAdd} />}
         {tab === 'maintenance' && <MaintenanceTab car={car} />}
         {tab === 'todos'       && <TodoTab car={car} />}
         {tab === 'issues'      && <IssuesTab car={car} />}
