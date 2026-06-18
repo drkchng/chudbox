@@ -4,38 +4,31 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { AlertTriangle, Check, KeyRound } from 'lucide-react'
 import { authClient } from '../auth/client'
 import { authErrorMessage, callAuth, MIN_PASSWORD_LENGTH } from '../auth/errors'
+import { resetTokenFromParams } from '../auth/landingParams'
 import AuthPageShell from '../components/auth/AuthPageShell'
 import SignInModal from '../components/auth/SignInModal'
 import ForgotPasswordModal from '../components/auth/ForgotPasswordModal'
 
 /**
- * Better Auth redirects the email link to `<redirectTo>?token=…` with the
- * query inserted BEFORE the hash (`/?token=…#/auth/reset`), so the token
- * lives in `window.location.search`. Accept a hash-internal `?token=` too in
- * case the link was pasted or rewritten. Same for `?error=INVALID_TOKEN`.
- */
-function readAuthParam(hashSearch: URLSearchParams, key: string): string {
-  return new URLSearchParams(window.location.search).get(key) ?? hashSearch.get(key) ?? ''
-}
-
-/**
- * Strip `?token=…` from the address bar so the consumed token doesn't linger
- * in history. Called only after a successful reset — before that, the token
- * stays in the URL so a page refresh doesn't strand the user.
+ * Clean URLs (BrowserRouter — M5): Better Auth redirects the email link to
+ * `/auth/reset?token=…` (or `?error=INVALID_TOKEN`), so the token/error now
+ * arrive in the normal query string and `useSearchParams()` reads them
+ * directly — no hash-internal parsing needed.
+ *
+ * Strip `?token=…` from the address bar after a SUCCESSFUL reset so the
+ * consumed token doesn't linger in history. Before that the token stays in the
+ * URL so a page refresh doesn't strand the user.
  */
 function scrubRealQueryString() {
   if (window.location.search) {
-    window.history.replaceState(null, '', window.location.pathname + window.location.hash)
+    window.history.replaceState(null, '', window.location.pathname)
   }
 }
 
 export default function AuthReset() {
   const navigate = useNavigate()
-  const [hashSearch] = useSearchParams()
-  const [token] = useState(() => {
-    const linkError = readAuthParam(hashSearch, 'error')
-    return linkError ? '' : readAuthParam(hashSearch, 'token')
-  })
+  const [params] = useSearchParams()
+  const [token] = useState(() => resetTokenFromParams(params))
 
   const [password, setPassword] = useState('')
   const [confirm, setConfirm]   = useState('')

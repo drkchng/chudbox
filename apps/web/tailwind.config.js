@@ -3,6 +3,24 @@ export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
+      fontFamily: {
+        // `font-mono` had no custom mapping, so it resolved to Tailwind's
+        // default system-mono stack and the CDN's JetBrains Mono never
+        // actually rendered. Map it explicitly to the self-hosted family
+        // (registered as 'JetBrains Mono' by @fontsource) with the standard
+        // mono fallback chain so it no longer silently falls back.
+        mono: [
+          'JetBrains Mono',
+          'ui-monospace',
+          'SFMono-Regular',
+          'Menlo',
+          'Monaco',
+          'Consolas',
+          'Liberation Mono',
+          'Courier New',
+          'monospace',
+        ],
+      },
       colors: {
         accent:      'rgb(var(--accent)    / <alpha-value>)',
         'accent-dim':'rgb(var(--accent-dim)/ <alpha-value>)',

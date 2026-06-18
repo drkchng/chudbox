@@ -297,7 +297,8 @@ describe('POST create share link', () => {
 
     // ≥128-bit URL-safe base64 token (24 random bytes → 32 chars, no padding).
     expect(link.token).toMatch(/^[A-Za-z0-9_-]{22,}$/)
-    expect(link.url).toBe(`${BASE}/#/share/${link.token}`)
+    // Clean path URL (BrowserRouter — M5): no more `/#/`.
+    expect(link.url).toBe(`${BASE}/share/${link.token}`)
     expect(link.expiresAt).toBeNull()
 
     const rows = await env.DB.prepare(

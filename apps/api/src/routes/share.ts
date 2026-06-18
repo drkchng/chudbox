@@ -234,12 +234,40 @@ shareApi.post(SHARE_CREATE_PATH, async (c) => {
     .values({ tokenHash, userId, carId, createdAt: now, expiresAt, revokedAt: null, scope })
 
   const response: CreateShareResponse = {
-    url: `${new URL(c.req.url).origin}/#/share/${token}`,
+    // Clean path URL (BrowserRouter — M5): no more `/#/`. This is the canonical
+    // shareable link; the Worker injects Open Graph meta when a crawler fetches
+    // the /share/:token document (see lookupCuratedShareSnapshot + index.ts).
+    url: `${new URL(c.req.url).origin}/share/${token}`,
     token,
     expiresAt,
   }
   return c.json(response)
 })
+
+/**
+ * Server-side curated lookup for the Open Graph document handler (index.ts).
+ *
+ * Resolves a raw share token to its CURATED snapshot for an ACTIVE link, or
+ * null for anything else (unknown / revoked / expired / car gone from the DO).
+ * SECURITY: this is reached by a PUBLIC, unauthenticated crawler, so it ALWAYS
+ * requests the 'curated' scope regardless of the link's stored scope — the
+ * link-preview meta must never expose 'full' private data (money/shop/notes,
+ * wishlist/todos/issues, salePrice/tradeFor). The owner/car are derived
+ * SERVER-SIDE from the validated row, never from the request.
+ *
+ * Read-only: unlike the snapshot GET it does NOT lazy-revoke on a null snapshot
+ * (that route owns the write); the preview simply falls back to the plain SPA
+ * shell, and the next snapshot GET performs the revoke.
+ */
+export async function lookupCuratedShareSnapshot(
+  env: Env,
+  token: string,
+): Promise<PublicCarSnapshot | null> {
+  const row = await findByHash(env, await sha256Hex(token))
+  if (!row || !isLinkActive(row, nowSeconds())) return null
+  const snapshot = await garageStub(env, row.userId).getCarSnapshot(row.carId, 'curated')
+  return (snapshot as PublicCarSnapshot | null) ?? null
+}
 
 // ── OWNER: list ─────────────────────────────────────────────
 shareApi.get(SHARE_LIST_PATH, async (c) => {

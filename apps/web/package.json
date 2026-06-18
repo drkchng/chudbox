@@ -13,6 +13,8 @@
   },
   "dependencies": {
     "@chudbox/shared": "workspace:*",
+    "@fontsource/inter": "^5.2.8",
+    "@fontsource/jetbrains-mono": "^5.2.8",
     "better-auth": "1.6.18",
     "localforage": "^1.10.0",
     "lucide-react": "^1.17.0",

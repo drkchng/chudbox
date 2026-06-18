@@ -1,21 +1,25 @@
 /**
  * Chudbox Worker — Hono router.
  *
- * `run_worker_first: ["/api/*", "/sync", "/img/*"]` in wrangler.jsonc scopes
- * the Worker to exactly these paths; every other request is served directly
- * from the static assets binding (the SPA), with `single-page-application`
- * not-found handling. `/img/*` is worker-first because the image route gates
- * each object on the session (an asset binding can't auth). It does not shadow
- * any static asset: the SPA build emits hashed files under /assets/* and routes
- * client-side via HashRouter (after `#`), so nothing real lives at /img/*.
- * The notFound fallback below only matters for requests that did reach the
- * Worker.
+ * `run_worker_first: ["/api/*", "/sync", "/img/*", "/share/*"]` in
+ * wrangler.jsonc scopes the Worker to exactly these paths; every other request
+ * (/, /car/:id, /auth/reset, /auth/verified, …) is served directly from the
+ * static assets binding (the SPA), with `single-page-application` not-found
+ * handling — index.html for any clean path so BrowserRouter (M5) takes over
+ * client-side. `/img/*` is worker-first because the image route gates each
+ * object on the session (an asset binding can't auth); `/share/*` is
+ * worker-first so the /share/:token DOCUMENT can be augmented with Open Graph
+ * meta before that same index.html is served (see the /share/:token handler).
+ * Neither shadows a static asset: the SPA build emits hashed files under
+ * /assets/*, so nothing real lives at /img/* or /share/*. The notFound fallback
+ * below only matters for requests that did reach the Worker.
  */
 import { Hono } from 'hono'
 
 import { createAuth } from './auth'
+import { injectIntoHead, renderShareMetaTags, shareMetaFromSnapshot } from './og'
 import { imgApi } from './routes/img'
-import { shareApi } from './routes/share'
+import { lookupCuratedShareSnapshot, shareApi } from './routes/share'
 import { syncApi } from './routes/sync'
 import { uploadsApi } from './routes/uploads'
 
@@ -55,12 +59,14 @@ const SECURITY_HEADERS: ReadonlyArray<readonly [string, string]> = [
 // these named headers are touched, so per-route Cache-Control/no-store,
 // Set-Cookie, Content-Type, etc. are preserved). `c.header()` transparently
 // reconstructs immutable upstream responses (e.g. the notFound SPA fallback
-// served via ASSETS.fetch). NOTE: the assets binding's `run_worker_first` only
-// routes /api/*, /sync and /img/* through the Worker, so the SPA's HTML
-// document and hashed /assets/* files are served directly by the binding and
-// bypass this middleware — covering those needs an assets-side header config
-// (out of scope here). WebSocket (101) upgrade responses can't be rebuilt and
-// need no document headers, so they're skipped.
+// served via ASSETS.fetch, and the augmented /share/:token document). NOTE: the
+// assets binding's `run_worker_first` only routes /api/*, /sync, /img/* and
+// /share/* through the Worker, so the SPA's HTML document for OTHER paths and
+// the hashed /assets/* files are served directly by the binding and bypass this
+// middleware — covering those needs an assets-side header config (out of scope
+// here). The /share/:token HTML, being Worker-served, DOES get these headers.
+// WebSocket (101) upgrade responses can't be rebuilt and need no document
+// headers, so they're skipped.
 app.use('*', async (c, next) => {
   await next()
   if (c.res.status === 101) return
@@ -110,6 +116,41 @@ app.get('/sync', async (c) => {
   const url = new URL(c.req.raw.url)
   url.pathname = `/${session.user.id}`
   return stub.fetch(new Request(url, c.req.raw))
+})
+
+// Share-link DOCUMENT (M5): the /share/:token HTML page is served THROUGH the
+// Worker (wrangler `run_worker_first` routes /share/* here) so we can inject
+// Open Graph / Twitter meta for link-preview crawlers. We fetch the built SPA
+// shell from the assets binding, then — for an ACTIVE link with a cover photo —
+// inject CURATED-ONLY meta (title + count line + the PUBLIC token-scoped cover
+// URL a crawler can fetch with no session). Invalid/expired/revoked/car-gone or
+// no-photo falls back to the plain shell (the SPA renders the error state
+// client-side). Either way the normal SPA bundle still loads, so React hydrates
+// for human visitors. The security-headers middleware (app.use('*')) wraps this
+// Worker response just like every other.
+app.get('/share/:token', async (c) => {
+  const url = new URL(c.req.url)
+  // The assets binding serves index.html for any non-asset path
+  // (single-page-application not_found_handling); ask for it explicitly.
+  const shell = await c.env.ASSETS.fetch(new URL('/index.html', url.origin))
+  if (!shell.ok) return shell
+  const html = await shell.text()
+
+  // PUBLIC + unauth lookup; ALWAYS curated (never 'full', even for a full link)
+  // — see lookupCuratedShareSnapshot. Any DO/D1 hiccup degrades to the plain
+  // shell rather than 500-ing the share page.
+  let body = html
+  try {
+    const token = c.req.param('token')
+    const snapshot = await lookupCuratedShareSnapshot(c.env, token)
+    if (snapshot && snapshot.coverPhotoId !== undefined) {
+      const meta = shareMetaFromSnapshot(snapshot, token, url.origin)
+      body = injectIntoHead(html, renderShareMetaTags(meta))
+    }
+  } catch {
+    body = html
+  }
+  return c.html(body)
 })
 
 app.notFound((c) => {

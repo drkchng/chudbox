@@ -1,17 +1,17 @@
 import { Link, useSearchParams } from 'react-router-dom'
 import { AlertTriangle, BadgeCheck } from 'lucide-react'
+import { verifyErrorFromParams } from '../auth/landingParams'
 import AuthPageShell from '../components/auth/AuthPageShell'
 
 /**
- * Landing for the email-verification link. On success Better Auth redirects
- * to the callback URL verbatim (no params); on failure it string-appends
- * `?error=<code>`, which lands INSIDE the hash — read it via the
- * hash-internal search params (and the real query string, just in case).
+ * Landing for the email-verification link. On success Better Auth redirects to
+ * the clean callback path verbatim (no params); on failure it appends
+ * `?error=<code>`. With BrowserRouter (M5) there is no hash in the way, so the
+ * error arrives in the normal query string and useSearchParams reads it.
  */
 export default function AuthVerified() {
-  const [hashSearch] = useSearchParams()
-  const error =
-    hashSearch.get('error') ?? new URLSearchParams(window.location.search).get('error') ?? ''
+  const [params] = useSearchParams()
+  const error = verifyErrorFromParams(params)
 
   if (error) {
     return (

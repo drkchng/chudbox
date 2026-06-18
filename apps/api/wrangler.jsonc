@@ -65,7 +65,12 @@
     "directory": "../web/dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*", "/sync", "/img/*"]
+    // /share/* is worker-first so the /share/:token document can be augmented
+    // with Open Graph meta for link-preview crawlers before index.html is
+    // served (see the /share/:token handler in src/index.ts). The other clean
+    // BrowserRouter paths (/, /car/:id, /auth/*) are served directly from the
+    // assets binding via single-page-application not-found handling.
+    "run_worker_first": ["/api/*", "/sync", "/img/*", "/share/*"]
   },
 
   "observability": {

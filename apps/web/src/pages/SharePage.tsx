@@ -8,7 +8,7 @@ import ShareCarView from '../components/share/ShareCarView'
 import ShareCarViewFull from '../components/share/ShareCarViewFull'
 
 /**
- * Public route for `#/share/:token`. Fetches the curated snapshot and renders a
+ * Public route for `/share/:token` (clean URL). Fetches the curated snapshot and renders a
  * read-only build page. Deliberately makes NO auth-client calls — it works
  * fully logged-out; everything it needs comes from the token in the URL. Maps
  * the server's 404 (invalid) / 410 (revoked or expired) into distinct, friendly
