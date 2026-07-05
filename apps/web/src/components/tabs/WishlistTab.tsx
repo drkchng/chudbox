@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { Plus, ExternalLink, Trash2, ShoppingCart, CheckCircle2, Package, Wrench } from 'lucide-react'
+import { Plus, ExternalLink, Trash2, ShoppingCart, CheckCircle2, Package, Wrench, Pencil, Check, X } from 'lucide-react'
 import { tokens } from '@chudbox/shared'
 import useGarageStore from '../../store/useGarageStore'
 import { CURRENCIES, formatMoney } from '../../utils/units'
@@ -158,6 +158,8 @@ export default function WishlistTab({ car }: WishlistTabProps) {
   const money    = (amount: number): string => formatMoney(amount, currency)
   const [showForm, setShowForm]       = useState(false)
   const [form, setForm]               = useState<WishlistForm>(emptyForm)
+  const [editId, setEditId]           = useState<string | null>(null)
+  const [editForm, setEditForm]       = useState<WishlistForm>(emptyForm)
   const [movingItem, setMovingItem]   = useState<WishlistItem | null>(null)
   const [confirmItem, setConfirmItem] = useState<WishlistItem | null>(null)
 
@@ -165,6 +167,10 @@ export default function WishlistTab({ car }: WishlistTabProps) {
     <K extends keyof WishlistForm>(key: K) =>
     (e: FieldChangeEvent): void =>
       setForm((f) => ({ ...f, [key]: e.target.value }))
+  const setEdit =
+    <K extends keyof WishlistForm>(key: K) =>
+    (e: FieldChangeEvent): void =>
+      setEditForm((f) => ({ ...f, [key]: e.target.value }))
 
   const handleAdd = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -172,6 +178,26 @@ export default function WishlistTab({ car }: WishlistTabProps) {
     addWishlistItem(car.id, { ...form, price: form.price ? parseFloat(form.price) : null })
     setForm(emptyForm)
     setShowForm(false)
+  }
+
+  const startEdit = (item: WishlistItem) => {
+    setEditId(item.id)
+    setEditForm({
+      name: item.name,
+      link: item.link,
+      price: item.price != null ? String(item.price) : '',
+      category: item.category,
+      notes: item.notes,
+    })
+  }
+  const saveEdit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    if (!editId || !editForm.name) return
+    updateWishlistItem(car.id, editId, {
+      ...editForm,
+      price: editForm.price ? parseFloat(editForm.price) : null,
+    })
+    setEditId(null)
   }
 
   const markInstalled = (item: WishlistItem) => {
@@ -242,7 +268,46 @@ export default function WishlistTab({ car }: WishlistTabProps) {
         </div>
       ) : (
         <div className="space-y-3">
-          {car.wishlist.map((item) => (
+          {car.wishlist.map((item) => editId === item.id ? (
+            <form key={item.id} onSubmit={saveEdit} className="card space-y-3 border-accent/30">
+              <h4 className="text-body font-semibold text-text-primary">Edit part</h4>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="wishlist-edit-name" className="label">Part name *</label>
+                  <input id="wishlist-edit-name" className="input" value={editForm.name} onChange={setEdit('name')} required autoFocus />
+                </div>
+                <div>
+                  <label htmlFor="wishlist-edit-category" className="label">Category</label>
+                  <select id="wishlist-edit-category" className="input" value={editForm.category} onChange={setEdit('category')}>
+                    <option value="">Select…</option>
+                    {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="wishlist-edit-link" className="label">Link <span className="text-text-disabled">(optional)</span></label>
+                  <input id="wishlist-edit-link" className="input" placeholder="https://..." value={editForm.link} onChange={setEdit('link')} type="url" />
+                </div>
+                <div>
+                  <label htmlFor="wishlist-edit-price" className="label">Price</label>
+                  <input id="wishlist-edit-price" className="input" placeholder="499.99" type="number" step="0.01" value={editForm.price} onChange={setEdit('price')} />
+                </div>
+              </div>
+              <div>
+                <label htmlFor="wishlist-edit-notes" className="label">Notes</label>
+                <textarea id="wishlist-edit-notes" className="input resize-none" rows={2} value={editForm.notes} onChange={setEdit('notes')} />
+              </div>
+              <div className="flex gap-2">
+                <Button type="button" variant="secondary" size="sm" onClick={() => setEditId(null)}>
+                  <X size={tokens.iconSize.sm} /> Cancel
+                </Button>
+                <Button type="submit" size="sm">
+                  <Check size={tokens.iconSize.sm} /> Save
+                </Button>
+              </div>
+            </form>
+          ) : (
             <div key={item.id} className="card flex gap-4 items-start">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
@@ -289,6 +354,9 @@ export default function WishlistTab({ car }: WishlistTabProps) {
                     <CheckCircle2 size={tokens.iconSize.sm} />
                   </IconButton>
                 )}
+                <IconButton aria-label={`Edit part: ${item.name}`} title="Edit" onClick={() => startEdit(item)}>
+                  <Pencil size={tokens.iconSize.sm} />
+                </IconButton>
                 <IconButton aria-label={`Delete part: ${item.name}`} onClick={() => setConfirmItem(item)}>
                   <Trash2 size={tokens.iconSize.sm} />
                 </IconButton>

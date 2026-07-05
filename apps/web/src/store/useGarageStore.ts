@@ -131,6 +131,9 @@ export function exportBackup(): BackupV2 {
     customAccent: state.customAccent,
     currency: state.currency,
     distanceUnit: state.distanceUnit,
+    // DEC-11: the Watching list is a top-level table (not inside any car), so
+    // it must be carried explicitly or a backup round-trip erases it.
+    savedBuilds: store.getTable('savedBuilds') as BackupV2['savedBuilds'],
   })
 }
 

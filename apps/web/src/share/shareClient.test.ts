@@ -48,6 +48,7 @@ const json = (body: unknown, status = 200): Response =>
 const CREATE_RES: CreateShareResponse = {
   url: 'https://chudbox.app/#/share/RAWTOKEN123',
   token: 'RAWTOKEN123',
+  id: 'a1b2c3d4e5f6a7b8c9d0e1f2',
   expiresAt: null,
 }
 

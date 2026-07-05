@@ -263,6 +263,7 @@ shareApi.post(SHARE_CREATE_PATH, async (c) => {
     // the /share/:token document (see lookupCuratedShareSnapshot + index.ts).
     url: `${new URL(c.req.url).origin}/share/${token}`,
     token,
+    id: tokenHash.slice(0, SHARE_LINK_ID_LEN),
     expiresAt,
   }
   return c.json(response)

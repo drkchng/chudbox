@@ -27,6 +27,14 @@ import { writeNestedCars } from './migrate'
 
 export const BACKUP_VERSION = 2
 
+/**
+ * Raw `savedBuilds` table rows (DEC-11 Watching list), keyed by rowId
+ * (= sha256(token)). Serialized VERBATIM into the backup: the table is
+ * top-level (no carId), so it does NOT ride inside the nested cars and must be
+ * carried explicitly or a REPLACE import erases the whole Watching list.
+ */
+export type SavedBuildsBackupTable = Record<string, Record<string, string | number | boolean>>
+
 export interface BackupV2 {
   version: 2
   exportedAt: string
@@ -35,6 +43,8 @@ export interface BackupV2 {
   customAccent: string | null
   currency: CurrencyCode
   distanceUnit: DistanceUnitCode
+  /** Absent on backups exported before the Watching list existed. */
+  savedBuilds?: SavedBuildsBackupTable
 }
 
 /** Normalized result of parsing either backup format. */
@@ -48,6 +58,8 @@ export interface ParsedBackup {
   currency: string | null
   /** Only present on v2. */
   distanceUnit: DistanceUnitCode | null
+  /** Only present on v2 backups that carried a Watching list. */
+  savedBuilds: SavedBuildsBackupTable | null
 }
 
 /** Empty MergeableContent in the fully-hashed shape setMergeableContent validates. */
@@ -73,6 +85,28 @@ function normalizeCar(raw: Car): Car {
 }
 
 /**
+ * Sanitize an untrusted `savedBuilds` backup section down to rows of primitive
+ * cells. Rows without a non-empty string `token` are dropped (the token IS the
+ * follow — a row without one can never refetch and would render as junk); other
+ * cells pass through and the store's TablesSchema drops any it doesn't know.
+ */
+function normalizeSavedBuilds(raw: unknown): SavedBuildsBackupTable | null {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
+  const table: SavedBuildsBackupTable = {}
+  for (const [rowId, rawRow] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof rawRow !== 'object' || rawRow === null || Array.isArray(rawRow)) continue
+    const row: Record<string, string | number | boolean> = {}
+    for (const [cellId, value] of Object.entries(rawRow as Record<string, unknown>)) {
+      if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+        row[cellId] = value
+      }
+    }
+    if (typeof row.token === 'string' && row.token !== '') table[rowId] = row
+  }
+  return Object.keys(table).length > 0 ? table : null
+}
+
+/**
  * Parse an untrusted backup JSON value. Mirrors the legacy leniency (anything
  * with a `cars` array is accepted as v1) but recognizes `version: 2`.
  */
@@ -91,6 +125,7 @@ export function parseBackup(data: unknown): ParsedBackup | null {
     distanceUnit: isV2 && (obj.distanceUnit === 'mi' || obj.distanceUnit === 'km')
       ? obj.distanceUnit
       : null,
+    savedBuilds: isV2 ? normalizeSavedBuilds(obj.savedBuilds) : null,
   }
 }
 
@@ -100,10 +135,12 @@ export interface BackupSourceState {
   customAccent: string | null
   currency: CurrencyCode
   distanceUnit: DistanceUnitCode
+  /** Raw savedBuilds table rows (store.getTable('savedBuilds')). */
+  savedBuilds?: SavedBuildsBackupTable
 }
 
 export function buildBackupV2(state: BackupSourceState): BackupV2 {
-  return {
+  const backup: BackupV2 = {
     version: 2,
     exportedAt: new Date().toISOString(),
     cars: state.cars,
@@ -112,6 +149,11 @@ export function buildBackupV2(state: BackupSourceState): BackupV2 {
     currency: state.currency,
     distanceUnit: state.distanceUnit,
   }
+  // Only carry a non-empty Watching list (keeps old-shaped files byte-stable).
+  if (state.savedBuilds && Object.keys(state.savedBuilds).length > 0) {
+    backup.savedBuilds = state.savedBuilds
+  }
+  return backup
 }
 
 export interface ApplyBackupOptions {
@@ -141,6 +183,20 @@ export function applyBackupImport(options: ApplyBackupOptions): void {
   localStore.delTable(PHOTO_PAYLOADS_TABLE)
 
   writeNestedCars(store, localStore, backup.cars, tagWith)
+
+  // Restore the Watching list (DEC-11): savedBuilds is TOP-LEVEL (no carId), so
+  // writeNestedCars never touches it — without this re-write the wholesale
+  // reset would silently erase every followed build (and, signed-in, the
+  // keep-local reseed would propagate that erasure to the cloud). The cached
+  // snapshot side-store is intentionally NOT restored — it refetches by token.
+  if (backup.savedBuilds != null) {
+    const savedBuilds = backup.savedBuilds
+    store.transaction(() => {
+      for (const [rowId, row] of Object.entries(savedBuilds)) {
+        store.setRow('savedBuilds', rowId, row)
+      }
+    })
+  }
 
   store.transaction(() => {
     store.setValue('themeId', backup.themeId ?? 'garage')

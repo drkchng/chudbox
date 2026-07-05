@@ -335,6 +335,9 @@ describe('POST create share link', () => {
     expect(link.token).toMatch(/^[A-Za-z0-9_-]{22,}$/)
     // Clean path URL (BrowserRouter — M5): no more `/#/`.
     expect(link.url).toBe(`${BASE}/share/${link.token}`)
+    // The public id (hash prefix, same as ShareLinkMeta.id) rides along so the
+    // creating device can key its local URL cache — never the token itself.
+    expect(link.id).toBe((await sha256Hex(link.token)).slice(0, 24))
     expect(link.expiresAt).toBeNull()
 
     const rows = await env.DB.prepare(

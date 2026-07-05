@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { Plus, Trash2, CheckSquare } from 'lucide-react'
+import { Plus, Trash2, CheckSquare, Pencil, Check, X } from 'lucide-react'
 import { tokens } from '@chudbox/shared'
 import useGarageStore from '../../store/useGarageStore'
 import ConfirmModal from '../ConfirmModal'
@@ -26,8 +26,12 @@ export default function TodoTab({ car }: TodoTabProps) {
   const addTodo    = useGarageStore((s) => s.addTodo)
   const toggleTodo = useGarageStore((s) => s.toggleTodo)
   const deleteTodo = useGarageStore((s) => s.deleteTodo)
+  const updateTodo = useGarageStore((s) => s.updateTodo)
   const [text, setText]           = useState('')
   const [priority, setPriority]   = useState<TodoPriority>('medium')
+  const [editId, setEditId]             = useState<string | null>(null)
+  const [editText, setEditText]         = useState('')
+  const [editPriority, setEditPriority] = useState<TodoPriority>('medium')
   const [confirmTodo, setConfirmTodo] = useState<Todo | null>(null)
 
   const handleAdd = (e: FormEvent<HTMLFormElement>) => {
@@ -36,6 +40,48 @@ export default function TodoTab({ car }: TodoTabProps) {
     addTodo(car.id, text.trim(), priority)
     setText('')
   }
+
+  const startEdit = (todo: Todo) => {
+    setEditId(todo.id)
+    setEditText(todo.text)
+    setEditPriority(todo.priority)
+  }
+  const saveEdit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    if (!editId || !editText.trim()) return
+    updateTodo(car.id, editId, { text: editText.trim(), priority: editPriority })
+    setEditId(null)
+  }
+
+  // Shared inline edit card (pending + completed rows): a form so Enter saves.
+  const renderEditForm = (todo: Todo) => (
+    <form key={todo.id} onSubmit={saveEdit} className="card py-3 border-accent/30">
+      <div className="flex gap-3 items-end flex-wrap">
+        <div className="flex-1 min-w-40">
+          <label htmlFor="todo-edit-text" className="label">Task</label>
+          <input id="todo-edit-text" className="input" value={editText}
+            onChange={(e) => setEditText(e.target.value)} autoFocus />
+        </div>
+        <div className="w-28">
+          <label htmlFor="todo-edit-priority" className="label">Priority</label>
+          <select id="todo-edit-priority" className="input" value={editPriority}
+            onChange={(e) => setEditPriority(e.target.value as TodoPriority)}>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+          </select>
+        </div>
+        <div className="flex gap-2 shrink-0">
+          <Button type="button" variant="secondary" size="sm" onClick={() => setEditId(null)}>
+            <X size={tokens.iconSize.sm} /> Cancel
+          </Button>
+          <Button type="submit" size="sm">
+            <Check size={tokens.iconSize.sm} /> Save
+          </Button>
+        </div>
+      </div>
+    </form>
+  )
 
   const order: Record<TodoPriority, number> = { high: 0, medium: 1, low: 2 }
   const pending = car.todos.filter((t) => !t.done).sort((a, b) => order[a.priority] - order[b.priority])
@@ -73,10 +119,10 @@ export default function TodoTab({ car }: TodoTabProps) {
         <div className="space-y-5">
           {pending.length > 0 && (
             <div className="space-y-2">
-              {pending.map((todo) => (
+              {pending.map((todo) => editId === todo.id ? renderEditForm(todo) : (
                 // A11: checkbox + text live inside ONE <label> so the whole row
                 // (a ≥44px target) toggles and the text names the control. The
-                // priority badge + delete sit OUTSIDE the label so they don't toggle.
+                // priority badge + edit/delete sit OUTSIDE the label so they don't toggle.
                 <div key={todo.id} className="card py-3">
                   <div className="flex items-center gap-3">
                     <label className="flex flex-1 items-center gap-3 cursor-pointer select-none min-w-0">
@@ -85,6 +131,9 @@ export default function TodoTab({ car }: TodoTabProps) {
                       <span className="flex-1 min-w-0 text-body text-text-primary">{todo.text}</span>
                     </label>
                     <Badge status={PRIORITY[todo.priority].role}>{PRIORITY[todo.priority].label}</Badge>
+                    <IconButton aria-label={`Edit task: ${todo.text}`} title="Edit" onClick={() => startEdit(todo)}>
+                      <Pencil size={tokens.iconSize.sm} />
+                    </IconButton>
                     <IconButton aria-label={`Delete task: ${todo.text}`} onClick={() => setConfirmTodo(todo)}>
                       <Trash2 size={tokens.iconSize.sm} />
                     </IconButton>
@@ -99,13 +148,16 @@ export default function TodoTab({ car }: TodoTabProps) {
             <div>
               <p className="text-meta text-text-secondary uppercase tracking-wide mb-2">Completed</p>
               <div className="space-y-2">
-                {done.map((todo) => (
+                {done.map((todo) => editId === todo.id ? renderEditForm(todo) : (
                   <div key={todo.id} className="card-row flex items-center gap-3 opacity-60">
                     <label className="flex flex-1 items-center gap-3 cursor-pointer select-none min-w-0">
                       <input type="checkbox" checked onChange={() => toggleTodo(car.id, todo.id)}
                         className="size-[18px] rounded-sm accent-accent cursor-pointer shrink-0" />
                       <span className="flex-1 min-w-0 text-body text-text-secondary line-through">{todo.text}</span>
                     </label>
+                    <IconButton aria-label={`Edit task: ${todo.text}`} title="Edit" onClick={() => startEdit(todo)}>
+                      <Pencil size={tokens.iconSize.sm} />
+                    </IconButton>
                     <IconButton aria-label={`Delete task: ${todo.text}`} onClick={() => setConfirmTodo(todo)}>
                       <Trash2 size={tokens.iconSize.sm} />
                     </IconButton>

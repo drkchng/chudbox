@@ -13,6 +13,7 @@ import {
   listShareLinks,
   revokeShareLink,
 } from '../share/shareClient'
+import { forgetShareUrl, getShareUrl, rememberShareUrl } from '../share/linkUrlCache'
 import type { CreateShareResponse, ShareLinkMeta, ShareScope } from '@chudbox/shared'
 
 interface ShareDialogProps {
@@ -81,6 +82,8 @@ export default function ShareDialog({ carId, carLabel, onClose }: ShareDialogPro
   const [createError, setCreateError] = useState('')
   const [created, setCreated] = useState<CreateShareResponse | null>(null)
   const [copied, setCopied] = useState(false)
+  // Which existing-list row was just copied (id), for its transient ✓ feedback.
+  const [copiedRowId, setCopiedRowId] = useState<string | null>(null)
   const [revokeTarget, setRevokeTarget] = useState<ShareLinkMeta | null>(null)
   // "Now" is captured when links load (in the async callback, never during
   // render) so link-state classification stays a pure function of state.
@@ -122,6 +125,9 @@ export default function ShareDialog({ carId, carLabel, onClose }: ShareDialogPro
     setCreating(true)
     try {
       const res = await createShareLink({ carId, expiresAt: expiry.value, scope })
+      // Remember the full URL on THIS device (keyed by the link's public id) so
+      // the list below can offer Copy later — the server never returns it again.
+      rememberShareUrl(res.id, res.url)
       setCreated(res)
       setCopied(false)
       setExpiryDate('')
@@ -139,9 +145,24 @@ export default function ShareDialog({ carId, carLabel, onClose }: ShareDialogPro
     setCopied(ok)
   }
 
+  const handleCopyRow = async (link: ShareLinkMeta): Promise<void> => {
+    const url = getShareUrl(link.id)
+    if (url == null) return
+    const ok = await copyToClipboard(url)
+    setCopiedRowId(ok ? link.id : null)
+  }
+
+  // Reset the row ✓ back to the copy icon after a beat.
+  useEffect(() => {
+    if (copiedRowId == null) return
+    const timer = window.setTimeout(() => setCopiedRowId(null), 2000)
+    return () => window.clearTimeout(timer)
+  }, [copiedRowId])
+
   const handleRevoke = async (link: ShareLinkMeta): Promise<void> => {
     try {
       await revokeShareLink({ carId, id: link.id })
+      forgetShareUrl(link.id)
       loadLinks()
     } catch {
       setLoadError('Could not revoke that link. Try again.')
@@ -226,7 +247,8 @@ export default function ShareDialog({ carId, carLabel, onClose }: ShareDialogPro
             <div className="card space-y-2 border-success-border bg-success/30">
               <Badge status="success">Link created</Badge>
               <p className="text-meta text-text-secondary">
-                Copy it now — for security this full link <span className="text-text-primary font-medium">won't be shown again</span>.
+                Copy it now — for security the full link stays re-copyable{' '}
+                <span className="text-text-primary font-medium">only on this device</span>.
               </p>
               <div className="flex gap-2">
                 <input
@@ -263,6 +285,9 @@ export default function ShareDialog({ carId, carLabel, onClose }: ShareDialogPro
               <ul className="space-y-2">
                 {links.map((link) => {
                   const state = linkState(link, nowSeconds)
+                  // Copy is possible iff THIS device created the link (the full
+                  // URL is never re-fetchable — the server only keeps its hash).
+                  const copyableUrl = state === 'active' ? getShareUrl(link.id) : null
                   return (
                     <li key={link.id} className="card flex items-center gap-3 py-2.5">
                       <Link2 size={14} aria-hidden className="text-text-tertiary shrink-0" />
@@ -291,7 +316,27 @@ export default function ShareDialog({ carId, carLabel, onClose }: ShareDialogPro
                             <Eye size={11} aria-hidden /> {formatViewCount(link.viewCount)}
                           </span>
                         </p>
+                        {state === 'active' && copyableUrl == null && (
+                          <p className="text-meta text-text-disabled mt-0.5">
+                            Link can only be re-copied on the device that created it.
+                          </p>
+                        )}
                       </div>
+                      {copyableUrl != null && (
+                        <IconButton
+                          onClick={() => void handleCopyRow(link)}
+                          variant="ghost"
+                          className="shrink-0"
+                          aria-label={`Copy link ${link.id}`}
+                          title="Copy link"
+                        >
+                          {copiedRowId === link.id ? (
+                            <Check size={14} className="text-success-fg" />
+                          ) : (
+                            <Copy size={14} />
+                          )}
+                        </IconButton>
+                      )}
                       {state !== 'revoked' && (
                         <IconButton
                           onClick={() => setRevokeTarget(link)}

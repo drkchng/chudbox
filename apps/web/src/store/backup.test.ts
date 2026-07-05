@@ -147,3 +147,62 @@ describe('replace semantics', () => {
     expect(target.store.getRowIds('cars')).toEqual(['sparse-car'])
   })
 })
+
+// DEC-11 regression: savedBuilds is a TOP-LEVEL table, so it does not ride
+// inside the nested cars — before this coverage existed, a backup round-trip
+// silently erased the entire Watching list (and a signed-in keep-local reseed
+// propagated the erasure to the cloud).
+describe('savedBuilds (Watching list) round trip', () => {
+  const ROW_ID = 'a'.repeat(64) // sha256-hex-shaped rowId
+  const SAVED_ROW = {
+    token: 'RAWTOKEN123',
+    savedAt: '2026-07-01T00:00:00.000Z',
+    sortOrder: 1,
+    cachedMake: 'Toyota',
+    cachedModel: 'Supra',
+  }
+
+  it('export carries the table and import restores it after the wholesale reset', () => {
+    const source = makeStores()
+    source.store.setRow('savedBuilds', ROW_ID, SAVED_ROW)
+
+    const backup = buildBackupV2({
+      cars: [],
+      themeId: 'garage',
+      customAccent: null,
+      currency: 'USD',
+      distanceUnit: 'mi',
+      savedBuilds: source.store.getTable('savedBuilds') as Record<
+        string,
+        Record<string, string | number>
+      >,
+    })
+    const parsed = parseBackup(JSON.parse(JSON.stringify(backup)))
+    expect(parsed?.savedBuilds).not.toBeNull()
+
+    // The target already watches something ELSE: replace semantics must swap it
+    // for the backup's list, not merge or wipe-and-lose.
+    const target = makeStores()
+    target.store.setRow('savedBuilds', 'b'.repeat(64), { ...SAVED_ROW, token: 'OTHER' })
+    applyBackupImport({ store: target.store, localStore: target.localStore, backup: parsed! })
+
+    expect(target.store.getRowIds('savedBuilds')).toEqual([ROW_ID])
+    expect(target.store.getRow('savedBuilds', ROW_ID)).toEqual(SAVED_ROW)
+  })
+
+  it('tolerates backups without savedBuilds and drops token-less junk rows', () => {
+    expect(parseBackup({ version: 2, cars: [] })?.savedBuilds).toBeNull()
+    const parsed = parseBackup({
+      version: 2,
+      cars: [],
+      savedBuilds: {
+        good: { token: 'T', savedAt: 'now' },
+        junk: { savedAt: 'no token' },
+        nested: { token: 'T2', bad: { deep: true } },
+        notARow: 'nope',
+      },
+    })
+    expect(Object.keys(parsed?.savedBuilds ?? {})).toEqual(['good', 'nested'])
+    expect(parsed?.savedBuilds?.nested).toEqual({ token: 'T2' })
+  })
+})

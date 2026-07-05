@@ -317,6 +317,12 @@ export interface CreateShareResponse {
   url: string
   /** The raw token (also embedded in url). Shown once; never persisted raw. */
   token: string
+  /**
+   * The link's public id (same prefix-of-sha256(token) as ShareLinkMeta.id).
+   * Lets the creating DEVICE remember `url` locally keyed by id, so the owner
+   * can re-copy their own links from the list (the server still never can).
+   */
+  id: string
   /** Epoch seconds; null = no expiry. */
   expiresAt: number | null
 }
