@@ -11,6 +11,7 @@ import Button from '../ui/Button'
 import IconButton from '../ui/IconButton'
 import Badge from '../ui/Badge'
 import { CATEGORIES } from '../../utils/categories'
+import { isSafeHref } from '../../utils/safeLink'
 import type { Car, WishlistItem, WishlistStatus, StatusRole, FieldChangeEvent } from '../../types'
 
 // Wishlist status → status role: wanted = info (on the list), ordered = warning
@@ -321,7 +322,7 @@ export default function WishlistTab({ car }: WishlistTabProps) {
                   {item.price != null && (
                     <span className="text-body font-semibold text-text-primary">{money(item.price)}</span>
                   )}
-                  {item.link && (
+                  {item.link && isSafeHref(item.link) && (
                     <a href={item.link} target="_blank" rel="noreferrer"
                       className="inline-flex items-center gap-1 text-meta text-text-secondary hover:text-accent transition-colors">
                       <ExternalLink size={tokens.iconSize.xs} /> View link

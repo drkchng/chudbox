@@ -31,6 +31,7 @@ import {
   PHOTO_PAYLOADS_TABLE,
   UNITS_SCHEMA_VERSION_VALUE,
 } from './adapter'
+import type { StoredPhoto } from '../utils/image'
 
 /** localforage key the legacy Zustand persist middleware wrote. */
 export const LEGACY_BLOB_KEY = 'garage-store'
@@ -91,6 +92,16 @@ const CHILD_ROW_SETS = [
  * store transaction (→ one bounded persister save) plus one side-store
  * transaction for its photo payloads. Strict null rule comes from the shared
  * flattenCar; photo dataUrls land ONLY in the local-only side store.
+ *
+ * R2 metadata: the shared flattenCar has no r2Key/width/height concept (they
+ * are web-layer enrichments the adapter's join re-attaches on read), so they
+ * must be re-applied here after the flatten or a backup import would sever
+ * every uploaded photo from its bytes: post-upload the local payload is ''
+ * (dropped at applyPhotoUpload), leaving the restored row with NEITHER an
+ * r2Key NOR base64 — a permanent blank that no later sweep can recover. A key
+ * from another account's backup simply never resolves (/img is session-gated)
+ * and the delete path filters to the session prefix, so verbatim preservation
+ * is safe. Legacy-blob cars carry no r2Key → this is a no-op for first-run.
  */
 export function writeNestedCars(
   store: MergeableStore,
@@ -107,8 +118,17 @@ export function writeNestedCars(
           store.setRow(tableId, rowId, row as Row)
         }
       }
+      for (const photo of car.photos as StoredPhoto[]) {
+        if (typeof photo.r2Key === 'string' && photo.r2Key !== '') {
+          store.setCell('photos', photo.id, 'r2Key', photo.r2Key)
+          if (typeof photo.width === 'number') store.setCell('photos', photo.id, 'width', photo.width)
+          if (typeof photo.height === 'number') store.setCell('photos', photo.id, 'height', photo.height)
+        }
+      }
     })
-    const payloads = Object.entries(flat.photoPayloads)
+    // Skip empty payloads (uploaded photos export dataUrl: '') — an '' row is
+    // dead weight the read path already defaults and the sweep already skips.
+    const payloads = Object.entries(flat.photoPayloads).filter(([, dataUrl]) => dataUrl !== '')
     if (payloads.length > 0) {
       localStore.transaction(() => {
         for (const [photoId, dataUrl] of payloads) {

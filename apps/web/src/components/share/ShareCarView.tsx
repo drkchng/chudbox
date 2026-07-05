@@ -24,6 +24,7 @@ import type {
   StatusRole,
 } from '@chudbox/shared'
 import { STATUS_CONFIG } from '../../utils/carStatus'
+import { isSafeHref } from '../../utils/safeLink'
 import CarHero from '../CarHero'
 import MileageText from '../MileageText'
 import Badge from '../ui/Badge'
@@ -197,8 +198,11 @@ export function EmptyState({ icon: Icon, children }: { icon: LucideIcon; childre
   )
 }
 
-/** External "view link" affordance — a genuine action, so it carries accent. */
+/** External "view link" affordance — a genuine action, so it carries accent.
+ * Renders NOTHING for a non-http(s) href: `link` is owner-entered and lands on
+ * a public page, so javascript:/data: schemes must never become clickable. */
 export function ExternalLinkA({ href, label = 'View link' }: { href: string; label?: string }) {
+  if (!isSafeHref(href)) return null
   return (
     <a
       href={href}

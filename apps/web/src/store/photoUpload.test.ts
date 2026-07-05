@@ -3,14 +3,14 @@
 // add-path swap to r2Key, offline backlog handling, and best-effort delete.
 import { describe, expect, it, vi } from 'vitest'
 import { createStore } from 'tinybase'
-import { IMG_PATH_PREFIX, UPLOAD_PATH, createGarageStore } from '@chudbox/shared'
+import { UPLOAD_DELETE_PATH, UPLOAD_PATH, createGarageStore } from '@chudbox/shared'
 import type { MergeableStore, Store } from 'tinybase'
 import { PHOTOS_MIGRATED_VALUE, PHOTO_PAYLOADS_TABLE } from './adapter'
 import type { EncodeResult } from '../utils/image'
 import {
   createPhotoSyncController,
   dataUrlToBlob,
-  deletePhotoObject,
+  deletePhotoObjects,
   uploadEncodedPhoto,
 } from './photoUpload'
 import type { FetchLike } from './photoUpload'
@@ -166,7 +166,7 @@ describe('createPhotoSyncController — add path gating', () => {
 })
 
 describe('createPhotoSyncController — delete + migrate', () => {
-  it('handleDeletedPhotos best-effort DELETEs /img/<key> only when signed-in + online', async () => {
+  it('handleDeletedPhotos POSTs the batched UPLOAD_DELETE_PATH contract only when signed-in + online', async () => {
     const { store, localStore } = makeStores()
     const { fetchImpl, calls } = okFetch({})
     const controller = createPhotoSyncController({ store, localStore, fetchImpl, isOnline: () => true })
@@ -175,10 +175,17 @@ describe('createPhotoSyncController — delete + migrate', () => {
     expect(fetchImpl).not.toHaveBeenCalled()
 
     controller.setUser('user')
-    controller.handleDeletedPhotos(['u/user/car1/p1.webp'])
+    controller.handleDeletedPhotos(['u/user/car1/p1.webp', 'u/user/car1/p2.jpg'])
     await new Promise((r) => setTimeout(r, 0))
-    expect(calls[0].url).toBe(`${IMG_PATH_PREFIX}/u/user/car1/p1.webp`)
-    expect(calls[0].init?.method).toBe('DELETE')
+    // ONE batched call to the real (shared-constant) endpoint — the original
+    // client hit a nonexistent `DELETE /img/<key>` route, so every "deleted"
+    // photo's bytes survived in R2. This pins the actual server contract.
+    expect(calls).toHaveLength(1)
+    expect(calls[0].url).toBe(UPLOAD_DELETE_PATH)
+    expect(calls[0].init?.method).toBe('POST')
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({
+      r2Keys: ['u/user/car1/p1.webp', 'u/user/car1/p2.jpg'],
+    })
   })
 
   it('migrate is a no-op when logged out, sweeps + sets the sentinel when active', async () => {
@@ -202,12 +209,22 @@ describe('createPhotoSyncController — delete + migrate', () => {
   })
 })
 
-describe('deletePhotoObject', () => {
-  it('issues a same-origin DELETE to the /img route', async () => {
+describe('deletePhotoObjects', () => {
+  it('issues one same-origin JSON POST to UPLOAD_DELETE_PATH', async () => {
     const { fetchImpl, calls } = okFetch({})
-    await deletePhotoObject('u/user/car1/p1.jpg', fetchImpl)
-    expect(calls[0].url).toBe(`${IMG_PATH_PREFIX}/u/user/car1/p1.jpg`)
-    expect(calls[0].init?.method).toBe('DELETE')
+    await deletePhotoObjects(['u/user/car1/p1.jpg'], fetchImpl)
+    expect(calls[0].url).toBe(UPLOAD_DELETE_PATH)
+    expect(calls[0].init?.method).toBe('POST')
     expect(calls[0].init?.credentials).toBe('same-origin')
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({ r2Keys: ['u/user/car1/p1.jpg'] })
+  })
+
+  it('no-ops on an empty key list and throws on a non-2xx response', async () => {
+    const { fetchImpl } = okFetch({})
+    await deletePhotoObjects([], fetchImpl)
+    expect(fetchImpl).not.toHaveBeenCalled()
+
+    const failing = vi.fn<FetchLike>(async () => new Response('x', { status: 403 }))
+    await expect(deletePhotoObjects(['u/other/car1/p1.jpg'], failing)).rejects.toThrow('403')
   })
 })

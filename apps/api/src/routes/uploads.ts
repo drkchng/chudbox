@@ -24,6 +24,7 @@
 import { Hono } from 'hono'
 import {
   FREE_IMAGE_POLICY,
+  UPLOAD_DELETE_PATH,
   UPLOAD_FILE_FIELD,
   UPLOAD_PATH,
   buildPhotoKey,
@@ -51,8 +52,11 @@ export const uploadsApi = new Hono<{ Bindings: Env }>()
  * DEFERRED (do NOT build here): a periodic reconciliation sweep for orphans this
  * hook misses (e.g. a tab that crashes between row-delete and delete-call) —
  * cron/lifecycle work outside M3 (BACKEND_PLAN.md Risk #8 / db/schema.md §3).
+ *
+ * UPLOAD_DELETE_PATH itself moved to shared contracts.ts so the web client
+ * imports the SAME constant it POSTs to (the original client shipped calling a
+ * nonexistent `DELETE /img/<key>` precisely because this path wasn't shared).
  */
-export const UPLOAD_DELETE_PATH = `${UPLOAD_PATH}/delete`
 
 /**
  * Defensive cap on a single uploaded image's bytes. Decoupled from the FREE

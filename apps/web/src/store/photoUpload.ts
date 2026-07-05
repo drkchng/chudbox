@@ -26,12 +26,13 @@
  */
 import {
   FREE_IMAGE_POLICY,
-  IMG_PATH_PREFIX,
+  UPLOAD_DELETE_PATH,
   UPLOAD_FILE_FIELD,
   UPLOAD_PATH,
   extForContentType,
+  parsePhotoKey,
 } from '@chudbox/shared'
-import type { ImagePolicy, UploadResponse } from '@chudbox/shared'
+import type { DeleteUploadsRequest, ImagePolicy, UploadResponse } from '@chudbox/shared'
 import type { MergeableStore, Store } from 'tinybase'
 import { PHOTOS_MIGRATED_VALUE } from './adapter'
 import { applyPhotoUpload, migratePhotosToR2 } from './migratePhotos'
@@ -97,12 +98,28 @@ export async function uploadEncodedPhoto(
 }
 
 /**
- * Best-effort delete of an uploaded object's bytes (delete-on-delete; the row
- * tombstone already propagated the metadata removal). The exact endpoint
- * contract is owned by the API; the client assumes `DELETE /img/<r2Key>`.
+ * Best-effort delete of uploaded objects' bytes (delete-on-delete; the row
+ * tombstone already propagated the metadata removal). ONE batched JSON POST to
+ * the shared UPLOAD_DELETE_PATH contract — the server authorizes every key
+ * against the session prefix and batch-deletes (max 1000 keys per call, far
+ * above any single deletePhoto/deleteCar). NOTE: the original client shipped
+ * calling `DELETE /img/<key>`, a route that never existed (GET-only), so no
+ * delete ever landed — this function must always target the shared constant.
+ * Throws on non-2xx so the caller can decide whether to swallow.
  */
-export async function deletePhotoObject(r2Key: string, fetchImpl: FetchLike = fetch): Promise<void> {
-  await fetchImpl(`${IMG_PATH_PREFIX}/${r2Key}`, { method: 'DELETE', credentials: 'same-origin' })
+export async function deletePhotoObjects(
+  r2Keys: string[],
+  fetchImpl: FetchLike = fetch,
+): Promise<void> {
+  if (r2Keys.length === 0) return
+  const body: DeleteUploadsRequest = { r2Keys }
+  const response = await fetchImpl(UPLOAD_DELETE_PATH, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) throw new Error(`delete failed with status ${response.status}`)
 }
 
 export interface PhotoSyncDeps {
@@ -168,9 +185,15 @@ export function createPhotoSyncController(deps: PhotoSyncDeps): PhotoSyncControl
 
   const handleDeletedPhotos = (r2Keys: string[]): void => {
     if (userId === null || !isOnline()) return
-    for (const r2Key of r2Keys) {
-      void deletePhotoObject(r2Key, fetchImpl).catch(() => {})
-    }
+    // Only THIS session's keys: the server 403s the whole batch if any key
+    // falls outside `u/<userId>/`, so one foreign key (possible after a
+    // cross-account backup restore) must not block deleting our own objects.
+    const currentUserId = userId
+    const own = r2Keys.filter((key) => parsePhotoKey(key)?.userId === currentUserId)
+    // Best-effort: a failed delete (offline blip, 5xx) is swallowed — the row
+    // tombstone already removed the metadata; the bytes become a server-side
+    // orphan awaiting the deferred reconciliation sweep (uploads.ts docblock).
+    void deletePhotoObjects(own, fetchImpl).catch(() => {})
   }
 
   const migrate = async (): Promise<void> => {

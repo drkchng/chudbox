@@ -148,6 +148,49 @@ describe('replace semantics', () => {
   })
 })
 
+// M3 regression: after upload, a photo's local payload is dropped ('' payload,
+// r2Key cell instead), but flattenCar has no r2Key concept — without the
+// writeNestedCars enrichment a backup round-trip restored uploaded photos with
+// NEITHER bytes NOR an R2 pointer (permanent blanks, propagated to the cloud
+// by the post-import reseed).
+describe('R2-uploaded photo round trip', () => {
+  it('export → import preserves r2Key/width/height and writes no empty payload row', () => {
+    const source = makeStores()
+    writeNestedCars(source.store, source.localStore, [richCar('car-a', 0)], {
+      currency: 'USD',
+      distanceUnit: 'mi',
+    })
+    // Simulate applyPhotoUpload: r2Key/width/height cells land, payload drops.
+    source.store.setCell('photos', 'car-a-p1', 'r2Key', 'u/user/car-a/car-a-p1.webp')
+    source.store.setCell('photos', 'car-a-p1', 'width', 1600)
+    source.store.setCell('photos', 'car-a-p1', 'height', 1200)
+    source.localStore.delRow(PHOTO_PAYLOADS_TABLE, 'car-a-p1')
+
+    const sourceState = createGarageAdapter(source.store, source.localStore).getState()
+    const backup = buildBackupV2({
+      cars: sourceState.cars,
+      themeId: sourceState.themeId,
+      customAccent: sourceState.customAccent,
+      currency: sourceState.currency,
+      distanceUnit: sourceState.distanceUnit,
+    })
+    const parsed = parseBackup(JSON.parse(JSON.stringify(backup)))
+    expect(parsed).not.toBeNull()
+
+    const target = makeStores()
+    applyBackupImport({ store: target.store, localStore: target.localStore, backup: parsed! })
+
+    expect(target.store.getCell('photos', 'car-a-p1', 'r2Key')).toBe('u/user/car-a/car-a-p1.webp')
+    expect(target.store.getCell('photos', 'car-a-p1', 'width')).toBe(1600)
+    expect(target.store.getCell('photos', 'car-a-p1', 'height')).toBe(1200)
+    // No dead '' payload row for the uploaded photo.
+    expect(target.localStore.hasRow(PHOTO_PAYLOADS_TABLE, 'car-a-p1')).toBe(false)
+    // The joined read model matches the source exactly (incl. the enrichment).
+    const targetState = createGarageAdapter(target.store, target.localStore).getState()
+    expect(targetState.cars).toEqual(sourceState.cars)
+  })
+})
+
 // DEC-11 regression: savedBuilds is a TOP-LEVEL table, so it does not ride
 // inside the nested cars — before this coverage existed, a backup round-trip
 // silently erased the entire Watching list (and a signed-in keep-local reseed

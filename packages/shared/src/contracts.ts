@@ -41,10 +41,21 @@ export function shareSnapshotPath(token: string): string {
 
 /** Same-origin upload endpoint (session-authed; multipart/form-data). */
 export const UPLOAD_PATH = '/api/uploads'
+/**
+ * Batched R2 delete endpoint (session-authed; JSON `{ r2Keys: string[] }`,
+ * every key authorized against the session's `u/<userId>/` prefix). This is
+ * the ONLY way the client removes uploaded bytes — /img/* is GET-only.
+ */
+export const UPLOAD_DELETE_PATH = `${UPLOAD_PATH}/delete`
 /** Prefix for the auth/token-gated image-serving route ('/img/<r2Key>'). */
 export const IMG_PATH_PREFIX = '/img'
 /** FormData field carrying the encoded image blob in an UPLOAD_PATH request. */
 export const UPLOAD_FILE_FIELD = 'file'
+
+/** Body of POST UPLOAD_DELETE_PATH (server-validated, 1..1000 keys). */
+export interface DeleteUploadsRequest {
+  r2Keys: string[]
+}
 
 /** Decomposed R2 photo key. `ext` reflects the ACTUALLY-encoded format. */
 export interface PhotoKeyParts {

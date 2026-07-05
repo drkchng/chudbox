@@ -10,6 +10,7 @@ import Modal from '../ui/Modal'
 import Button from '../ui/Button'
 import IconButton from '../ui/IconButton'
 import { CATEGORIES } from '../../utils/categories'
+import { isSafeHref } from '../../utils/safeLink'
 import ItemPhotos from '../photos/ItemPhotos'
 import type { Car, Mod, FieldChangeEvent } from '../../types'
 
@@ -346,7 +347,7 @@ export default function ModsTab({ car, autoFocusAdd = false }: ModsTabProps) {
                       <div className="mt-1.5 flex flex-wrap items-center gap-3 text-meta text-text-secondary">
                         {mod.installedDate && <span>{fmtDate(mod.installedDate)}</span>}
                         {mod.shop && <span>by {mod.shop}</span>}
-                        {mod.link && (
+                        {mod.link && isSafeHref(mod.link) && (
                           <a
                             href={mod.link}
                             target="_blank"
