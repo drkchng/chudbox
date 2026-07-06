@@ -564,8 +564,8 @@ export function createGarageAdapter(
   }
 
   const setCurrency = (to: CurrencyCode): void => {
-    // Values write ONLY: stored amounts keep their entry currency tags. The
-    // legacy in-place conversion of every amount was lossy and is gone.
+    // Values write ONLY: stored amounts keep their entry currency tags and
+    // convert at display time — in-place conversion of amounts is lossy.
     if (!CURRENCIES[to] || settings().currency === to) return
     store.setValue('currency', to)
   }

@@ -1,9 +1,9 @@
 /**
  * Pure readers for the email-landing query params (M5: clean BrowserRouter
- * URLs). With BrowserRouter the reset token / verify error arrive in the normal
- * query string (`?token=…`, `?error=…`) — no longer buried inside a `#` — so
- * these take a plain URLSearchParams (the components pass `useSearchParams()`,
- * which now reflects the real query). Kept pure so they unit-test without a DOM.
+ * URLs). The reset token / verify error arrive in the normal query string
+ * (`?token=…`, `?error=…`), so these take a plain URLSearchParams (the
+ * components pass `useSearchParams()`, which reflects the real query). Kept
+ * pure so they unit-test without a DOM.
  */
 
 /**

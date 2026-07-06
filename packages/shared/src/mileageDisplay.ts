@@ -32,8 +32,8 @@ export function formatMileage(
  * The value to PREFILL a mileage <input> with when editing under `unit`. Edit
  * forms work in the active unit, so this converts the canonical miles to it
  * (rounded to a whole number). On save the adapter re-canonicalizes from the
- * active unit — so editing a km-entered car while the app shows mi no longer
- * 1.6×-corrupts the canonical value. Non-numeric raw is kept verbatim.
+ * active unit — otherwise editing a km-entered car while the app shows mi
+ * would 1.6×-corrupt the canonical value. Non-numeric raw is kept verbatim.
  */
 export function mileagePrefill(
   raw: string | null | undefined,
