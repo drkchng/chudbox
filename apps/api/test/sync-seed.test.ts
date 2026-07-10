@@ -361,7 +361,11 @@ describe('clearing', () => {
     let liveRows = 0
     for (const tableId of src.getTableIds()) liveRows += src.getRowCount(tableId)
     expect(body.deletedRows).toBe(liveRows)
-    expect(body.deletedValues).toBe(3)
+    // 3 explicitly seeded (themeId/currency/distanceUnit) + 6 sort/group
+    // prefs that GARAGE_VALUES_SCHEMA defaults materialize even though this
+    // fixture never sets them (modsSortBy/Dir, maintenanceSortBy/Dir,
+    // issuesSortBy/Dir).
+    expect(body.deletedValues).toBe(9)
     // Bounded batching actually split the work (≥ one batch per table at this
     // budget, + the values batch).
     expect(body.batches).toBeGreaterThan(src.getTableIds().length)

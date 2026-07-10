@@ -1,6 +1,9 @@
-# CI/CD → Cloudflare. On every push to master: install, typecheck, lint, unit
-# tests, build the SPA, then apply pending D1 migrations and deploy the Worker
-# (which serves the SPA from apps/web/dist via the assets binding).
+# CI/CD → Cloudflare. On every push to master: install, typecheck, lint,
+# build the SPA, unit tests, then apply pending D1 migrations and deploy the
+# Worker (which serves the SPA from apps/web/dist via the assets binding).
+# Build must precede test: apps/api's og.test.ts exercises the real
+# /share/:token route, which reads apps/web/dist/index.html through the
+# ASSETS binding.
 #
 # Required repo secrets (Settings → Secrets and variables → Actions):
 #   CLOUDFLARE_API_TOKEN  — API token with Workers Scripts:Edit, D1:Edit,
@@ -35,9 +38,8 @@ jobs:
 
       - run: pnpm typecheck
       - run: pnpm lint
-      - run: pnpm test
-
       - run: pnpm build
+      - run: pnpm test
 
       - name: Apply D1 migrations
         working-directory: apps/api

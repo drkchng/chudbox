@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 import {
   cloudflareTest,
   readD1Migrations,
@@ -7,7 +8,10 @@ import { defineConfig } from 'vitest/config'
 // NOTE: @cloudflare/vitest-pool-workers 0.16.x (Vitest 4) replaced
 // `defineWorkersConfig` with the `cloudflareTest()` Vite plugin — verified
 // against the installed package's exports.
-const migrationsDir = new URL('./drizzle', import.meta.url).pathname
+// fileURLToPath (not `.pathname`) so this resolves correctly on Windows,
+// where `.pathname` yields a leading-slash form (e.g. /C:/...) that
+// fs.readdirSync mishandles.
+const migrationsDir = fileURLToPath(new URL('./drizzle', import.meta.url))
 
 export default defineConfig(async () => {
   const migrations = await readD1Migrations(migrationsDir)
@@ -16,8 +20,16 @@ export default defineConfig(async () => {
       cloudflareTest({
         wrangler: { configPath: './wrangler.jsonc' },
         miniflare: {
-          // Exposed to tests so the setup file can apply D1 migrations.
-          bindings: { TEST_MIGRATIONS: migrations },
+          bindings: {
+            // Exposed to tests so the setup file can apply D1 migrations.
+            TEST_MIGRATIONS: migrations,
+            // wrangler.jsonc's `vars` set the production BETTER_AUTH_URL, which
+            // would flip createAuth()'s isLocalDev check to false and make it
+            // throw for lack of a real BETTER_AUTH_SECRET. Override back to the
+            // dev URL so tests exercise the local-dev auth path, same as before
+            // production vars were added.
+            BETTER_AUTH_URL: 'http://localhost:8787',
+          },
         },
       }),
     ],
