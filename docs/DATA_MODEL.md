@@ -63,7 +63,7 @@ Car (extends CarDetails)
 
 Enum unions (TS-level only, not constrained in the store):
 `WishlistStatus` = `wanted|ordered|installed`; `TodoPriority` = `low|medium|high`;
-`IssueSeverity` = `minor|moderate|critical`; `IssueStatus` = `open|in-progress|resolved`.
+`IssueSeverity` = `minor|moderate|high|critical`; `IssueStatus` = `open|in-progress|resolved`.
 
 All entity ids (carId, photoId, modId, recId, itemId, todoId, issueId) are
 `crypto.randomUUID()` via `newId()` (`id.ts`) — globally collision-safe so rowIds

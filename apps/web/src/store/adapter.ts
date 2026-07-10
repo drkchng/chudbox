@@ -120,6 +120,13 @@ type ModInput = Omit<Mod, 'id' | 'addedAt'>
 type MaintenanceInput = Omit<MaintenanceRecord, 'id' | 'createdAt'>
 type IssueInput = Pick<Issue, 'title' | 'description' | 'severity'>
 
+/** Mods/Maintenance tab sort field. 'category' groups by category/service
+ *  (secondary-sorted by date); 'date' groups by install/service month. */
+export type ItemSortBy = 'category' | 'date'
+export type IssuesSortBy = 'date' | 'severity'
+/** 'desc' = newest/most-severe first (the default); 'asc' = reversed. */
+export type SortDir = 'asc' | 'desc'
+
 export interface GarageState {
   cars: StoredCar[]
 
@@ -134,6 +141,22 @@ export interface GarageState {
   distanceUnit: DistanceUnitCode
   setCurrency: (to: CurrencyCode) => void
   setDistanceUnit: (to: DistanceUnitCode) => void
+
+  // Sort/group preferences (persisted per user via the synced store)
+  modsSortBy: ItemSortBy
+  modsSortDir: SortDir
+  setModsSortBy: (to: ItemSortBy) => void
+  setModsSortDir: (to: SortDir) => void
+
+  maintenanceSortBy: ItemSortBy
+  maintenanceSortDir: SortDir
+  setMaintenanceSortBy: (to: ItemSortBy) => void
+  setMaintenanceSortDir: (to: SortDir) => void
+
+  issuesSortBy: IssuesSortBy
+  issuesSortDir: SortDir
+  setIssuesSortBy: (to: IssuesSortBy) => void
+  setIssuesSortDir: (to: SortDir) => void
 
   // Cars
   addCar: (data: CarDetails) => string
@@ -577,6 +600,32 @@ export function createGarageAdapter(
     store.setValue('distanceUnit', to)
   }
 
+  // Sort/group preferences — plain Values writes, same shape as setCurrency.
+  const setModsSortBy = (to: ItemSortBy): void => {
+    if (store.getValue('modsSortBy') === to) return
+    store.setValue('modsSortBy', to)
+  }
+  const setModsSortDir = (to: SortDir): void => {
+    if (store.getValue('modsSortDir') === to) return
+    store.setValue('modsSortDir', to)
+  }
+  const setMaintenanceSortBy = (to: ItemSortBy): void => {
+    if (store.getValue('maintenanceSortBy') === to) return
+    store.setValue('maintenanceSortBy', to)
+  }
+  const setMaintenanceSortDir = (to: SortDir): void => {
+    if (store.getValue('maintenanceSortDir') === to) return
+    store.setValue('maintenanceSortDir', to)
+  }
+  const setIssuesSortBy = (to: IssuesSortBy): void => {
+    if (store.getValue('issuesSortBy') === to) return
+    store.setValue('issuesSortBy', to)
+  }
+  const setIssuesSortDir = (to: SortDir): void => {
+    if (store.getValue('issuesSortDir') === to) return
+    store.setValue('issuesSortDir', to)
+  }
+
   // DEC-4 (log-first): returns the freshly-minted id so the caller can navigate
   // straight to the new car's profile (`navigate('/car/' + id)`).
   const addCar = (data: CarDetails): string => {
@@ -919,6 +968,12 @@ export function createGarageAdapter(
     setCustomAccent,
     setCurrency,
     setDistanceUnit,
+    setModsSortBy,
+    setModsSortDir,
+    setMaintenanceSortBy,
+    setMaintenanceSortDir,
+    setIssuesSortBy,
+    setIssuesSortDir,
     addCar,
     updateCar,
     deleteCar,
@@ -958,6 +1013,12 @@ export function createGarageAdapter(
       customAccent: (store.getValue('customAccent') as string | undefined) ?? null,
       currency: settings().currency as CurrencyCode,
       distanceUnit: settings().distanceUnit,
+      modsSortBy: ((store.getValue('modsSortBy') as string | undefined) ?? 'category') as ItemSortBy,
+      modsSortDir: ((store.getValue('modsSortDir') as string | undefined) ?? 'desc') as SortDir,
+      maintenanceSortBy: ((store.getValue('maintenanceSortBy') as string | undefined) ?? 'date') as ItemSortBy,
+      maintenanceSortDir: ((store.getValue('maintenanceSortDir') as string | undefined) ?? 'desc') as SortDir,
+      issuesSortBy: ((store.getValue('issuesSortBy') as string | undefined) ?? 'date') as IssuesSortBy,
+      issuesSortDir: ((store.getValue('issuesSortDir') as string | undefined) ?? 'desc') as SortDir,
       ...actions,
     }
     return state

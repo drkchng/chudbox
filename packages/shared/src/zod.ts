@@ -51,6 +51,12 @@ export const garageValuesSchema = z.strictObject({
   customAccent: z.string().nullable(),
   currency: z.string().regex(/^[A-Z]{3}$/, 'expected an ISO-4217 alpha code'),
   distanceUnit: z.enum(['mi', 'km']),
+  modsSortBy: z.enum(['category', 'date']).optional(),
+  modsSortDir: z.enum(['asc', 'desc']).optional(),
+  maintenanceSortBy: z.enum(['category', 'date']).optional(),
+  maintenanceSortDir: z.enum(['asc', 'desc']).optional(),
+  issuesSortBy: z.enum(['date', 'severity']).optional(),
+  issuesSortDir: z.enum(['asc', 'desc']).optional(),
 })
 
 export type GarageValuesInput = z.infer<typeof garageValuesSchema>

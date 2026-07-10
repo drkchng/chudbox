@@ -2,23 +2,17 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { Plus, Trash2, AlertTriangle, Clock, CheckCircle2, RotateCcw, Pencil } from 'lucide-react'
-import { tokens } from '@chudbox/shared'
+import { tokens, ISSUE_SEVERITY_ORDER, ISSUE_SEVERITY_META } from '@chudbox/shared'
 import useGarageStore from '../../store/useGarageStore'
 import ConfirmModal from '../ConfirmModal'
 import Badge from '../ui/Badge'
 import Button from '../ui/Button'
 import IconButton from '../ui/IconButton'
+import SortControls from '../SortControls'
 import ItemPhotos from '../photos/ItemPhotos'
-import type { Car, Issue, IssueSeverity, IssueStatus, StatusRole, FieldChangeEvent } from '../../types'
-
-// Severity → status role. Orange stays reclaimed: critical is the danger token,
-// moderate the warning token, minor neutral. (Color is always paired with the
-// Badge's icon + text — never color alone.)
-const SEVERITY: Record<IssueSeverity, { label: string; role: StatusRole }> = {
-  minor:    { label: 'Minor',    role: 'neutral' },
-  moderate: { label: 'Moderate', role: 'warning' },
-  critical: { label: 'Critical', role: 'danger' },
-}
+import { dateComparator } from '../../utils/groupSort'
+import type { Car, Issue, IssueStatus, StatusRole, FieldChangeEvent } from '../../types'
+import type { IssuesSortBy } from '../../store/adapter'
 
 // Status → status role + label. open = the active alert (danger, matching the
 // CarCard open-issues alert), in-progress = info, resolved = success.
@@ -51,6 +45,10 @@ export default function IssuesTab({ car }: IssuesTabProps) {
   const addIssue    = useGarageStore((s) => s.addIssue)
   const updateIssue = useGarageStore((s) => s.updateIssue)
   const deleteIssue = useGarageStore((s) => s.deleteIssue)
+  const sortBy    = useGarageStore((s) => s.issuesSortBy)
+  const sortDir   = useGarageStore((s) => s.issuesSortDir)
+  const setSortBy  = useGarageStore((s) => s.setIssuesSortBy)
+  const setSortDir = useGarageStore((s) => s.setIssuesSortDir)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState<IssueForm>(emptyForm)
   const [editId, setEditId] = useState<string | null>(null)
@@ -93,7 +91,18 @@ export default function IssuesTab({ car }: IssuesTabProps) {
 
   const open = car.issues.filter((i) => i.status !== 'resolved')
   const resolved = car.issues.filter((i) => i.status === 'resolved')
-  const displayed = filter === 'resolved' ? resolved : open
+  const filtered = filter === 'resolved' ? resolved : open
+  const byCreatedAt = dateComparator((i: Issue) => i.createdAt, sortDir)
+  const byCreatedAtDesc = dateComparator((i: Issue) => i.createdAt, 'desc')
+  const dirSign = sortDir === 'asc' ? 1 : -1
+  const displayed = [...filtered].sort((a, b) => {
+    if (sortBy === 'severity') {
+      const diff = ISSUE_SEVERITY_ORDER[a.severity] - ISSUE_SEVERITY_ORDER[b.severity]
+      // Tie-break by newest first, regardless of the severity direction.
+      return diff !== 0 ? dirSign * diff : byCreatedAtDesc(a, b)
+    }
+    return byCreatedAt(a, b)
+  })
 
   return (
     <div>
@@ -114,6 +123,20 @@ export default function IssuesTab({ car }: IssuesTabProps) {
         <button type="button" onClick={() => setFilter('resolved')} className={`tab-btn ${filter === 'resolved' ? 'tab-active' : 'tab-inactive'}`}>Resolved ({resolved.length})</button>
       </div>
 
+      {filtered.length > 0 && (
+        <SortControls<IssuesSortBy>
+          sortBy={sortBy}
+          sortByOptions={[
+            { value: 'date', label: 'Date' },
+            { value: 'severity', label: 'Severity' },
+          ]}
+          onSortByChange={setSortBy}
+          dir={sortDir}
+          dirLabels={sortBy === 'severity' ? { desc: 'Most severe first', asc: 'Least severe first' } : { desc: 'Newest first', asc: 'Oldest first' }}
+          onDirChange={setSortDir}
+        />
+      )}
+
       {showForm && (
         <form id={ADD_FORM_ID} onSubmit={handleAdd} className="card mb-5 space-y-3">
           <h4 className="text-body font-semibold text-text-primary">New issue</h4>
@@ -130,6 +153,7 @@ export default function IssuesTab({ car }: IssuesTabProps) {
             <select id="issue-add-severity" className="input" value={form.severity} onChange={set('severity')}>
               <option value="minor">Minor</option>
               <option value="moderate">Moderate</option>
+              <option value="high">High</option>
               <option value="critical">Critical</option>
             </select>
           </div>
@@ -166,6 +190,7 @@ export default function IssuesTab({ car }: IssuesTabProps) {
                     <select id={`issue-${issue.id}-severity`} className="input" value={editForm.severity} onChange={setEdit('severity')}>
                       <option value="minor">Minor</option>
                       <option value="moderate">Moderate</option>
+                      <option value="high">High</option>
                       <option value="critical">Critical</option>
                     </select>
                   </div>
@@ -188,7 +213,7 @@ export default function IssuesTab({ car }: IssuesTabProps) {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className={`font-medium ${issue.status === 'resolved' ? 'text-text-secondary line-through' : 'text-text-primary'}`}>{issue.title}</span>
-                    <Badge status={SEVERITY[issue.severity].role}>{SEVERITY[issue.severity].label}</Badge>
+                    <Badge status={ISSUE_SEVERITY_META[issue.severity].role}>{ISSUE_SEVERITY_META[issue.severity].label}</Badge>
                     <Badge status={STATUS[issue.status].role}>{STATUS[issue.status].label}</Badge>
                   </div>
                   {issue.description && <p className="text-meta text-text-secondary mt-1">{issue.description}</p>}

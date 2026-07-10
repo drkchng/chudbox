@@ -1,4 +1,5 @@
 import type { DistanceUnitCode } from './units'
+import type { StatusRole } from './tokens'
 
 // ── Status unions ───────────────────────────────────────────
 /**
@@ -12,8 +13,28 @@ export type CarStatus = CarStoredStatus
 
 export type WishlistStatus = 'wanted' | 'ordered' | 'installed'
 export type TodoPriority = 'low' | 'medium' | 'high'
-export type IssueSeverity = 'minor' | 'moderate' | 'critical'
+export type IssueSeverity = 'minor' | 'moderate' | 'high' | 'critical'
 export type IssueStatus = 'open' | 'in-progress' | 'resolved'
+
+/** Rank for "sort by severity" (higher = more severe). */
+export const ISSUE_SEVERITY_ORDER: Record<IssueSeverity, number> = {
+  minor: 1,
+  moderate: 2,
+  high: 3,
+  critical: 4,
+}
+
+/** Single source of truth for severity → label/role, shared by the owner
+ *  IssuesTab and the public ShareCarViewFull so the two can't drift. Orange
+ *  stays reclaimed: critical and high share the danger token (both are
+ *  "urgent, act now" — the label text is what tells them apart), moderate
+ *  the warning token, minor neutral. */
+export const ISSUE_SEVERITY_META: Record<IssueSeverity, { label: string; role: StatusRole }> = {
+  minor:    { label: 'Minor',    role: 'neutral' },
+  moderate: { label: 'Moderate', role: 'warning' },
+  high:     { label: 'High',     role: 'danger' },
+  critical: { label: 'Critical', role: 'danger' },
+}
 
 /**
  * DEC-6 (unified photos): the KIND of entity a photo attaches to — a CLOSED

@@ -627,7 +627,7 @@ const fullTodoSchema = z.strictObject({
 const fullIssueSchema = z.strictObject({
   title: z.string(),
   description: z.string(),
-  severity: z.enum(['minor', 'moderate', 'critical']),
+  severity: z.enum(['minor', 'moderate', 'high', 'critical']),
   status: z.enum(['open', 'in-progress', 'resolved']),
   createdAt: z.string(),
   resolvedAt: z.string().optional(),

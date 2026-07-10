@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Plus, Trash2, Wrench, Pencil, Check, X, ExternalLink, ClipboardList } from 'lucide-react'
 import { tokens } from '@chudbox/shared'
@@ -9,10 +9,13 @@ import ConfirmModal from '../ConfirmModal'
 import Modal from '../ui/Modal'
 import Button from '../ui/Button'
 import IconButton from '../ui/IconButton'
+import SortControls from '../SortControls'
 import { CATEGORIES } from '../../utils/categories'
 import { isSafeHref } from '../../utils/safeLink'
+import { groupSort } from '../../utils/groupSort'
 import ItemPhotos from '../photos/ItemPhotos'
 import type { Car, Mod, FieldChangeEvent } from '../../types'
+import type { ItemSortBy } from '../../store/adapter'
 
 interface ModForm {
   name: string
@@ -169,6 +172,10 @@ export default function ModsTab({ car, autoFocusAdd = false }: ModsTabProps) {
   const deleteMod = useGarageStore((s) => s.deleteMod)
   const currency  = useGarageStore((s) => s.currency)
   const sym       = CURRENCIES[currency]?.symbol ?? '$'
+  const sortBy    = useGarageStore((s) => s.modsSortBy)
+  const sortDir   = useGarageStore((s) => s.modsSortDir)
+  const setSortBy  = useGarageStore((s) => s.setModsSortBy)
+  const setSortDir = useGarageStore((s) => s.setModsSortDir)
   const [showForm, setShowForm]   = useState(autoFocusAdd)
   const [form, setForm]           = useState<ModForm>(emptyForm)
   const [editId, setEditId]       = useState<string | null>(null)
@@ -212,12 +219,10 @@ export default function ModsTab({ car, autoFocusAdd = false }: ModsTabProps) {
   }
 
   const totalCost = car.mods.reduce((s, m) => s + (m.cost || 0), 0)
-  const grouped   = car.mods.reduce<Record<string, Mod[]>>((acc, mod) => {
-    const key = mod.category || 'Other'
-    if (!acc[key]) acc[key] = []
-    acc[key].push(mod)
-    return acc
-  }, {})
+  const groups = useMemo(
+    () => groupSort(car.mods, (m) => m.category, (m) => m.installedDate, sortBy, sortDir),
+    [car.mods, sortBy, sortDir],
+  )
 
   return (
     <div>
@@ -285,10 +290,22 @@ export default function ModsTab({ car, autoFocusAdd = false }: ModsTabProps) {
           <p className="text-text-secondary">No modifications logged yet.</p>
         </div>
       ) : (
-        <div className="space-y-6">
-          {Object.entries(grouped).map(([category, mods]) => (
-            <div key={category}>
-              <h4 className="mb-2 text-meta font-semibold uppercase tracking-widest text-text-tertiary">{category}</h4>
+        <>
+          <SortControls<ItemSortBy>
+            sortBy={sortBy}
+            sortByOptions={[
+              { value: 'category', label: 'Category' },
+              { value: 'date', label: 'Install date' },
+            ]}
+            onSortByChange={setSortBy}
+            dir={sortDir}
+            dirLabels={{ desc: 'Newest first', asc: 'Oldest first' }}
+            onDirChange={setSortDir}
+          />
+          <div className="space-y-6">
+          {groups.map(({ key, label, items: mods }) => (
+            <div key={key}>
+              <h4 className="mb-2 text-meta font-semibold uppercase tracking-widest text-text-tertiary">{label}</h4>
               <div className="space-y-2">
                 {mods.map((mod) => editId === mod.id ? (
                   <div key={mod.id} className="card border-accent/30 space-y-3">
@@ -376,7 +393,8 @@ export default function ModsTab({ car, autoFocusAdd = false }: ModsTabProps) {
               </div>
             </div>
           ))}
-        </div>
+          </div>
+        </>
       )}
 
       {confirmMod && (
