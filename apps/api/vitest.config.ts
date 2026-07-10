@@ -10,8 +10,9 @@ import { defineConfig } from 'vitest/config'
 // against the installed package's exports.
 // fileURLToPath (not `.pathname`) so this resolves correctly on Windows,
 // where `.pathname` yields a leading-slash form (e.g. /C:/...) that
-// fs.readdirSync mishandles.
-const migrationsDir = fileURLToPath(new URL('./drizzle', import.meta.url))
+// fs.readdirSync mishandles. Passed as `.href` (a string): the workers-types
+// URL global and @types/node's URL are structurally incompatible.
+const migrationsDir = fileURLToPath(new URL('./drizzle', import.meta.url).href)
 
 export default defineConfig(async () => {
   const migrations = await readD1Migrations(migrationsDir)

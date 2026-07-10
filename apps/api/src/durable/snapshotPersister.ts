@@ -163,7 +163,12 @@ export async function migrateFragmentedStorage(storage: DurableObjectStorage): P
     .exec(`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (${names})`)
     .toArray()
   if (legacy.length === 0) return
-  if ((await storage.get(SNAPSHOT_KEY)) === undefined) {
+  // Decodability-checked presence, not raw key presence: a crash between a
+  // prior run's snapshot put and its table drops, followed by blob
+  // corruption, must NOT count as "already migrated" — that would drop the
+  // last good copy. An unreadable blob quarantines (inside
+  // loadSnapshotContent) and the legacy tables re-hydrate a fresh one.
+  if ((await loadSnapshotContent(storage)) === undefined) {
     const temp = createMergeableStore()
     const legacyPersister = createDurableObjectSqlStoragePersister(
       temp,
@@ -184,6 +189,16 @@ export async function migrateFragmentedStorage(storage: DurableObjectStorage): P
     if (legacyCellRows > 0 && !temp.hasTables()) {
       throw new Error(
         `legacy migration hydrated an empty store from ${legacyCellRows} cell rows — refusing to migrate`,
+      )
+    }
+    const legacyValueRows = Number(
+      storage.sql
+        .exec("SELECT COUNT(*) AS n FROM tinybase_values WHERE value_id IS NOT NULL")
+        .one().n,
+    )
+    if (legacyValueRows > 0 && !temp.hasValues()) {
+      throw new Error(
+        `legacy migration hydrated empty values from ${legacyValueRows} value rows — refusing to migrate`,
       )
     }
     const content = reviveTombstones(temp.getMergeableContent())

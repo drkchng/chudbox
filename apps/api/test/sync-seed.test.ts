@@ -1,5 +1,5 @@
 // M2 seed/clear/meta protocol tests, exercised against the REAL GarageDO and
-// its fragmented SQLite storage (vitest-pool-workers).
+// its snapshot storage (vitest-pool-workers).
 import { SELF, env, runInDurableObject } from 'cloudflare:test'
 import { beforeAll, describe, expect, it } from 'vitest'
 import {
