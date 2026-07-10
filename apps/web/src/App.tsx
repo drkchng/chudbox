@@ -28,7 +28,7 @@ export default function App() {
     applyThemeFromSettings(themeId, customAccent)
   }, [themeId, customAccent])
 
-  // Clean path URLs (BrowserRouter, M5): no more `/#/`. Every pattern below is
+  // Clean path URLs (BrowserRouter, M5). Every pattern below is
   // served by the Worker's SPA asset fallback (not_found_handling:
   // single-page-application) — index.html for any non-asset path — except
   // /share/:token, which the Worker intercepts to inject Open Graph meta before

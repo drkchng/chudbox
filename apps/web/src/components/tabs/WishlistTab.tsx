@@ -51,8 +51,8 @@ interface MoveToModsModalProps {
   onClose: () => void
 }
 
-// Modal shown when moving an installed wishlist item to mods. Migrated to the
-// Modal primitive (focus trap / Esc / outside-press / dialog ARIA come free).
+// Modal shown when moving an installed wishlist item to mods. Uses the Modal
+// primitive (focus trap / Esc / outside-press / dialog ARIA come free).
 function MoveToModsModal({ item, carId, onClose }: MoveToModsModalProps) {
   const addMod             = useGarageStore((s) => s.addMod)
   const deleteWishlistItem = useGarageStore((s) => s.deleteWishlistItem)

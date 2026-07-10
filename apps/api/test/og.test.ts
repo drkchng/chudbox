@@ -455,7 +455,8 @@ describe('GET /share/:token document — overrides the default shell title/descr
 
   // A valid build with NO cover photo still gets a correct title/description
   // preview (just no image) — the injection is gated on the snapshot, not on a
-  // cover photo. Previously a photo-less share fell through to the generic shell.
+  // cover photo. Guards against a photo-less share falling through to the
+  // generic shell.
   it('overrides title/description for a photo-less build, omitting og:image', async () => {
     const ids = freshIds()
     await seedCar(ids, { noCover: true })
