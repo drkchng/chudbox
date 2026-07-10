@@ -11,7 +11,7 @@ import {
   Tag,
   Wrench,
 } from 'lucide-react'
-import { formatMileage, formatMoney, shareImgPath, tokens } from '@chudbox/shared'
+import { formatMileage, formatMoney, shareImgPath, tokens, ISSUE_SEVERITY_META } from '@chudbox/shared'
 import type {
   CarStatus,
   DistanceUnitCode,
@@ -21,7 +21,6 @@ import type {
   FullMod,
   FullTodo,
   FullWishlistItem,
-  IssueSeverity,
   StatusRole,
   TodoPriority,
   WishlistStatus,
@@ -89,16 +88,6 @@ const WISHLIST_LABEL: Record<WishlistStatus, string> = {
 const TODO_ROLE: Record<TodoPriority, StatusRole> = { low: 'neutral', medium: 'info', high: 'danger' }
 const TODO_LABEL: Record<TodoPriority, string> = { low: 'Low', medium: 'Medium', high: 'High' }
 
-const ISSUE_ROLE: Record<IssueSeverity, StatusRole> = {
-  minor: 'neutral',
-  moderate: 'warning',
-  critical: 'danger',
-}
-const ISSUE_LABEL: Record<IssueSeverity, string> = {
-  minor: 'Minor',
-  moderate: 'Moderate',
-  critical: 'Critical',
-}
 
 /** Price tokens (V5): weight, not orange. */
 function Price({ children }: { children: ReactNode }) {
@@ -284,7 +273,7 @@ function IssueList({ issues }: { issues: FullIssue[] }) {
             >
               {issue.title}
             </span>
-            <Badge status={ISSUE_ROLE[issue.severity]}>{ISSUE_LABEL[issue.severity]}</Badge>
+            <Badge status={ISSUE_SEVERITY_META[issue.severity].role}>{ISSUE_SEVERITY_META[issue.severity].label}</Badge>
             <span className="text-meta capitalize text-text-secondary">
               {issue.status.replace('-', ' ')}
             </span>

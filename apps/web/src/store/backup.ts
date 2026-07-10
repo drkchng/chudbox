@@ -23,7 +23,12 @@
 import type { Car, CurrencyCode, DistanceUnitCode, FlattenSettings } from '@chudbox/shared'
 import type { MergeableContent, MergeableStore, Store } from 'tinybase'
 import { PHOTO_PAYLOADS_TABLE } from './adapter'
+import type { IssuesSortBy, ItemSortBy, SortDir } from './adapter'
 import { writeNestedCars } from './migrate'
+
+const isItemSortBy = (v: unknown): v is ItemSortBy => v === 'category' || v === 'date'
+const isIssuesSortBy = (v: unknown): v is IssuesSortBy => v === 'date' || v === 'severity'
+const isSortDir = (v: unknown): v is SortDir => v === 'asc' || v === 'desc'
 
 export const BACKUP_VERSION = 2
 
@@ -45,6 +50,13 @@ export interface BackupV2 {
   distanceUnit: DistanceUnitCode
   /** Absent on backups exported before the Watching list existed. */
   savedBuilds?: SavedBuildsBackupTable
+  /** Absent on backups exported before per-tab sort/group prefs existed. */
+  modsSortBy?: ItemSortBy
+  modsSortDir?: SortDir
+  maintenanceSortBy?: ItemSortBy
+  maintenanceSortDir?: SortDir
+  issuesSortBy?: IssuesSortBy
+  issuesSortDir?: SortDir
 }
 
 /** Normalized result of parsing either backup format. */
@@ -60,6 +72,13 @@ export interface ParsedBackup {
   distanceUnit: DistanceUnitCode | null
   /** Only present on v2 backups that carried a Watching list. */
   savedBuilds: SavedBuildsBackupTable | null
+  /** Only present on v2 backups that carried sort/group prefs. */
+  modsSortBy: ItemSortBy | null
+  modsSortDir: SortDir | null
+  maintenanceSortBy: ItemSortBy | null
+  maintenanceSortDir: SortDir | null
+  issuesSortBy: IssuesSortBy | null
+  issuesSortDir: SortDir | null
 }
 
 /** Empty MergeableContent in the fully-hashed shape setMergeableContent validates. */
@@ -126,6 +145,12 @@ export function parseBackup(data: unknown): ParsedBackup | null {
       ? obj.distanceUnit
       : null,
     savedBuilds: isV2 ? normalizeSavedBuilds(obj.savedBuilds) : null,
+    modsSortBy: isV2 && isItemSortBy(obj.modsSortBy) ? obj.modsSortBy : null,
+    modsSortDir: isV2 && isSortDir(obj.modsSortDir) ? obj.modsSortDir : null,
+    maintenanceSortBy: isV2 && isItemSortBy(obj.maintenanceSortBy) ? obj.maintenanceSortBy : null,
+    maintenanceSortDir: isV2 && isSortDir(obj.maintenanceSortDir) ? obj.maintenanceSortDir : null,
+    issuesSortBy: isV2 && isIssuesSortBy(obj.issuesSortBy) ? obj.issuesSortBy : null,
+    issuesSortDir: isV2 && isSortDir(obj.issuesSortDir) ? obj.issuesSortDir : null,
   }
 }
 
@@ -137,6 +162,14 @@ export interface BackupSourceState {
   distanceUnit: DistanceUnitCode
   /** Raw savedBuilds table rows (store.getTable('savedBuilds')). */
   savedBuilds?: SavedBuildsBackupTable
+  /** Optional — callers that don't track these (e.g. tests) get the same
+   *  schema defaults a fresh store would materialize. */
+  modsSortBy?: ItemSortBy
+  modsSortDir?: SortDir
+  maintenanceSortBy?: ItemSortBy
+  maintenanceSortDir?: SortDir
+  issuesSortBy?: IssuesSortBy
+  issuesSortDir?: SortDir
 }
 
 export function buildBackupV2(state: BackupSourceState): BackupV2 {
@@ -148,6 +181,12 @@ export function buildBackupV2(state: BackupSourceState): BackupV2 {
     customAccent: state.customAccent,
     currency: state.currency,
     distanceUnit: state.distanceUnit,
+    modsSortBy: state.modsSortBy ?? 'category',
+    modsSortDir: state.modsSortDir ?? 'desc',
+    maintenanceSortBy: state.maintenanceSortBy ?? 'date',
+    maintenanceSortDir: state.maintenanceSortDir ?? 'desc',
+    issuesSortBy: state.issuesSortBy ?? 'date',
+    issuesSortDir: state.issuesSortDir ?? 'desc',
   }
   // Only carry a non-empty Watching list (keeps old-shaped files byte-stable).
   if (state.savedBuilds && Object.keys(state.savedBuilds).length > 0) {
@@ -203,5 +242,14 @@ export function applyBackupImport(options: ApplyBackupOptions): void {
     if (backup.customAccent !== null) store.setValue('customAccent', backup.customAccent)
     store.setValue('currency', tagWith.currency)
     store.setValue('distanceUnit', tagWith.distanceUnit)
+    // Sort/group prefs: absent on v1 and on v2 backups exported before these
+    // existed — the TinyBase Values schema's own defaults apply in that case
+    // (the reset above already cleared any prior value), so nothing to set.
+    if (backup.modsSortBy !== null) store.setValue('modsSortBy', backup.modsSortBy)
+    if (backup.modsSortDir !== null) store.setValue('modsSortDir', backup.modsSortDir)
+    if (backup.maintenanceSortBy !== null) store.setValue('maintenanceSortBy', backup.maintenanceSortBy)
+    if (backup.maintenanceSortDir !== null) store.setValue('maintenanceSortDir', backup.maintenanceSortDir)
+    if (backup.issuesSortBy !== null) store.setValue('issuesSortBy', backup.issuesSortBy)
+    if (backup.issuesSortDir !== null) store.setValue('issuesSortDir', backup.issuesSortDir)
   })
 }

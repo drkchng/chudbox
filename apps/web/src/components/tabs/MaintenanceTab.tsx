@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Plus, Trash2, ClipboardList, Pencil, Check, X, Calendar } from 'lucide-react'
 import { tokens } from '@chudbox/shared'
@@ -11,8 +11,11 @@ import MileageText from '../MileageText'
 import Button from '../ui/Button'
 import IconButton from '../ui/IconButton'
 import Badge from '../ui/Badge'
+import SortControls from '../SortControls'
 import ItemPhotos from '../photos/ItemPhotos'
+import { groupSort } from '../../utils/groupSort'
 import type { MaintenanceRecord, StoredCar, StoredMaintenance, FieldChangeEvent } from '../../types'
+import type { ItemSortBy } from '../../store/adapter'
 
 const SERVICES = ['Oil Change', 'Tire Rotation', 'Brake Pads', 'Brake Fluid', 'Coolant Flush', 'Transmission Fluid', 'Spark Plugs', 'Air Filter', 'Cabin Filter', 'Belt / Chain', 'Battery', 'Alignment', 'Tires', 'Inspection', 'Other']
 
@@ -103,6 +106,10 @@ export default function MaintenanceTab({ car }: MaintenanceTabProps) {
   const distanceUnit = useGarageStore((s) => s.distanceUnit)
   const sym       = CURRENCIES[currency]?.symbol ?? '$'
   const distShort = DISTANCE_UNITS[distanceUnit]?.short ?? 'mi'
+  const sortBy    = useGarageStore((s) => s.maintenanceSortBy)
+  const sortDir   = useGarageStore((s) => s.maintenanceSortDir)
+  const setSortBy  = useGarageStore((s) => s.setMaintenanceSortBy)
+  const setSortDir = useGarageStore((s) => s.setMaintenanceSortDir)
   const [showForm, setShowForm]   = useState(false)
   const [form, setForm]           = useState<MaintenanceForm>(emptyForm)
   const [editId, setEditId]       = useState<string | null>(null)
@@ -148,7 +155,10 @@ export default function MaintenanceTab({ car }: MaintenanceTabProps) {
     setEditId(null)
   }
 
-  const sorted    = [...car.maintenance].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+  const groups = useMemo(
+    () => groupSort(car.maintenance, (r) => r.service, (r) => r.date, sortBy, sortDir),
+    [car.maintenance, sortBy, sortDir],
+  )
   const totalCost = car.maintenance.reduce((s, r) => s + (r.cost || 0), 0)
   // DEC-16 / U2: due/overdue computed by date AND by current mileage (latest
   // check-in) vs each record's next-due mileage — maintenance feeds the timeline
@@ -189,8 +199,23 @@ export default function MaintenanceTab({ car }: MaintenanceTabProps) {
           <p className="text-text-secondary">No maintenance records yet.</p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {sorted.map((rec) => editId === rec.id ? (
+        <>
+          <SortControls<ItemSortBy>
+            sortBy={sortBy}
+            sortByOptions={[
+              { value: 'date', label: 'Date' },
+              { value: 'category', label: 'Service' },
+            ]}
+            onSortByChange={setSortBy}
+            dir={sortDir}
+            dirLabels={{ desc: 'Newest first', asc: 'Oldest first' }}
+            onDirChange={setSortDir}
+          />
+          {groups.map(({ key, label, items: recs }) => (
+            <div key={key} className="mb-6 last:mb-0">
+              <h4 className="mb-2 text-meta font-semibold uppercase tracking-widest text-text-tertiary">{label}</h4>
+              <div className="space-y-3">
+              {recs.map((rec) => editId === rec.id ? (
             <div key={rec.id} className="card border-accent/30 space-y-3">
               <FormFields idPrefix="maint-edit" vals={editForm} onChange={setEdit} sym={sym} distShort={distShort} />
               <div className="flex gap-2">
@@ -245,8 +270,11 @@ export default function MaintenanceTab({ car }: MaintenanceTabProps) {
                 </IconButton>
               </div>
             </div>
+              ))}
+              </div>
+            </div>
           ))}
-        </div>
+        </>
       )}
       {confirmRec && (
         <ConfirmModal

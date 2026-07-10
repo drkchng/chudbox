@@ -33,14 +33,36 @@ export const GARAGE_VALUES_SCHEMA = {
   currency: { type: 'string', default: 'USD' },
   /** 'mi' | 'km' — the unit the user enters distances in. */
   distanceUnit: { type: 'string', default: 'mi' },
+  /** Mods tab sort field: 'category' (grouped) | 'date' (grouped by month). */
+  modsSortBy: { type: 'string', default: 'category' },
+  /** Mods tab sort direction: 'desc' = newest first (default) | 'asc' = oldest first. */
+  modsSortDir: { type: 'string', default: 'desc' },
+  /** Maintenance tab sort field: 'category' (grouped by service) | 'date' (grouped by month). */
+  maintenanceSortBy: { type: 'string', default: 'date' },
+  /** Maintenance tab sort direction: 'desc' = newest first (default) | 'asc' = oldest first. */
+  maintenanceSortDir: { type: 'string', default: 'desc' },
+  /** Issues tab sort field: 'date' (default) | 'severity'. */
+  issuesSortBy: { type: 'string', default: 'date' },
+  /** Issues tab sort direction: 'desc' = newest/most-severe first (default) | 'asc' = reversed. */
+  issuesSortDir: { type: 'string', default: 'desc' },
 } as const satisfies ValuesSchema
 
-/** Typed view of the synced Values. Absent customAccent ⇔ null. */
+/** Typed view of the synced Values. Absent customAccent ⇔ null. The six
+ * sort/group prefs are declared optional here (though the schema always
+ * materializes a default) so call sites that build a `GarageValues` by hand
+ * for a narrower purpose (e.g. GarageDO's public-snapshot settings) don't
+ * have to enumerate private display prefs they never read. */
 export type GarageValues = {
   themeId: string
   customAccent?: string
   currency: string
   distanceUnit: DistanceUnitCode
+  modsSortBy?: 'category' | 'date'
+  modsSortDir?: 'asc' | 'desc'
+  maintenanceSortBy?: 'category' | 'date'
+  maintenanceSortDir?: 'asc' | 'desc'
+  issuesSortBy?: 'date' | 'severity'
+  issuesSortDir?: 'asc' | 'desc'
 }
 
 // ── Tables ──────────────────────────────────────────────────

@@ -139,7 +139,7 @@ const issueArb: fc.Arbitrary<Issue> = fc.record({
   id: idArb,
   title: strArb,
   description: strArb,
-  severity: fc.constantFrom<IssueSeverity>('minor', 'moderate', 'critical'),
+  severity: fc.constantFrom<IssueSeverity>('minor', 'moderate', 'high', 'critical'),
   status: fc.constantFrom<IssueStatus>('open', 'in-progress', 'resolved'),
   createdAt: strArb,
   resolvedAt: fc.option(strArb, { nil: null }),

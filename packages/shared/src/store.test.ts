@@ -32,7 +32,18 @@ describe('schema', () => {
 
   it('declares the planned Values', () => {
     expect(Object.keys(GARAGE_VALUES_SCHEMA).sort()).toEqual(
-      ['themeId', 'customAccent', 'currency', 'distanceUnit'].sort(),
+      [
+        'themeId',
+        'customAccent',
+        'currency',
+        'distanceUnit',
+        'modsSortBy',
+        'modsSortDir',
+        'maintenanceSortBy',
+        'maintenanceSortDir',
+        'issuesSortBy',
+        'issuesSortDir',
+      ].sort(),
     )
   })
 
@@ -66,6 +77,12 @@ describe('createGarageStore', () => {
       themeId: 'garage',
       currency: 'USD',
       distanceUnit: 'mi',
+      modsSortBy: 'category',
+      modsSortDir: 'desc',
+      maintenanceSortBy: 'date',
+      maintenanceSortDir: 'desc',
+      issuesSortBy: 'date',
+      issuesSortDir: 'desc',
     })
   })
 
