@@ -39,9 +39,12 @@ Unblocks every data feature below. **No backfill here.**
 - **Reminders + push** (DEC-18): CF Cron Trigger + synced push tokens; predicts mileage-due from usage rate.
   *[needs DEC-16 + accounts]* — **⏸ DEFERRED (owner, 2026-06-18): captured only, NOT building now — future alley.**
 
-## Phase 5 — Compliance gate (BEFORE marketing) — `COMPLIANCE.md`
+## Phase 5 — Compliance gate (BEFORE marketing) — `COMPLIANCE.md` ✅ SHIPPED (2026-07-09)
 Privacy policy + named privacy officer + `privacy@` contact + cross-border EFVP/DPAs (Cloudflare, Resend) +
 the deletion hook (Phase 4) + breach plan. Gate before onboarding real users — not a dev blocker.
+→ Live: `/privacy` + `/terms` pages, sign-up consent recorded server-side (`user.tos_accepted_version`),
+footer/Settings/share links, `EFVP.md` + `BREACH_PLAN.md`. Two account-side steps remain (COMPLIANCE.md
+status table): the `privacy@` Email Routing rule (DEPLOY.md step 6) and accepting/filing the two DPAs.
 
 ## Phase 6 — Paid tier — `PAYMENTS.md`  ·  ⏸ DEFERRED (owner, 2026-06-18: captured only, not building now)
 MoR (Polar with QST confirmed, else Paddle) + an entitlement check in the Workers backend. Annual or >$5.

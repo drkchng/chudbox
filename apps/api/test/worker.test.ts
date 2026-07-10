@@ -32,6 +32,7 @@ describe('Better Auth handler at /api/auth/*', () => {
         email: 'smoke@example.com',
         password: 'correct-horse-battery',
         name: 'Smoke Test',
+        tosAcceptedVersion: 1,
       }),
     })
     expect(res.status).not.toBe(404)
@@ -50,6 +51,7 @@ describe('Better Auth handler at /api/auth/*', () => {
           email: 'persisted@example.com',
           password: 'correct-horse-battery',
           name: 'Persisted User',
+          tosAcceptedVersion: 1,
         }),
       },
     )
@@ -57,13 +59,36 @@ describe('Better Auth handler at /api/auth/*', () => {
 
     const { env } = await import('cloudflare:test')
     const row = await env.DB.prepare(
-      'SELECT email, email_verified FROM user WHERE email = ?',
+      'SELECT email, email_verified, tos_accepted_version FROM user WHERE email = ?',
     )
       .bind('persisted@example.com')
-      .first<{ email: string; email_verified: number }>()
+      .first<{ email: string; email_verified: number; tos_accepted_version: number }>()
     expect(row?.email).toBe('persisted@example.com')
     // requireEmailVerification: the fresh user must not be verified yet.
     expect(row?.email_verified).toBe(0)
+    // The consent record (accepted Terms version) is stored on the row.
+    expect(row?.tos_accepted_version).toBe(1)
+  })
+
+  it('rejects sign-up without a Terms acceptance (required additionalField)', async () => {
+    const res = await SELF.fetch('https://example.com/api/auth/sign-up/email', {
+      method: 'POST',
+      // Distinct client IP: sign-up has a strict per-IP rate-limit bucket
+      // (3/window) and this file's other tests already spend it.
+      headers: { 'Content-Type': 'application/json', 'cf-connecting-ip': '203.0.113.77' },
+      body: JSON.stringify({
+        email: 'no-consent@example.com',
+        password: 'correct-horse-battery',
+        name: 'No Consent',
+      }),
+    })
+    expect(res.status).toBe(400)
+
+    const { env } = await import('cloudflare:test')
+    const row = await env.DB.prepare('SELECT email FROM user WHERE email = ?')
+      .bind('no-consent@example.com')
+      .first()
+    expect(row).toBeNull()
   })
 
   it('refuses sign-in before email verification (requireEmailVerification)', async () => {
@@ -74,6 +99,7 @@ describe('Better Auth handler at /api/auth/*', () => {
         email: 'unverified@example.com',
         password: 'correct-horse-battery',
         name: 'Unverified',
+        tosAcceptedVersion: 1,
       }),
     })
     const signIn = await SELF.fetch(

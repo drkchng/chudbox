@@ -31,6 +31,14 @@ describe('clean-URL routes resolve', () => {
     expect(matchPath(ROUTES.authVerified, '/auth/verified')).not.toBeNull()
   })
 
+  it('matches the legal pages', () => {
+    expect(matchPath(ROUTES.terms, '/terms')).not.toBeNull()
+    expect(matchPath(ROUTES.privacy, '/privacy')).not.toBeNull()
+    // …and neither is swallowed by the car or share patterns.
+    expect(matchPath(ROUTES.car, '/terms')).toBeNull()
+    expect(matchPath(ROUTES.share, '/privacy')).toBeNull()
+  })
+
   it('does not cross-match a share path onto the car route', () => {
     expect(matchPath(ROUTES.car, '/share/abc')).toBeNull()
   })

@@ -1,4 +1,5 @@
 import { createAuthClient } from 'better-auth/react'
+import { inferAdditionalFields } from 'better-auth/client/plugins'
 
 /**
  * Same-origin Better Auth client.
@@ -14,7 +15,17 @@ import { createAuthClient } from 'better-auth/react'
  * failures land in its `error` field, which callers ignore for rendering
  * decisions.
  */
-export const authClient = createAuthClient()
+// The manual inferAdditionalFields schema mirrors the server's required
+// `tosAcceptedVersion` additionalField (apps/api/src/auth.ts) so signUp.email
+// accepts the consent field with types intact; the web app never imports
+// api types directly.
+export const authClient = createAuthClient({
+  plugins: [
+    inferAdditionalFields({
+      user: { tosAcceptedVersion: { type: 'number', required: true } },
+    }),
+  ],
+})
 
 /**
  * Callback paths are CLEAN, relative app routes (BrowserRouter — M5).

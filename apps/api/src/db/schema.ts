@@ -50,6 +50,13 @@ export const user = sqliteTable('user', {
   showOwnerName: integer('show_owner_name', { mode: 'boolean' })
     .notNull()
     .default(true),
+  // Consent record (Law 25 s.14 / GDPR): which Terms version the user accepted
+  // at sign-up (acceptance time = created_at). Required for NEW accounts by the
+  // Better Auth additionalField in auth.ts; nullable here because pre-policy
+  // rows have no record, and an additive ADD COLUMN must not rebuild `user`
+  // (a rebuild fires the ON DELETE CASCADE chain into session/account/
+  // share_links).
+  tosAcceptedVersion: integer('tos_accepted_version'),
 })
 
 export const session = sqliteTable(

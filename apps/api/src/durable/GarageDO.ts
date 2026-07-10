@@ -1,13 +1,13 @@
 /**
  * GarageDO — one Durable Object per user, holding that user's entire garage
- * as a TinyBase MergeableStore persisted to DO SQLite storage.
- *
- * CRITICAL (plan risk #1): the persister MUST run in FRAGMENTED mode.
- * The default JSON mode serializes the whole store (rows + per-cell HLC
- * metadata) into ONE SQLite row and silently breaks sync at Cloudflare's 2 MB
- * row limit. Fragmented mode stores one row per cell. Signature and
- * `{mode: 'fragmented'}` literal verified against the installed tinybase@8.4.2
- * (@types/persisters/persister-durable-object-sql-storage/index.d.ts).
+ * as a TinyBase MergeableStore persisted as ONE gzipped snapshot blob in DO
+ * key-value storage (see snapshotPersister.ts for the full rationale: the DO
+ * serves every read from memory, so persistence is a document workload, and
+ * Cloudflare bills DO storage per SQLite row touched — the previous per-cell
+ * fragmented layout cost ~27 billed rows per transaction and grew without
+ * bound). Pre-snapshot storage is migrated in place on first wake
+ * (migrateFragmentedStorage — idempotent, snapshot written before the legacy
+ * tables drop).
  *
  * Store reference + write bounding (verified against the installed
  * tinybase@8.4.2 sources):
@@ -15,16 +15,21 @@
  *   inside `ctx.blockConcurrencyWhile`, then `persister.load()` +
  *   `persister.startAutoSave()` and attaches its server-side synchronizer —
  *   so by the time ANY fetch/RPC is delivered, `this.store` (assigned inside
- *   our createPersister override) is set, hydrated from SQL, and auto-saving.
- *   `store` is a `declare`d property (NO class-field initializer): the base
- *   constructor may invoke createPersister() synchronously during super(),
- *   and a field initializer running afterwards would clobber the assignment.
- * - `startAutoSave()` registers a did-finish-transaction listener that saves
- *   ONLY that transaction's changes, and the fragmented `setPersisted` writes
- *   one SQL row per changed cell. `applyMergeableChanges` wraps each chunk in
- *   exactly one transaction (applyChanges → fluentTransaction), so EACH
- *   seedGarage/clearGarage batch is its own bounded storage write — the #268
- *   mitigation.
+ *   our createPersister override) is set, hydrated from the snapshot, and
+ *   auto-saving. `store` is a `declare`d property (NO class-field
+ *   initializer): the base constructor may invoke createPersister()
+ *   synchronously during super(), and a field initializer running afterwards
+ *   would clobber the assignment.
+ * - `startAutoSave()` registers a did-finish-transaction listener: every
+ *   applied transaction enqueues one O(1)-row snapshot save on the
+ *   persister's serialized queue (the save is async — gzip — so a crash in
+ *   that brief window loses only the tail transaction server-side, and the
+ *   local-first client re-exchanges it on the next attach).
+ *   `applyMergeableChanges` wraps each chunk in exactly
+ *   one transaction (applyChanges → fluentTransaction), so seed/clear chunks
+ *   stay bounded units of MEMORY and message size — the #268 concern (one
+ *   giant un-chunkable apply) is bounded at the protocol layer; the save
+ *   cost no longer depends on transaction size at all.
  * - The store is deliberately SCHEMA-LESS: the DO is a dumb replica. A schema
  *   here would let validation drop incoming cells while their merged stamps
  *   survive (raw store and stamp map would diverge), and Values defaults
@@ -35,13 +40,14 @@
  * anywhere else, and the DO name is always idFromName(verified userId).
  *
  * The wrangler migration for this class MUST use `new_sqlite_classes`
- * (SQLite-backed DOs run on the Workers Free plan; `this.ctx.storage.sql`
- * only exists on SQLite-backed classes).
+ * (`this.ctx.storage.sql` — which the legacy-storage migration needs — only
+ * exists on SQLite-backed classes, and their KV API bills as SQLite rows).
  */
 import { createMergeableStore } from 'tinybase'
 import type { MergeableStore } from 'tinybase'
-import { createDurableObjectSqlStoragePersister } from 'tinybase/persisters/persister-durable-object-sql-storage'
+import type { Persister, Persists } from 'tinybase/persisters'
 import { WsServerDurableObject } from 'tinybase/synchronizers/synchronizer-ws-server-durable-object'
+import { createSnapshotPersister, migrateFragmentedStorage } from './snapshotPersister'
 import {
   DEFAULT_SEED_CHUNK_CELLS,
   GARAGE_TABLE_IDS,
@@ -88,14 +94,22 @@ export type GarageSeedResult =
 export class GarageDO extends WsServerDurableObject<Env> {
   /** Assigned in createPersister — see module docblock for why `declare`. */
   declare store: MergeableStore | undefined
+  /** Assigned in createPersister (the base class keeps its own reference in a
+   * constructor closure); purgeAll needs the serialized save scheduler. */
+  declare persister: Persister<Persists.MergeableStoreOnly> | undefined
 
-  override createPersister() {
+  override async createPersister() {
     const store = createMergeableStore()
     this.store = store
-    // FRAGMENTED mode — see module docblock. Do not remove or default this.
-    return createDurableObjectSqlStoragePersister(store, this.ctx.storage.sql, {
-      mode: 'fragmented',
-    })
+    await migrateFragmentedStorage(this.ctx.storage)
+    // The persister core swallows save/load errors; without this logger a
+    // persistent put failure (e.g. a blob past the 2 MB cap) would leave
+    // every subsequent edit un-persisted with zero trace.
+    const persister = createSnapshotPersister(store, this.ctx.storage, (error) =>
+      console.error('GarageDO persister:', error),
+    )
+    this.persister = persister
+    return persister
   }
 
   private getStore(): MergeableStore {
@@ -111,16 +125,16 @@ export class GarageDO extends WsServerDurableObject<Env> {
    * M2: apply one bounded chunk of a client's stamped mergeable content
    * BEFORE the synchronizer attaches, so that attach exchanges only genuine
    * deltas (never the un-chunkable full-store setPersisted of TinyBase #268).
-   * One chunk = one transaction = one bounded fragmented save. Idempotent:
+   * One chunk = one transaction = one bounded apply (the snapshot save that
+   * follows costs O(1) rows regardless of chunk size). Idempotent:
    * re-applying a chunk is a per-cell LWW no-op (original HLCs preserved).
    *
-   * Known nuance (observed against real storage in the test suite): a seeded
-   * TOMBSTONE for a cell this store never held live doesn't change the raw
-   * store, so the per-transaction auto-save has nothing to persist for it —
-   * it exists in the in-memory stamp map only. After a DO restart the next
-   * attach re-exchanges exactly those cells from the client (which always
-   * retains them); bounded and convergent, so accepted rather than worked
-   * around with a full-store save (which would be #268 again).
+   * Nuance: a seeded TOMBSTONE for a cell this store never held live doesn't
+   * change the raw store, so its own transaction may have nothing to
+   * auto-save — but any later snapshot save persists the FULL stamp map,
+   * tombstone included. Until one happens, a DO restart falls back to the
+   * attach re-exchanging exactly those cells from the client (which always
+   * retains them); bounded and convergent either way.
    */
   seedGarage(encodedChunk: string): GarageSeedResult {
     let chunk
@@ -149,8 +163,8 @@ export class GarageDO extends WsServerDurableObject<Env> {
    * and stamps alive on other devices). The deletions mint fresh HLCs that
    * out-stamp everything previously merged (the store clock has `seenHlc`'d
    * every applied stamp), so the tombstones win under LWW everywhere. Work is
-   * split into bounded per-transaction batches: each batch is its own
-   * fragmented persister save (#268 again).
+   * split into bounded per-transaction batches, keeping each apply (and the
+   * synchronizer delta it relays) a bounded unit of work.
    */
   clearGarage(request: ClearGarageRequest): ClearGarageResponse {
     const store = this.getStore()
@@ -209,10 +223,11 @@ export class GarageDO extends WsServerDurableObject<Env> {
    *     live cell or Value remains in the store an attached synchronizer could
    *     push back to a client, and the per-transaction auto-save persists the
    *     now-empty state.
-   *  2. ctx.storage.deleteAll() — drop EVERY DO SQLite row: the fragmented
-   *     persister's one-row-per-cell-stamp tables (cars, photos incl. r2Key,
-   *     mileage, savedBuilds incl. the bearer `token`, …) AND any persister
-   *     bookkeeping. The next load() rehydrates an empty store.
+   *  2. ctx.storage.deleteAll() — drop EVERYTHING this DO ever stored: the
+   *     snapshot blob (cars, photos incl. r2Key, mileage, savedBuilds incl.
+   *     the bearer `token`, … plus every stamp), any not-yet-migrated legacy
+   *     tables, and all bookkeeping. The next load() rehydrates an empty
+   *     store.
    *
    * Unlike clearGarage (which TOMBSTONES rows so deletions CRDT-propagate to
    * other still-syncing devices), purgeAll is an erasure: the account is going
@@ -222,27 +237,36 @@ export class GarageDO extends WsServerDurableObject<Env> {
    */
   async purgeAll(): Promise<{ purged: true }> {
     const store = this.getStore()
+    const persister = this.persister
+    if (!persister) {
+      // Unreachable — createPersister assigns it before any RPC (see getStore).
+      throw new Error('GarageDO persister is not initialized')
+    }
     store.transaction(() => {
       store.delTables()
       store.delValues()
     })
-    // Drop the fragmented persister's SQLite rows (and everything else this DO
-    // ever stored). Awaited so the RPC only resolves once at-rest state is gone.
-    await this.ctx.storage.deleteAll()
+    // The transaction above enqueues an ASYNC autosave of the emptied state.
+    // Running deleteAll through the persister's own serialized scheduler
+    // guarantees it lands AFTER that save — a bare `await deleteAll()` could
+    // lose the race and let the late save write a snapshot back into storage
+    // that is supposed to be erased. Awaited so the RPC only resolves once
+    // at-rest state is gone.
+    await persister.schedule(async () => {
+      await this.ctx.storage.deleteAll()
+    })
     return { purged: true }
   }
 
   /**
    * M2: live-row counts per table + emptiness (tombstones don't count).
    *
-   * Null-awareness (upstream quirk, verified in the installed fragmented
-   * persister source): `setPersisted` stores a tombstoned cell/value as
-   * `JSON.stringify([undefined])` === `'[null]'`, so after a DO restart
-   * `getPersisted` resurrects tombstones as live `null` cells/values (the
-   * stamp hash stays consistent — `getValueHash(undefined ?? null)` — so sync
-   * is unaffected). The garage schema has no allowNull cells, therefore a
-   * null cell here can only be that artifact: rows whose cells are all null
-   * and null values are not counted as live.
+   * Null-awareness (defense in depth): no live path produces a null cell
+   * today — the adapter never writes one, and the snapshot persister's
+   * reviveTombstones restores JSON-mangled tombstones to undefined on every
+   * load and during the legacy migration. The garage schema has no allowNull
+   * cells, so a null cell can only ever be a tombstone-encoding artifact:
+   * rows whose cells are all null and null values are not counted as live.
    */
   getMeta(): SyncMetaResponse {
     const store = this.getStore()
@@ -287,10 +311,10 @@ export class GarageDO extends WsServerDurableObject<Env> {
    * userId/email, and every internal row id beyond the photoId — for THIS car
    * only (one DO = one user; one carId = one car).
    *
-   * Returns null when the car does not exist (row absent, or fully tombstoned:
-   * a DO restart resurrects tombstoned cells as live `null`s — see getMeta —
-   * so "no non-null cell" is the not-found test). The share route lazy-revokes
-   * and serves 410 on null.
+   * Returns null when the car does not exist (row absent, or fully
+   * tombstoned — "no non-null cell" is the not-found test; see getMeta's
+   * null-awareness note). The share route lazy-revokes and serves 410 on
+   * null.
    *
    * No writes. The DO store is schema-less, so child rows are gathered by
    * filtering each child table on its `carId` cell rather than via a TinyBase
@@ -350,8 +374,8 @@ export class GarageDO extends WsServerDurableObject<Env> {
     return typeof r2Key === 'string' && r2Key !== '' ? r2Key : null
   }
 
-  /** Child rows whose `carId` cell equals `carId` (tombstoned rows resurrect
-   * with a null carId, so they never match). */
+  /** Child rows whose `carId` cell equals `carId` (a tombstoned or
+   * null-artifact row reads with no matching carId, so it never matches). */
   private collectChildRows<T>(
     tableId: ChildTableId,
     carId: string,

@@ -115,6 +115,11 @@ function ShareFooter() {
           Make your own garage on Chudbox
           <ArrowRight size={tokens.iconSize.md} aria-hidden />
         </Link>
+        <p className="mt-8 text-meta text-text-tertiary">
+          <Link to="/terms" className="transition-colors hover:text-accent">Terms of Service</Link>
+          <span aria-hidden> · </span>
+          <Link to="/privacy" className="transition-colors hover:text-accent">Privacy Policy</Link>
+        </p>
       </div>
     </footer>
   )

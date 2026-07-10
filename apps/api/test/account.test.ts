@@ -18,7 +18,7 @@ beforeAll(async () => {
   const signUp = await SELF.fetch(`${BASE}/api/auth/sign-up/email`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password, name: 'Account Tester' }),
+    body: JSON.stringify({ email, password, name: 'Account Tester', tosAcceptedVersion: 1 }),
   })
   expect(signUp.ok).toBe(true)
   const { user } = (await signUp.json()) as { user: { id: string } }

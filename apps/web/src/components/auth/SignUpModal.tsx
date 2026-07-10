@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import { AlertTriangle, MailCheck } from 'lucide-react'
-import { tokens } from '@chudbox/shared'
+import { tokens, TOS_VERSION } from '@chudbox/shared'
 import { authClient, VERIFIED_CALLBACK_PATH } from '../../auth/client'
 import { authErrorMessage, callAuth, MIN_PASSWORD_LENGTH } from '../../auth/errors'
 import Modal from '../ui/Modal'
@@ -36,8 +37,17 @@ export default function SignUpModal({ onClose, onSignIn }: SignUpModalProps) {
     }
     setMismatch(false)
     setBusy(true)
+    // tosAcceptedVersion is the Law 25/GDPR consent record: the form can't
+    // submit until the (never pre-checked) agreement box is ticked, and the
+    // server refuses account creation without the field.
     const { error } = await callAuth(
-      authClient.signUp.email({ name, email, password, callbackURL: VERIFIED_CALLBACK_PATH }),
+      authClient.signUp.email({
+        name,
+        email,
+        password,
+        tosAcceptedVersion: TOS_VERSION,
+        callbackURL: VERIFIED_CALLBACK_PATH,
+      }),
     )
     setBusy(false)
     if (error) {
@@ -153,6 +163,26 @@ export default function SignUpModal({ onClose, onSignIn }: SignUpModalProps) {
             </p>
           )}
         </div>
+
+        <label className="flex cursor-pointer select-none items-start gap-2.5">
+          <input
+            type="checkbox"
+            name="tos-agree"
+            required
+            className="mt-px size-[18px] shrink-0 rounded-sm accent-accent"
+          />
+          <span className="text-meta text-text-secondary">
+            I agree to the{' '}
+            <Link to="/terms" target="_blank" className="font-medium text-accent underline-offset-2 hover:underline">
+              Terms of Service
+            </Link>{' '}
+            and{' '}
+            <Link to="/privacy" target="_blank" className="font-medium text-accent underline-offset-2 hover:underline">
+              Privacy Policy
+            </Link>
+            .
+          </span>
+        </label>
 
         {error && (
           <div

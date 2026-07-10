@@ -108,6 +108,9 @@ export async function signUpViaSettings(page: Page, creds: Credentials): Promise
   await page.getByLabel('Email').fill(creds.email)
   await page.getByLabel('Password', { exact: true }).fill(creds.password)
   await page.getByLabel('Confirm password').fill(creds.password)
+  // Required (never pre-checked) Terms/Privacy consent; sign-up refuses
+  // without it, client- and server-side.
+  await page.getByRole('checkbox', { name: /terms of service/i }).check()
   await page.getByLabel('Confirm password').press('Enter')
   await expect(page.getByRole('heading', { name: 'Check your inbox' })).toBeVisible()
   await page.getByRole('button', { name: 'Done', exact: true }).click()

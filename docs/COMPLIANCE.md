@@ -24,6 +24,21 @@
   IP use is covered by s.12(3).) **But disclose both in the privacy policy.** Adding any analytics/ad
   tracker later flips this (needs consent, off-by-default).
 
+## Status (2026-07-09, compliance pass shipped)
+
+| Obligation (item below) | State |
+|---|---|
+| 1. Person responsible named + published | ✅ chudbox.com/privacy (Felix Rouleau, privacy@chudbox.com) |
+| 2. Privacy policy published | ✅ `/privacy` page; Terms at `/terms`; pointers in `PRIVACY_POLICY.md` |
+| 3. Deletion purges all stores | ✅ shipped in the Phase 4 pass (D1+DO+R2, `account-delete.test.ts`) |
+| 4. 30-day response process | ✅ committed in the policy; manual handling via privacy@ |
+| 5. Cross-border EFVP + DPAs | ✅ `EFVP.md` written · ⬜ **accept + file the two DPAs (account-side)** |
+| 6. Breach plan + register | ✅ `BREACH_PLAN.md` |
+| 7. Privacy by default | ✅ shares opt-in; opt-in fields off by default |
+| 8. Consent hygiene | ✅ sign-up checkbox (never pre-checked), version recorded server-side (`user.tos_accepted_version`, enforced) |
+| Portability (was DO LATER) | ✅ already live: Settings → Backup & data JSON export |
+| privacy@chudbox.com delivery | ⬜ **create the Cloudflare Email Routing rule (account-side, DEPLOY.md)** |
+
 ## DO NOW — minimal baseline before marketing / real users (cheap, mostly one-time)
 
 1. **Name yourself the "person responsible for the protection of PI"** (s.3.1) and **publish your title

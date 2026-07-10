@@ -44,6 +44,20 @@ export function createAuth(env: AuthEnv) {
       // D1 has no interactive transactions; execute operations sequentially.
       transaction: false,
     }),
+    // Consent record: sign-up must carry the Terms version the user accepted
+    // (the web client sends TOS_VERSION with the sign-up call). `required:
+    // true` makes Better Auth's parseInputData reject account creation with
+    // BAD_REQUEST when the field is missing, so no account can exist without
+    // a recorded acceptance; acceptance time = user.createdAt.
+    user: {
+      additionalFields: {
+        tosAcceptedVersion: {
+          type: 'number',
+          required: true,
+          input: true,
+        },
+      },
+    },
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: true,

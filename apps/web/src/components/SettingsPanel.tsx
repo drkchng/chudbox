@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
-import { X, DollarSign, Gauge, Palette, Check, Pipette, DatabaseBackup, Download, Upload, AlertTriangle } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { X, DollarSign, Gauge, Palette, Check, Pipette, DatabaseBackup, Download, Upload, AlertTriangle, Scale } from 'lucide-react'
+import { LEGAL_CONTACT_EMAIL } from '@chudbox/shared'
 import useGarageStore, { exportBackup, importBackup, parseBackupFile } from '../store/useGarageStore'
 import type { ParsedBackup } from '../store/useGarageStore'
 import AccountSection from './auth/AccountSection'
@@ -294,6 +296,29 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
                 <span>{importError}</span>
               </div>
             )}
+          </section>
+
+          {/* Legal: the published policies + the Law 25 privacy contact. */}
+          <section>
+            <div className="mb-1 flex items-center gap-2">
+              <Scale size={14} className="text-text-tertiary" />
+              <h3 className="text-body font-semibold text-text-primary">About &amp; legal</h3>
+            </div>
+            <p className="mb-3 text-meta text-text-secondary">
+              Chudbox is a personal project. Questions or requests about your data:{' '}
+              <a href={`mailto:${LEGAL_CONTACT_EMAIL}`} className="text-accent underline-offset-2 hover:underline">
+                {LEGAL_CONTACT_EMAIL}
+              </a>
+              .
+            </p>
+            <div className="flex flex-col gap-1.5 text-meta">
+              <Link to="/terms" className="text-text-secondary transition-colors hover:text-accent">
+                Terms of Service
+              </Link>
+              <Link to="/privacy" className="text-text-secondary transition-colors hover:text-accent">
+                Privacy Policy
+              </Link>
+            </div>
           </section>
 
           {/* G4 / Law-25 — Danger zone: irreversible account deletion. Renders

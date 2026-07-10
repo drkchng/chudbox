@@ -18,4 +18,7 @@ export const ROUTES = {
   authReset: '/auth/reset',
   /** Email landing: post-verification notice. */
   authVerified: '/auth/verified',
+  /** Public legal pages (linked from sign-up consent, footers, Settings). */
+  terms: '/terms',
+  privacy: '/privacy',
 } as const

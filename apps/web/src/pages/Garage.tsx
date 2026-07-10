@@ -14,7 +14,7 @@ export default function Garage() {
   const [showSettings, setShowSettings] = useState(false)
 
   return (
-    <div className="min-h-screen bg-dark">
+    <div className="flex min-h-screen flex-col bg-dark">
       {/* Header */}
       <header className="sticky top-0 z-10 border-b border-border bg-surface">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
@@ -44,7 +44,7 @@ export default function Garage() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-6 py-10">
+      <main className="mx-auto w-full max-w-7xl flex-1 px-6 py-10">
         {cars.length === 0 ? (
           /* M4 — empty state */
           <div className="flex flex-col items-center justify-center py-32 text-center">
@@ -79,6 +79,14 @@ export default function Garage() {
           </>
         )}
       </main>
+
+      <footer className="border-t border-border">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-4 gap-y-1 px-6 py-5 text-meta text-text-tertiary">
+          <span>Chudbox · a personal project</span>
+          <Link to="/terms" className="transition-colors hover:text-accent">Terms of Service</Link>
+          <Link to="/privacy" className="transition-colors hover:text-accent">Privacy Policy</Link>
+        </div>
+      </footer>
 
       {showAdd      && <AddCarModal   onClose={() => setShowAdd(false)} />}
       {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}

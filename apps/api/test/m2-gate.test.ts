@@ -1,5 +1,5 @@
 /**
- * M2 EMPIRICAL GATE — measure TinyBase #268 fragmented-persister behavior
+ * M2 EMPIRICAL GATE — measure TinyBase #268 sync write-shape behavior
  * against a real (local workerd) GarageDO and prove the chunked-stamped-seed
  * mitigation works (BACKEND_PLAN.md: "Critical persistence detail", Risk #1,
  * Verification M2 (b)/(c)).
@@ -7,18 +7,21 @@
  * What runs here, in order (one file so measurements never run in parallel):
  *  1. A large deterministic synthetic garage (20 cars x years of history),
  *     comfortably past the ~200 KB single-save zone reported in #268.
- *  2. (b) Storage-behavior probe: many small per-cell rows, no JSON blob row
- *     — asserted by row counts/sizes over DISCOVERED tables, not names.
+ *  2. (b) Storage-behavior probe: the whole garage persists as ONE gzipped
+ *     snapshot blob in KV storage (no user SQL tables), measured well under
+ *     the 2 MB KV value cap.
  *  3. (c) THE GATE: chunked stamped seeding of the EMPTY DO through the real
  *     session-authed /api/sync/seed route, then a REAL WsSynchronizer client
- *     attached to /sync. Asserts the post-seed exchange writes ZERO rows on
- *     the DO, genuine deltas stay bounded, and a fresh second client
- *     down-syncs the full garage.
+ *     attached to /sync. Asserts the post-seed exchange persists NOTHING on
+ *     the DO (byte-identical snapshot), genuine deltas do persist, and a
+ *     fresh second client down-syncs the full garage read-only.
  *  4. Premise falsification: a control DO seeded with PLAIN values (fresh
- *     server-minted stamps). On attach, the synchronizer rewrites every cell
- *     row in ~one unbounded save — the exact write the stamped seed avoids.
+ *     server-minted stamps). On attach, the synchronizer exchanges
+ *     full-store diffs (~the whole serialized garage per round) — the exact
+ *     traffic the stamped seed avoids.
  *  5. Ceiling probe: 1k/5k/20k/50k cells in ONE applyMergeableChanges save,
- *     timed, plus a guarded cold-start (constructor full-save) probe.
+ *     timed, with the compressed snapshot measured against the 2 MB cap,
+ *     plus a guarded cold-start probe.
  *
  * Auth choice (task: "justify the choice"): the gate path uses the REAL
  * session-authed routes (/api/sync/seed, /sync) with a user signed up through
@@ -32,7 +35,8 @@
  * neither production CPU/wall-clock limits nor the 1 MiB WebSocket
  * message-receive cap, so "no DO reset locally" is NOT evidence of production
  * safety. The gate's strength is the measured WRITE SHAPE contrast
- * (zero-row attach vs full-store rewrite), which is runtime-independent.
+ * (no-op attach vs full-store reconcile traffic), which is
+ * runtime-independent.
  *
  * Timing note: workerd only advances Date.now() at I/O boundaries, so
  * measurements taken across awaited DO/HTTP calls are real elapsed time,
@@ -62,6 +66,7 @@ import type {
   SyncMetaResponse,
 } from '@chudbox/shared'
 import type { GarageDO } from '../src/durable/GarageDO'
+import { SNAPSHOT_KEY, loadSnapshotContent } from '../src/durable/snapshotPersister'
 
 const BASE = 'https://example.com'
 const SETTINGS: FlattenSettings = { currency: 'USD', distanceUnit: 'mi' }
@@ -76,7 +81,7 @@ beforeAll(async () => {
   const signUp = await SELF.fetch(`${BASE}/api/auth/sign-up/email`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password, name: 'M2 Gate' }),
+    body: JSON.stringify({ email, password, name: 'M2 Gate', tosAcceptedVersion: 1 }),
   })
   expect(signUp.ok).toBe(true)
   const { user } = (await signUp.json()) as { user: { id: string } }
@@ -294,65 +299,15 @@ function userTableNames(sql: SqlStorage): string[] {
     .filter((name) => !name.startsWith('_cf_') && !name.startsWith('sqlite_'))
 }
 
-interface StorageProbe {
-  tables: { name: string; rows: number; totalBytes: number; maxRowBytes: number }[]
-  totalRows: number
-  totalBytes: number
-  maxRowBytes: number
-}
-
-function probeStorage(sql: SqlStorage): StorageProbe {
-  const tables = userTableNames(sql).map((name) => {
-    let rows = 0
-    let totalBytes = 0
-    let maxRowBytes = 0
-    for (const row of sql.exec(`SELECT * FROM "${name}"`)) {
-      rows += 1
-      const bytes = JSON.stringify(row).length
-      totalBytes += bytes
-      if (bytes > maxRowBytes) maxRowBytes = bytes
-    }
-    return { name, rows, totalBytes, maxRowBytes }
-  })
-  return {
-    tables,
-    totalRows: tables.reduce((sum, t) => sum + t.rows, 0),
-    totalBytes: tables.reduce((sum, t) => sum + t.totalBytes, 0),
-    maxRowBytes: tables.reduce((max, t) => Math.max(max, t.maxRowBytes), 0),
-  }
-}
-
 /**
- * Multiset of every persisted row (ground truth for "what did this exchange
- * write?"): an updated row counts as one removal + one addition.
+ * Byte-equality over snapshot blobs: identical bytes mean the exchange
+ * persisted nothing (or only LWW no-ops that re-serialize identically).
  */
-function snapshotRows(sql: SqlStorage): Map<string, number> {
-  const snapshot = new Map<string, number>()
-  for (const name of userTableNames(sql)) {
-    for (const row of sql.exec(`SELECT * FROM "${name}"`)) {
-      const key = `${name} ${JSON.stringify(row)}`
-      snapshot.set(key, (snapshot.get(key) ?? 0) + 1)
-    }
-  }
-  return snapshot
-}
-
-function diffRowSnapshots(
-  before: Map<string, number>,
-  after: Map<string, number>,
-): { added: number; removed: number } {
-  let added = 0
-  let removed = 0
-  for (const [key, count] of after) {
-    const prev = before.get(key) ?? 0
-    if (count > prev) added += count - prev
-  }
-  for (const [key, count] of before) {
-    const next = after.get(key) ?? 0
-    if (count > next) removed += count - next
-  }
-  return { added, removed }
-}
+const bytesEqual = (a: Uint8Array | undefined, b: Uint8Array | undefined): boolean =>
+  a !== undefined &&
+  b !== undefined &&
+  a.byteLength === b.byteLength &&
+  a.every((byte, i) => byte === b[i])
 
 // ── DO access helpers ───────────────────────────────────────────────────────
 
@@ -360,13 +315,57 @@ const gateStub = () => env.GARAGE_DO.get(env.GARAGE_DO.idFromName(session.userId
 const namedStub = (name: string) => env.GARAGE_DO.get(env.GARAGE_DO.idFromName(name))
 type Stub = ReturnType<typeof namedStub>
 
-const doSnapshot = (stub: Stub) =>
-  runInDurableObject(stub, (_instance, state) => snapshotRows(state.storage.sql))
+const snapshotBytes = (stub: Stub) =>
+  runInDurableObject(stub, (_instance, state) =>
+    state.storage.get<Uint8Array>(SNAPSHOT_KEY),
+  )
 
 const doHashes = (stub: Stub) =>
   runInDurableObject(stub, (instance) =>
     (instance as GarageDO).store!.getMergeableContentHashes(),
   )
+
+/**
+ * Snapshot saves are async (gzip streams), so an awaited route/RPC response
+ * can land before its transaction's save does — poll the at-rest blob until
+ * `done` accepts it.
+ */
+async function waitForSnapshot(
+  stub: Stub,
+  done: (bytes: Uint8Array | undefined) => boolean,
+  what: string,
+  timeoutMs = 20_000,
+): Promise<Uint8Array | undefined> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    const bytes = await snapshotBytes(stub)
+    if (done(bytes)) return bytes
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`)
+    await sleep(50)
+  }
+}
+
+/** Poll until the at-rest snapshot hydrates to exactly these hashes. */
+async function waitForPersistedHashes(
+  stub: Stub,
+  hashes: unknown,
+  what: string,
+  timeoutMs = 20_000,
+): Promise<void> {
+  const want = JSON.stringify(hashes)
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    const got = await runInDurableObject(stub, async (_instance, state) => {
+      const content = await loadSnapshotContent(state.storage)
+      const rehydrated = createMergeableStore()
+      if (content !== undefined) rehydrated.setMergeableContent(content)
+      return JSON.stringify(rehydrated.getMergeableContentHashes())
+    })
+    if (got === want) return
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`)
+    await sleep(50)
+  }
+}
 
 // ── Real WsSynchronizer client over the Worker's /sync route ────────────────
 
@@ -583,64 +582,71 @@ describe('M2 gate: #268 fragmented-persister behavior against a real DO', () => 
         clientA.getMergeableContentHashes(),
       )
 
-      // 3. (b) Storage behavior: many small per-cell rows in DISCOVERED
-      // tables — never one JSON blob row (which would be ~serializedBytes).
-      const probe = await runInDurableObject(gateStub(), (_instance, state) =>
-        probeStorage(state.storage.sql),
+      // 3. (b) Storage behavior: ONE compressed snapshot blob in KV storage,
+      // no user SQL tables — sitting far under the 2 MB KV value cap. Saves
+      // are async, so first wait for the at-rest state to catch up with the
+      // seeded store (this doubles as the at-rest fidelity check: hydrating
+      // the blob reproduces the client's exact hashes, tombstones included).
+      await waitForPersistedHashes(
+        gateStub(),
+        clientA.getMergeableContentHashes(),
+        'the seeded snapshot to settle',
+      )
+      const snapAfterSeed = await snapshotBytes(gateStub())
+      const sqlTables = await runInDurableObject(gateStub(), (_instance, state) =>
+        userTableNames(state.storage.sql),
       )
       report.storage = {
-        tables: probe.tables,
-        totalRows: probe.totalRows,
-        totalBytes: probe.totalBytes,
-        maxRowBytes: probe.maxRowBytes,
-        // Everything beyond one row per live cell/value is persister
-        // overhead (parent-stamp rows; duplicated per save — see M2_GATE.md).
-        overheadRows: probe.totalRows - stats.liveCells - stats.values,
+        sqlTables,
+        snapshotBytes: snapAfterSeed?.byteLength ?? 0,
+        serializedBytes: stats.serializedBytes,
       }
-      expect(probe.totalRows).toBeGreaterThanOrEqual(stats.liveCells + stats.values)
-      expect(probe.maxRowBytes).toBeLessThan(2_048)
-      expect(probe.maxRowBytes * 50).toBeLessThan(stats.serializedBytes)
+      expect(sqlTables).toHaveLength(0)
+      expect(snapAfterSeed).toBeDefined()
+      expect(snapAfterSeed!.byteLength).toBeLessThan(2_000_000)
+      // gzip really compresses — the ceiling margin the design leans on.
+      expect(snapAfterSeed!.byteLength).toBeLessThan(stats.serializedBytes / 3)
 
       // 4. Idempotency at gate scale: re-applying EVERY chunk is a complete
-      // no-op — zero rows written (LWW finds hlc == oldHlc; the autosave has
-      // nothing to persist). This is also the partial-slice-validity check:
-      // hashes assembled from slices already matched the source above.
-      const beforeReseed = await doSnapshot(gateStub())
+      // per-cell LWW no-op (hlc == oldHlc), so the store content — and
+      // therefore the serialized snapshot — is unchanged, byte for byte.
+      // This is also the partial-slice-validity check: hashes assembled from
+      // slices already matched the source above.
+      const beforeReseed = await snapshotBytes(gateStub())
       const reseed = await postChunks(cookie, chunks)
       expect(reseed.cells).toBe(seedRun.cells)
-      const afterReseed = await doSnapshot(gateStub())
-      expect(diffRowSnapshots(beforeReseed, afterReseed)).toEqual({
-        added: 0,
-        removed: 0,
-      })
+      const afterReseed = await snapshotBytes(gateStub())
+      expect(bytesEqual(afterReseed, beforeReseed)).toBe(true)
       expect(await doHashes(gateStub())).toStrictEqual(
         clientA.getMergeableContentHashes(),
       )
 
       // 5. (c) THE GATE: attach a REAL WsSynchronizer to /sync. Stamps match,
-      // so the exchange must be hashes-only: ZERO rows written on the DO.
+      // so the exchange must be hashes-only: nothing applied, nothing
+      // persisted — the snapshot stays byte-identical.
       const wireA = newWireStats()
       const wsA = await openWorkerSyncSocket(cookie, 'm2-client-a-key')
-      const preAttach = await doSnapshot(gateStub())
+      const preAttach = await snapshotBytes(gateStub())
       const tAttach = Date.now()
       const syncA = await attachSynchronizer(clientA, wsA, wireA)
       await waitForWireQuiet(wireA)
       const attachMs = Date.now() - tAttach
-      const postAttach = await doSnapshot(gateStub())
-      const attachDiff = diffRowSnapshots(preAttach, postAttach)
+      const postAttach = await snapshotBytes(gateStub())
       report.attach = {
-        ...attachDiff,
+        snapshotUnchanged: bytesEqual(postAttach, preAttach),
         ms: attachMs,
         messages: wireA.sent + wireA.received,
         approxWireBytes: wireA.sentBytes + wireA.receivedBytes,
         maxMessageBytes: wireA.maxMessageBytes,
       }
-      expect(attachDiff).toEqual({ added: 0, removed: 0 })
+      expect(bytesEqual(postAttach, preAttach)).toBe(true)
       // Hash negotiation only — nothing remotely near a full-store exchange.
       expect(wireA.sentBytes + wireA.receivedBytes).toBeLessThan(2_000)
 
-      // 6. Genuine deltas after attach stay bounded: one cell edit + one new
-      // row write exactly themselves (+ parent-stamp rows for <=2 saves).
+      // 6. Genuine deltas after attach reach the DO and persist — the edits
+      // land in a rewritten snapshot (each save is O(1) rows regardless of
+      // delta size, so "bounded" is now a property of the protocol, not the
+      // storage).
       clientA.setCell('cars', 'car-0', 'nickname', 'Updated after seed')
       clientA.setRow('todos', 'post-seed-todo', {
         carId: 'car-0',
@@ -661,18 +667,20 @@ describe('M2 gate: #268 fragmented-persister behavior against a real DO', () => 
         'the two edits to reach the DO',
       )
       await waitForWireQuiet(wireA)
-      const postEdit = await doSnapshot(gateStub())
-      const editDiff = diffRowSnapshots(postAttach, postEdit)
-      report.editDeltas = editDiff
-      // 6 cells changed/created; the rest is bounded parent-stamp overhead.
-      expect(editDiff.added).toBeGreaterThanOrEqual(6)
-      expect(editDiff.added).toBeLessThanOrEqual(30)
-      expect(editDiff.removed).toBeLessThanOrEqual(4)
+      const postEdit = await waitForSnapshot(
+        gateStub(),
+        (bytes) => bytes !== undefined && !bytesEqual(bytes, postAttach),
+        'the edits to persist into a new snapshot',
+      )
+      report.editDeltas = {
+        snapshotBytes: postEdit?.byteLength ?? 0,
+        cumulativeWireBytes: wireA.sentBytes + wireA.receivedBytes,
+      }
 
       await syncA.destroy()
 
       // 7. Fresh second client (empty local store) down-syncs the FULL
-      // garage; the DO performs reads only (zero rows written).
+      // garage; the DO applies nothing, so the snapshot stays byte-identical.
       //
       // The fresh client is a raw (schema-less) MergeableStore on purpose:
       // applying the shared schema MATERIALIZES the Values defaults
@@ -685,7 +693,7 @@ describe('M2 gate: #268 fragmented-persister behavior against a real DO', () => 
       const wireB = newWireStats()
       const wsB = await openWorkerSyncSocket(cookie, 'm2-client-b-key')
       const targetHashes = await doHashes(gateStub())
-      const preDown = await doSnapshot(gateStub())
+      const preDown = await snapshotBytes(gateStub())
       const tDown = Date.now()
       const syncB = await attachSynchronizer(clientB, wsB, wireB)
       await waitFor(
@@ -697,15 +705,15 @@ describe('M2 gate: #268 fragmented-persister behavior against a real DO', () => 
       )
       const downMs = Date.now() - tDown
       await waitForWireQuiet(wireB)
-      const postDown = await doSnapshot(gateStub())
+      const postDown = await snapshotBytes(gateStub())
       report.downSync = {
         ms: downMs,
         messages: wireB.sent + wireB.received,
         approxWireBytes: wireB.sentBytes + wireB.receivedBytes,
         maxMessageBytes: wireB.maxMessageBytes,
-        ...diffRowSnapshots(preDown, postDown),
+        snapshotUnchanged: bytesEqual(postDown, preDown),
       }
-      expect(diffRowSnapshots(preDown, postDown)).toEqual({ added: 0, removed: 0 })
+      expect(bytesEqual(postDown, preDown)).toBe(true)
       // The second device really has the whole garage, edits included.
       expect(clientB.getContent()).toStrictEqual(clientA.getContent())
       expect(clientB.getCell('cars', 'car-0', 'nickname')).toBe('Updated after seed')
@@ -779,6 +787,10 @@ describe('M2 gate: #268 fragmented-persister behavior against a real DO', () => 
       const plainHashes = await doHashes(stub)
       expect(plainHashes).not.toStrictEqual(clientC.getMergeableContentHashes())
 
+      // Saves are async — let the plain seed's snapshot land before using it
+      // as the attach-window baseline.
+      await waitForPersistedHashes(stub, plainHashes, 'the control seed to persist')
+
       // C: attach a real synchronizer for a fixed window. Every hash level
       // differs, so the negotiation exchanges full-store diffs (~the whole
       // serialized garage per round) instead of the gate's few hundred bytes.
@@ -798,19 +810,18 @@ describe('M2 gate: #268 fragmented-persister behavior against a real DO', () => 
       // stamped chunked seed is immune: its attach has NOTHING to apply.
       const wireC = newWireStats()
       const ws = await openDirectSyncSocket(stub, 'm2-control', 'm2-control-key')
-      const preAttach = await doSnapshot(stub)
+      const preAttach = await snapshotBytes(stub)
       const syncC = await attachSynchronizer(clientC, ws, wireC)
       const OBSERVATION_MS = 5_000
       await sleep(OBSERVATION_MS)
-      const postAttach = await doSnapshot(stub)
-      const attachDiff = diffRowSnapshots(preAttach, postAttach)
+      const postAttach = await snapshotBytes(stub)
       const converged =
         JSON.stringify(await doHashes(stub)) ===
         JSON.stringify(clientC.getMergeableContentHashes())
       report.attachWindow = {
         ms: OBSERVATION_MS,
         converged,
-        ...attachDiff,
+        snapshotUnchanged: bytesEqual(postAttach, preAttach),
         messages: wireC.sent + wireC.received,
         approxWireBytes: wireC.sentBytes + wireC.receivedBytes,
         maxMessageBytes: wireC.maxMessageBytes,
@@ -823,14 +834,18 @@ describe('M2 gate: #268 fragmented-persister behavior against a real DO', () => 
       // (each negotiation round re-ships ~every cell stamp; compare
       // maxMessageBytes with the gate attach's < 2 KB total)...
       expect(wireC.maxMessageBytes).toBeGreaterThan(100_000)
-      // ...and locally it does not even converge (see drop-window note above).
+      // ...and locally it does not even converge (see drop-window note above):
+      // nothing was applied, so nothing was persisted.
       expect(converged).toBe(false)
-      expect(attachDiff).toEqual({ added: 0, removed: 0 })
+      expect(bytesEqual(postAttach, preAttach)).toBe(true)
 
-      // D: the write shape the synchronizer performs when its apply DOES go
+      // D: the apply shape the synchronizer performs when its apply DOES go
       // through (post-window in production): the negotiated full-store diff
-      // lands in ONE applyMergeableChanges — one transaction, one fragmented
-      // save, every cell row rewritten. Demonstrated directly against the
+      // lands in ONE applyMergeableChanges — one giant transaction the app
+      // cannot bound. Under the snapshot persister that unbounded APPLY
+      // still persists as an O(1)-row save (the #268 storage hazard is
+      // gone); the protocol-level boundedness of the stamped seed remains
+      // about memory and message size. Demonstrated directly against the
       // same DO storage (chunk budget set above the store size => the whole
       // tables tree in a single changes object, exactly like the
       // synchronizer's assembled tablesChanges).
@@ -839,31 +854,31 @@ describe('M2 gate: #268 fragmented-persister behavior against a real DO', () => 
       })
       expect(fullChunks.length).toBe(2) // tables + values
       const txBefore = txLog.length
-      const preApply = await doSnapshot(stub)
+      const preApply = await snapshotBytes(stub)
       const tApply = Date.now()
-      await runInDurableObject(stub, async (instance) => {
+      await runInDurableObject(stub, (instance) => {
         const store = (instance as GarageDO).store!
         for (const chunk of fullChunks) store.applyMergeableChanges(chunk)
-        await sleep(0) // drain the persister microtasks (sync SQL execs)
       })
+      // Async save: wait for the reconciled content to land at rest.
+      const postApply = await waitForSnapshot(
+        stub,
+        (bytes) => bytes !== undefined && !bytesEqual(bytes, preApply),
+        'the full reconcile to persist',
+      )
       const applyMs = Date.now() - tApply
-      const postApply = await doSnapshot(stub)
-      const applyDiff = diffRowSnapshots(preApply, postApply)
       const applyTx = txLog.length - txBefore
       report.fullReconcileWrite = {
-        ...applyDiff,
         ms: applyMs,
         transactions: applyTx,
+        snapshotBytes: postApply?.byteLength ?? 0,
         cellsPerTransaction: Math.round(
           (stats.liveCells + stats.tombstoneCells) / Math.max(applyTx - 1, 1),
         ),
       }
-      // Every cell row rewritten (client stamps replace server stamps), in
-      // ~one giant save — unbounded by anything the app controls. Contrast:
-      // the stamped-seed attach above wrote ZERO rows.
+      // The whole client store replaced the server stamps in two
+      // transactions — and persisted as two O(1)-row snapshot saves.
       expect(applyTx).toBe(2)
-      expect(applyDiff.removed).toBeGreaterThanOrEqual(stats.liveCells)
-      expect(applyDiff.added).toBeGreaterThanOrEqual(stats.liveCells)
       // And now the DO matches the client — convergence required the bulk
       // write the synchronizer could not deliver.
       expect(await doHashes(stub)).toStrictEqual(
@@ -975,29 +990,34 @@ describe('M2 gate: #268 fragmented-persister behavior against a real DO', () => 
         await runInDurableObject(stub, () => undefined)
         const warmMs = Date.now() - tWarm
 
+        // The empty-store snapshot from the warm-up's initial autosave is the
+        // baseline; the applied probe content must land as a LARGER blob.
+        const preApply = await snapshotBytes(stub)
         const tOuter = Date.now()
-        const inner = await runInDurableObject(stub, async (instance, state) => {
+        const applyMs = await runInDurableObject(stub, (instance) => {
           const store = (instance as GarageDO).store!
           const t0 = Date.now()
           store.applyMergeableChanges(chunks[0]!)
-          const t1 = Date.now()
-          // One macrotask drains the persister's microtask chain (the SQL
-          // execs are synchronous), so the row count below proves the save
-          // completed inside this call.
-          await sleep(0)
-          const t2 = Date.now()
-          const rows = probeStorage(state.storage.sql).totalRows
-          return { applyMs: t1 - t0, persistMs: t2 - t1, rows }
+          return Date.now() - t0
         })
+        // Async save (gzip stream): poll until the probe content is at rest.
+        const snap = await waitForSnapshot(
+          stub,
+          (bytes) => bytes !== undefined && !bytesEqual(bytes, preApply),
+          `the ${cells}-cell save to persist`,
+          120_000,
+        )
         const totalMs = Date.now() - tOuter
 
-        // The save completed, per-cell (>= one row per cell), no reset/error.
-        expect(inner.rows).toBeGreaterThanOrEqual(cells)
+        // The save completed as ONE compressed blob, and even the biggest
+        // probe sits far under the 2 MB KV value cap.
+        expect(snap!.byteLength).toBeGreaterThan(0)
+        expect(snap!.byteLength).toBeLessThan(2_000_000)
 
-        // Cold start: every DO wake re-persists the FULL store (verified in
-        // the installed WsServerDurableObject: constructor load() is followed
-        // by startAutoSave()'s unconditional initial save). abort() is the
-        // only way to force that locally; guarded because it intentionally
+        // Cold start: a DO wake hydrates the whole store from the snapshot
+        // (one KV get + gunzip + parse) behind blockConcurrencyWhile, then
+        // startAutoSave()'s initial save re-persists it. abort() is the only
+        // way to force a wake locally; guarded because it intentionally
         // breaks the instance.
         let coldStartMs: number | null
         try {
@@ -1009,12 +1029,10 @@ describe('M2 gate: #268 fragmented-persister behavior against a real DO', () => 
         }
         try {
           const tCold = Date.now()
-          const rowsAfter = await runInDurableObject(
-            namedStub(`m2-ceiling-${cells}`),
-            (_instance, state) => probeStorage(state.storage.sql).totalRows,
-          )
+          const snapAfter = await snapshotBytes(namedStub(`m2-ceiling-${cells}`))
           coldStartMs = Date.now() - tCold
-          expect(rowsAfter).toBeGreaterThanOrEqual(cells)
+          expect(snapAfter).toBeDefined()
+          expect(snapAfter!.byteLength).toBeGreaterThan(0)
         } catch {
           coldStartMs = null // not measurable in this environment
         }
@@ -1024,11 +1042,9 @@ describe('M2 gate: #268 fragmented-persister behavior against a real DO', () => 
             cells,
             chunkBytes,
             warmMs,
-            applyMs: inner.applyMs,
-            persistMs: inner.persistMs,
-            inDoMs: inner.applyMs + inner.persistMs,
+            applyMs,
             totalMs,
-            rows: inner.rows,
+            snapshotBytes: snap!.byteLength,
             coldStartMs,
           })}`,
         )

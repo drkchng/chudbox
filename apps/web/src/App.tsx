@@ -6,6 +6,8 @@ import Watching from './pages/Watching'
 import AuthReset from './pages/AuthReset'
 import AuthVerified from './pages/AuthVerified'
 import SharePage from './pages/SharePage'
+import Terms from './pages/Terms'
+import Privacy from './pages/Privacy'
 import SyncGate from './components/SyncGate'
 import useGarageStore from './store/useGarageStore'
 import { applyThemeFromSettings } from './utils/themes'
@@ -47,6 +49,9 @@ export default function App() {
         {/* Email landing routes: password reset + post-verification notice */}
         <Route path={ROUTES.authReset}    element={<AuthReset />} />
         <Route path={ROUTES.authVerified} element={<AuthVerified />} />
+        {/* Public legal pages */}
+        <Route path={ROUTES.terms}   element={<Terms />} />
+        <Route path={ROUTES.privacy} element={<Privacy />} />
       </Routes>
     </BrowserRouter>
   )

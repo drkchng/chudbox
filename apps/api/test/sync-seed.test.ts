@@ -18,8 +18,10 @@ import type {
   SeedChunkResponse,
   SyncMetaResponse,
 } from '@chudbox/shared'
+import { createMergeableStore } from 'tinybase'
 import type { MergeableStore } from 'tinybase'
 import type { GarageDO } from '../src/durable/GarageDO'
+import { loadSnapshotContent } from '../src/durable/snapshotPersister'
 
 const BASE = 'https://example.com'
 const BUDGET = 120
@@ -39,7 +41,7 @@ beforeAll(async () => {
   const signUp = await SELF.fetch(`${BASE}/api/auth/sign-up/email`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password, name: 'Seed Tester' }),
+    body: JSON.stringify({ email, password, name: 'Seed Tester', tosAcceptedVersion: 1 }),
   })
   expect(signUp.ok).toBe(true)
   const { user } = (await signUp.json()) as { user: { id: string } }
@@ -238,7 +240,7 @@ describe('auth gating', () => {
 })
 
 describe('seeding', () => {
-  it('lands a multi-chunk garage in the DO: meta matches, storage is per-cell, stamps intact', async () => {
+  it('lands a multi-chunk garage in the DO: meta matches, snapshot complete, stamps intact', async () => {
     const { cookie, userId } = session
     expect((await getMeta(cookie)).isEmpty).toBe(true)
 
@@ -253,47 +255,51 @@ describe('seeding', () => {
       expect(meta.rowCounts[tableId], tableId).toBe(src.getRowCount(tableId))
     }
 
-    // The persisted cell rows are the LIVE cells: a tombstone seeded into a
-    // store that never held the cell does not change the raw store, so the
-    // per-transaction auto-save has nothing to persist for it. It still lives
-    // in the in-memory stamp map (the contentHashes assertion below covers
-    // it); after a DO restart the next attach re-exchanges just those cells
-    // from the client, which always retains them — bounded and convergent.
-    const srcLiveCells = countContentCells(src, { liveOnly: true })
+    // At rest the whole store — live cells, tombstones, values, every stamp —
+    // is one snapshot blob; hydrating a fresh store from it must reproduce
+    // the client's exact CRDT state. (A tombstone seeded into a store that
+    // never held the cell live doesn't change the raw store, so its own
+    // transaction may not save — but any LATER chunk's save persists the
+    // full stamp map, and the values chunk always lands last.) Snapshot
+    // saves are async (gzip streams), so poll until the at-rest state
+    // settles before asserting.
+    const srcCells = countContentCells(src)
     const srcValues = Object.keys(src.getMergeableContent()[1][0]).length
-    const probe = await runInDurableObject(
-      garageStub(userId),
-      (instance, state) => {
-        // Per-cell storage behavior (fragmented mode): one SQL row per cell
-        // stamp — not one JSON blob. Parent stamp rows have NULL cell_id and
-        // are excluded.
-        const cellRows = Number(
-          state.storage.sql
-            .exec(
-              'SELECT COUNT(*) AS n FROM tinybase_tables WHERE cell_id IS NOT NULL',
-            )
-            .one().n,
-        )
-        const valueRows = Number(
-          state.storage.sql
-            .exec(
-              'SELECT COUNT(*) AS n FROM tinybase_values WHERE value_id IS NOT NULL',
-            )
-            .one().n,
-        )
-        return {
-          cellRows,
-          valueRows,
-          contentHashes: (instance as GarageDO).store!.getMergeableContentHashes(),
-        }
-      },
-    )
-    expect(probe.cellRows).toBe(srcLiveCells)
-    expect(probe.valueRows).toBe(srcValues)
+    const srcHashes = src.getMergeableContentHashes()
+    type Probe = {
+      persistedCells: number
+      persistedValues: number
+      persistedHashes: unknown
+      contentHashes: unknown
+    }
+    let probe: Probe | undefined
+    const deadline = Date.now() + 15_000
+    for (;;) {
+      probe = await runInDurableObject(
+        garageStub(userId),
+        async (instance, state): Promise<Probe> => {
+          const content = await loadSnapshotContent(state.storage)
+          const rehydrated = createMergeableStore()
+          if (content !== undefined) rehydrated.setMergeableContent(content)
+          return {
+            persistedCells: countContentCells(rehydrated),
+            persistedValues: Object.keys(rehydrated.getMergeableContent()[1][0]).length,
+            persistedHashes: rehydrated.getMergeableContentHashes(),
+            contentHashes: (instance as GarageDO).store!.getMergeableContentHashes(),
+          }
+        },
+      )
+      if (JSON.stringify(probe.persistedHashes) === JSON.stringify(srcHashes)) break
+      if (Date.now() > deadline) break
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+    expect(probe!.persistedCells).toBe(srcCells)
+    expect(probe!.persistedValues).toBe(srcValues)
+    expect(probe!.persistedHashes).toStrictEqual(srcHashes)
     // Stamps + hashes identical to the client store ⇒ a synchronizer attach
     // would exchange only genuine deltas — the #268 mitigation works against
     // the real DO storage.
-    expect(probe.contentHashes).toStrictEqual(src.getMergeableContentHashes())
+    expect(probe!.contentHashes).toStrictEqual(srcHashes)
   })
 
   it('re-seeding the same chunks is a no-op: stamps unchanged', async () => {

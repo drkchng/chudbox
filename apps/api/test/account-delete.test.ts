@@ -29,6 +29,7 @@ import {
 import type { Car, CreateShareResponse, SyncMetaResponse, UploadResponse } from '@chudbox/shared'
 import type { MergeableStore } from 'tinybase'
 import type { GarageDO } from '../src/durable/GarageDO'
+import { SNAPSHOT_KEY } from '../src/durable/snapshotPersister'
 
 const BASE = 'https://example.com'
 
@@ -61,7 +62,7 @@ async function createVerifiedUser(email: string, name = 'Purge Tester'): Promise
   const signUp = await SELF.fetch(`${BASE}/api/auth/sign-up/email`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password, name }),
+    body: JSON.stringify({ email, password, name, tosAcceptedVersion: 1 }),
   })
   expect(signUp.ok).toBe(true)
   const { user } = (await signUp.json()) as { user: { id: string } }
@@ -291,6 +292,18 @@ describe('POST /api/account/delete — full purge', () => {
     await runInDurableObject(garageStub(user.userId), (i) => (i as unknown as GarageDO).purgeAll())
     await runInDurableObject(garageStub(user.userId), (i) => (i as unknown as GarageDO).purgeAll())
     expect((await doMeta(user.userId)).isEmpty).toBe(true)
+
+    // At-rest erasure holds AND stays held: purgeAll orders deleteAll behind
+    // the emptied-store autosave on the persister's scheduler, so no late
+    // async save can write a snapshot back after the wipe. The re-check
+    // after a beat is the tripwire for that race.
+    const snapshotAtRest = () =>
+      runInDurableObject(garageStub(user.userId), (_i, state) =>
+        state.storage.get<Uint8Array>(SNAPSHOT_KEY),
+      )
+    expect(await snapshotAtRest()).toBeUndefined()
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    expect(await snapshotAtRest()).toBeUndefined()
   })
 })
 
