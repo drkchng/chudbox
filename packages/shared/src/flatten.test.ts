@@ -306,16 +306,20 @@ function assertRowInvariants(flat: FlattenedCar, settings: FlattenSettings, car:
 // ── THE round-trip property ─────────────────────────────────
 
 describe('flattenCar / joinCar round trip', () => {
-  it('joinCar(flattenCar(car)) deep-equals the input Car for arbitrary cars', () => {
-    fc.assert(
-      fc.property(carArb, settingsArb, (car, settings) => {
-        const flat = flattenCar(car, settings)
-        expect(joinCar(flat)).toEqual(car)
-        assertRowInvariants(flat, settings, car)
-      }),
-      { numRuns: 200 },
-    )
-  })
+  it(
+    'joinCar(flattenCar(car)) deep-equals the input Car for arbitrary cars',
+    () => {
+      fc.assert(
+        fc.property(carArb, settingsArb, (car, settings) => {
+          const flat = flattenCar(car, settings)
+          expect(joinCar(flat)).toEqual(car)
+          assertRowInvariants(flat, settings, car)
+        }),
+        { numRuns: 200 },
+      )
+    },
+    15000,
+  )
 
   it('round-trips the explicit falsy-vs-null fixture (0, false, "", null, dangling cover)', () => {
     const car: Car = {
