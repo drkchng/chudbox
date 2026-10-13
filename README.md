@@ -1,6 +1,6 @@
 # Chudbox
 
-A local-first car management app for enthusiasts. Track each build's mods, maintenance, mileage, parts wishlist, to-dos, and issues, and share a build with anyone through a link.
+A car management app for enthusiasts. Track each build's mods, maintenance, mileage, parts wishlist, to-dos, and issues, and share a build with anyone through a link.
 
 **Live:** https://chudbox.com
 
@@ -48,7 +48,7 @@ db, docs         Data-model notes and design/deploy/compliance docs
 
 How the pieces fit together:
 
-- **Local-first data.** The web app keeps its data in a TinyBase mergeable store persisted to IndexedDB. It is fully usable offline and signed out.
+- **Browser storage.** The web app keeps its data in a TinyBase mergeable store persisted to IndexedDB. It is fully usable offline and signed out.
 - **Sync.** When signed in, the app syncs over a WebSocket to a per-user Durable Object (SQLite-backed) that holds that user's garage.
 - **Auth.** [Better Auth](https://www.better-auth.com/) with email and password and required email verification, stored in Cloudflare D1 through Drizzle ORM. Verification and reset emails go out through Resend.
 - **Images.** Uploads go through the Worker into a private R2 bucket, with authentication, size limits, and file-type checks on the bytes. Images are served only through authenticated or share-token routes.
